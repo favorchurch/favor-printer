@@ -24,8 +24,8 @@ release workflow fails when they differ.
 
 | Tag | Channel | GitHub release | Update manifest |
 | --- | --- | --- | --- |
-| `v1.2.3` | stable | normal release | `latest-mac.yml` |
-| `v1.2.3-preview.4` | preview | mark as pre-release when publishing | named after the prerelease suffix by electron-builder (expected `preview-mac.yml`) |
+| `v1.2.3` | stable | normal release (pre-release flag off, set by the workflow) | `latest-mac.yml` |
+| `v1.2.3-preview.4` | preview | pre-release (flag set by the workflow on the draft) | named after the prerelease suffix by electron-builder (expected `preview-mac.yml`) |
 
 Only `-preview.N` is accepted as a prerelease suffix. Artifact names are fixed and space-free
 (`Favor-Printer-<version>-<arch>.dmg` and `.zip`, for `arm64` and `x64`) because GitHub rewrites spaces
@@ -34,8 +34,13 @@ in asset names, which would break the URLs in the manifest.
 Check the manifest name on the first preview release and correct this table if it differs. The release
 workflow already uploads whichever `*-mac.yml` electron-builder wrote.
 
-Volunteers on the stable channel only receive published, non-prerelease releases. Volunteers who chose
-the preview channel in the app also receive pre-releases.
+The release workflow sets the GitHub **pre-release** flag on the draft itself: on for `-preview.N`
+tags, off for stable tags. A final step fails the run if the flag is wrong. Nobody has to set or toggle
+it by hand, and publishing keeps whatever the draft has.
+
+**Stable-channel clients never see preview releases.** They only receive published, non-prerelease
+releases. **Preview-channel clients see both:** the newest published release of either kind, stable or
+preview. Volunteers choose the channel in the app.
 
 ## Secrets
 
@@ -143,13 +148,17 @@ Publishing is manual and needs an explicit OK from the person who owns the relea
    open without a Gatekeeper warning and reach the setup window. Do the same update-from-previous check
    when an earlier version is installed somewhere.
 3. Get the explicit OK.
-4. Publish: on the draft click **Publish release** (tick **Set as a pre-release** for a `-preview.N`
-   tag), or:
+4. Publish the draft. The pre-release flag is already right, so do not toggle it. Check that the draft
+   shows **Pre-release** for a `-preview.N` tag and does not for a stable tag, then click **Publish
+   release** (leave **Set as a pre-release** exactly as it is), or:
 
    ```sh
-   gh release edit v1.2.3 --draft=false            # stable
-   gh release edit v1.2.3 --draft=false --prerelease   # preview
+   gh release edit v1.2.3 --draft=false
+   gh release edit v1.2.4-preview.1 --draft=false
    ```
+
+   Never add `--prerelease` or `--prerelease=false` here. Publishing a preview without its flag would
+   push it to stable-channel clients.
 
 5. Watch for the first volunteers to update. If something is wrong, go to [Rollback](#rollback).
 

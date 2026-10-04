@@ -305,6 +305,20 @@ jobs:
           done
           pnpm exec electron-builder publish --config electron-builder.release.yml "${files[@]}"
 
+      # electron-builder's draft release is never marked as a pre-release, so this
+      # workflow sets the flag itself: on for vX.Y.Z-preview.N tags, off for vX.Y.Z.
+      # The release is still a draft, so no client can see it yet. Publishing later
+      # keeps the flag (see docs/RELEASING.md).
+      - name: Set the pre-release flag on the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "${TAG}" in
+            *-preview.*) gh release edit "${TAG}" --draft --prerelease ;;
+            *) gh release edit "${TAG}" --draft --prerelease=false ;;
+          esac
+
       - name: Check the release is still a draft with all assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -320,11 +334,19 @@ jobs:
             echo "::error::The release for ${TAG} is not a draft. Unpublish it now: gh release edit ${TAG} --draft"
             exit 1
           fi
+          case "${TAG}" in
+            *-preview.*) want_prerelease=true ;;
+            *) want_prerelease=false ;;
+          esac
+          if [ "$(printf '%s' "${release}" | jq -r '.prerelease')" != "${want_prerelease}" ]; then
+            echo "::error::The release for ${TAG} has prerelease=$(printf '%s' "${release}" | jq -r '.prerelease'), expected ${want_prerelease}."
+            exit 1
+          fi
           names="$(printf '%s' "${release}" | jq -r '.assets[].name')"
           for pattern in 'arm64\.dmg$' 'x64\.dmg$' 'arm64\.zip$' 'x64\.zip$' '-mac\.yml$'; do
             printf '%s\n' "${names}" | grep -Eq "${pattern}" || { echo "::error::Release is missing an asset matching ${pattern}."; exit 1; }
           done
-          echo "Draft release for ${TAG} is ready for a maintainer to review and publish."
+          echo "Draft release for ${TAG} (prerelease=${want_prerelease}) is ready for a maintainer to review and publish."
 
       # Runs even when an earlier step failed.
       - name: Remove the temporary keychain and key files
