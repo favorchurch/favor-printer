@@ -264,3 +264,40 @@ ul.plain:empty {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* Preview only (pnpm preview:renderer): never rendered inside Electron. */
+body[data-preview] .screen {
+  min-height: min(calc(100vh - 88px), 640px);
+}
+
+.fixture-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  padding: 6px 8px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border-top: 1px solid var(--line);
+}
+
+.fixture-bar button {
+  font: inherit;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.fixture-bar button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}

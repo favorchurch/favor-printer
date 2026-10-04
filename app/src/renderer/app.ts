@@ -10,8 +10,11 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   let current = snapshot;
   let local: LocalState = { ...INITIAL_LOCAL, ...options.initialLocal };
   let shownScreen: string | null = null;
+  let disposed = false;
 
   const render = () => {
+    // A stopped app (the preview switched to another fixture) never draws again, even from a late reply.
+    if (disposed) return;
     const screen = pickScreen(current, local);
     const view = renderScreen(screen, { snapshot: current, local, actions });
     root.replaceChildren(view);
@@ -100,5 +103,8 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
 
   const unsubscribe = api.onSnapshot(applySnapshot);
   render();
-  return () => unsubscribe();
+  return () => {
+    disposed = true;
+    unsubscribe();
+  };
 }
