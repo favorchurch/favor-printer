@@ -60,6 +60,9 @@ Rules the workflow follows, and that edits must keep:
   command arguments, never echoed, and `set -x` is never enabled.
 - The certificate goes into a keychain created for the run. The `.p12`, the `.p8` and the keychain are
   deleted in a final step that runs even when the build fails.
+- The `.p12` password is never in a command line. openssl reads it from the environment
+  (`-passin env:`), and `security import` receives unencrypted PEM copies of the certificate and key.
+  Those copies and the `.p12` are deleted right after the import and again by the cleanup step.
 - Pull request builds (`ci.yml`) never receive these secrets.
 
 Rotate a secret by replacing it in GitHub. If the certificate or key may have leaked, revoke it in the
@@ -119,11 +122,33 @@ git checkout v1.2.3                      # build from the tag, with a clean tree
 pnpm install --frozen-lockfile
 pnpm verify:vendor && pnpm lint && pnpm typecheck && pnpm test
 pnpm build
-pnpm exec electron-builder --publish never
+
+# Same release config as CI: draft-only publishing and a signed DMG.
+cat > electron-builder.release.yml <<'YAML'
+extends: ./electron-builder.yml
+publish:
+  provider: github
+  owner: favorchurch
+  repo: favor-printer
+  releaseType: draft
+dmg:
+  sign: true
+YAML
+pnpm exec electron-builder --config electron-builder.release.yml --publish never
+rm electron-builder.release.yml
 ```
 
-electron-builder signs with the certificate it finds in the keychain and, because the three `APPLE_API_*`
-variables are set, notarizes and staples the `.app` with `notarytool`. Artifacts are in `release/`.
+`electron-builder.yml` alone leaves the DMG unsigned (`dmg.sign: false`), which is fine for pull request
+builds but must not be notarized, so the local fallback always builds with the release config above, the
+same as CI. electron-builder signs the app and the DMG with the certificate it finds in the keychain and,
+because the three `APPLE_API_*` variables are set, notarizes and staples the `.app` with `notarytool`.
+Artifacts are in `release/`. Confirm the DMG is signed before notarizing it:
+
+```sh
+codesign -dv --verbose=2 release/Favor-Printer-1.2.3-arm64.dmg   # must show Authority=Developer ID Application
+```
+
+If it reports `code object is not signed at all`, stop. Do not notarize it. Rebuild with the release config.
 
 Notarize and staple each DMG, then refresh its checksum in the manifest:
 
@@ -135,12 +160,20 @@ for dmg in release/*.dmg; do
   xcrun stapler validate "$dmg"
 done
 
-# Stapling rewrites the DMG. In release/latest-mac.yml replace sha512 and size of each .dmg entry:
+# Stapling rewrites the DMG. In the manifest (latest-mac.yml, or preview-mac.yml for a preview) replace sha512 and size of each .dmg entry:
 openssl dgst -sha512 -binary release/Favor-Printer-1.2.3-arm64.dmg | base64
 stat -f%z release/Favor-Printer-1.2.3-arm64.dmg
 ```
 
-Verify (the same checks as the workflow), for the app inside each DMG and zip:
+Verify (the same checks as the workflow). For each DMG:
+
+```sh
+codesign --verify --strict --verbose=2 release/Favor-Printer-1.2.3-arm64.dmg
+spctl --assess --type open --context context:primary-signature --verbose=4 release/Favor-Printer-1.2.3-arm64.dmg
+xcrun stapler validate release/Favor-Printer-1.2.3-arm64.dmg
+```
+
+And for the app inside each DMG and zip:
 
 ```sh
 codesign --verify --deep --strict --verbose=2 "Favor Printer.app"
@@ -152,7 +185,7 @@ Upload as a **draft** only, then follow [Publishing the draft](#publishing-the-d
 
 ```sh
 gh release create v1.2.3 --draft --title "Favor Printer 1.2.3" --notes "" \
-  release/*.dmg release/*.zip release/*.zip.blockmap release/latest-mac.yml
+  release/*.dmg release/*.zip release/*.zip.blockmap release/*-mac.yml
 ```
 
 Do not upload the DMG `.blockmap` files: stapling made them stale and the updater only uses the zip.
@@ -192,8 +225,10 @@ Volunteers who are stuck on the bad build and cannot update can install the fix-
 
 `release.yml` publishes through electron-builder with `releaseType: draft` (set in a generated
 `electron-builder.release.yml` that extends `electron-builder.yml`, and backed up by `EP_DRAFT=true`).
-A final step fails the run if the release is not a draft or an expected asset is missing, and an early
-step refuses to touch a tag that already has a published release.
+A final step fails the run if the release is not a draft or an expected asset is missing. An early
+step refuses to touch a tag that already has a published release, and the same check runs again
+immediately before the upload, because the build and notarization can take a long time. If a maintainer
+published the release in between, the run aborts without uploading.
 
 Two things the release run does that `electron-builder.yml` alone does not: it signs the DMG itself, so
 it can be notarized, stapled and assessed on its own, and it refreshes the DMG checksums in the update

@@ -99,7 +99,9 @@ jobs:
           pnpm test
 
       # The certificate lives in a keychain created for this run and deleted at
-      # the end. The p12 and its password only ever appear in env vars of this step.
+      # the end. The p12 password only ever appears in this step's environment:
+      # openssl reads it from the variable (-passin env:), and security import
+      # gets unencrypted PEM files, so the password never lands in any argv.
       - name: Import the signing certificate into a temporary keychain
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
@@ -110,27 +112,37 @@ jobs:
           keychain_password="$(uuidgen)"
           echo "::add-mask::${keychain_password}"
           p12_path="${RUNNER_TEMP}/signing-certificate.p12"
+          cert_pem="${RUNNER_TEMP}/signing-certificate.pem"
+          key_pem="${RUNNER_TEMP}/signing-key.pem"
 
           # Record paths first so the cleanup step still works if a later command fails.
           echo "KEYCHAIN_PATH=${keychain_path}" >> "${GITHUB_ENV}"
           echo "P12_PATH=${p12_path}" >> "${GITHUB_ENV}"
+          echo "CERT_PEM_PATH=${cert_pem}" >> "${GITHUB_ENV}"
+          echo "KEY_PEM_PATH=${key_pem}" >> "${GITHUB_ENV}"
           security list-keychains -d user | tr -d '"' | xargs > "${RUNNER_TEMP}/keychain-search-list.txt"
 
+          umask 077
           printf '%s' "${MACOS_CERTIFICATE_P12_BASE64}" | base64 --decode > "${p12_path}"
-          chmod 600 "${p12_path}"
+
+          # Temporary unencrypted copies, deleted below and again by the cleanup step.
+          openssl pkcs12 -in "${p12_path}" -passin env:MACOS_CERTIFICATE_PASSWORD \
+            -clcerts -nokeys -out "${cert_pem}"
+          openssl pkcs12 -in "${p12_path}" -passin env:MACOS_CERTIFICATE_PASSWORD \
+            -nocerts -nodes -out "${key_pem}"
 
           security create-keychain -p "${keychain_password}" "${keychain_path}"
           security set-keychain-settings -lut 21600 "${keychain_path}"
           security unlock-keychain -p "${keychain_password}" "${keychain_path}"
-          security import "${p12_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" \
-            -f pkcs12 -k "${keychain_path}" \
+          security import "${cert_pem}" -f openssl -t cert -k "${keychain_path}"
+          security import "${key_pem}" -f openssl -t priv -k "${keychain_path}" \
             -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "${keychain_password}" "${keychain_path}" > /dev/null
           # shellcheck disable=SC2046
           security list-keychains -d user -s "${keychain_path}" $(cat "${RUNNER_TEMP}/keychain-search-list.txt")
 
-          rm -f "${p12_path}"
+          rm -f "${p12_path}" "${cert_pem}" "${key_pem}"
 
           if ! security find-identity -v -p codesigning "${keychain_path}" | grep -q "Developer ID Application"; then
             echo "::error::No Developer ID Application identity in the imported certificate."
@@ -259,7 +271,9 @@ jobs:
 
       # electron-builder uploads to the GitHub release for this tag. releaseType is
       # draft in the config and EP_DRAFT backs it up. The DMG blockmaps are skipped:
-      # stapling made them stale and the updater only uses the zip.
+      # stapling made them stale and the updater only uses the zip. The build and
+      # notarization above take a long time, so the "not published" check from the
+      # start is repeated here, in the same step, immediately before the upload.
       - name: Upload to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -267,6 +281,12 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+          published="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+            --jq ".[] | select(.tag_name == \"${TAG}\" and .draft == false) | .html_url")"
+          if [ -n "${published}" ]; then
+            echo "::error::${TAG} was published while this run was building (${published}). Nothing was uploaded. Roll forward with a higher version instead."
+            exit 1
+          fi
           files=()
           for f in release/*.dmg release/*.zip release/*.zip.blockmap release/*-mac.yml; do
             files+=(--files "${f}")
@@ -305,4 +325,4 @@ jobs:
             # shellcheck disable=SC2046
             security list-keychains -d user -s $(cat "${RUNNER_TEMP}/keychain-search-list.txt") || true
           fi
-          rm -f "${P12_PATH:-}" "${APPLE_API_KEY:-}" "${RUNNER_TEMP}/keychain-search-list.txt" electron-builder.release.yml
+          rm -f "${P12_PATH:-}" "${CERT_PEM_PATH:-}" "${KEY_PEM_PATH:-}" "${APPLE_API_KEY:-}" "${RUNNER_TEMP}/keychain-search-list.txt" electron-builder.release.yml
