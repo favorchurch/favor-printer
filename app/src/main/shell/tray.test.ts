@@ -106,6 +106,7 @@ describe("buildMenuTemplate", () => {
       [{ kind: "checking" }, "Checking for updates...", false],
       [{ kind: "downloading" }, "Downloading an update...", false],
       [{ kind: "ready", version: "0.2.0" }, "Update 0.2.0 ready. It installs when you quit.", false],
+      [{ kind: "ready", version: "" }, "An update is ready. It installs when you quit.", false],
       [{ kind: "error" }, "Update check failed. Try again", true],
     ] as const)("%j shows %s", (update, label, clickable) => {
       const a = actions();

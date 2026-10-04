@@ -38,7 +38,7 @@ import {
   systemTimers,
 } from "./services";
 import { createAppController } from "./shell/controller";
-import { handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
+import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
 import { acquireSingleInstance } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
@@ -245,22 +245,7 @@ async function runApp(): Promise<void> {
 
   registerIpcHandlers({
     ipcMain: ipcMain as unknown as IpcMainLike,
-    handlers: handlersFor({
-      getSnapshot: async () => controller.snapshot(),
-      scanPrinters: () => controller.scanPrinters(),
-      selectPrinter: (id) => controller.selectPrinter(id),
-      setUpPrinter: () => controller.setUpPrinter(),
-      openPrinterSettings: () => controller.openPrinterSettings(),
-      enroll: (code) => controller.enroll(code),
-      requestTestPrint: () => controller.requestTestPrint(),
-      confirmTestPrint: (came) => controller.confirmTestPrint(came),
-      setPaused: (paused) => controller.setPaused(paused),
-      setOpenAtLogin: (enabled) => controller.setOpenAtLogin(enabled),
-      setChannel: (channel) => controller.setChannel(channel),
-      migrateLegacyRelay: () => controller.migrateLegacyRelay(),
-      advance: () => controller.advance(),
-      quit: async () => void requestQuit(),
-    }),
+    handlers: handlersFor(apiFromController(controller, async () => void requestQuit())),
     isTrusted: (event) =>
       isTrustedSender(event, { webContentsId: windows.webContentsId, pageUrl: pathToFileURL(pagePath).href }),
     onRejected: (channel, reason) => log("warn", "ipc", `rejected ${channel}: ${reason}`),

@@ -237,6 +237,9 @@ export function createAppController(deps: ControllerDeps): AppController {
   }
 
   function updatePower() {
+    // After shutdown the hold is released for good: a status event from a send that was still
+    // finishing must not take it again while the app quits.
+    if (shuttingDown) return;
     deps.power.update({ printerAttached, lastJobAt: supervisorState.relay?.lastJobAt ?? null });
   }
 

@@ -26,18 +26,49 @@ describe("redact", () => {
   });
 });
 
-describe("describeError", () => {
-  it("names the error and redacts its message, without a stack", () => {
-    const error = new Error("401 for Bearer abc123def456 on https://x.test/a?token=zzz");
-    const text = describeError(error);
-    expect(text.startsWith("Error: ")).toBe(true);
-    expect(text).not.toContain("abc123def456");
-    expect(text).not.toContain("zzz");
-    expect(text).not.toContain("\n");
+describe("redact: zpl and person fields", () => {
+  it("removes a whole label", () => {
+    const out = redact("print failed for ^XA^CF0,60^FO50,50^FDJane Q. Attendee^FS^FD483920^FS^XZ today");
+    expect(out).not.toMatch(/Jane|Attendee|483920|\^FD/);
+    expect(out).toContain("[zpl]");
   });
 
-  it("does not print an arbitrary object", () => {
+  it("removes an unterminated label and stray commands", () => {
+    expect(redact("cut off ^XA^FO10,10^FDJane Q. Attendee")).not.toContain("Jane");
+    expect(redact("bad ^FDZoe O'Brien")).not.toContain("O'Brien");
+  });
+
+  it.each([
+    ['{"name":"Jane Q. Attendee","age":7}', "Jane"],
+    ["attendee=Jane Q. Attendee, room 4", "Jane"],
+    ["firstName: Zoe", "Zoe"],
+    ["email=jane@example.test", "jane@example.test"],
+    ["security_code=SEC7F3A9C", "SEC7F3A9C"],
+  ])("removes the value of a person field in %s", (input, secret) => {
+    expect(redact(input)).not.toContain(secret);
+  });
+});
+
+describe("describeError", () => {
+  it("is the class name, and never the message", () => {
+    const error = new Error("401 for Bearer abc123def456 on https://x.test/a?token=zzz while printing ^XA^FDJane Q. Attendee^XZ");
+    expect(describeError(error)).toBe("Error");
+  });
+
+  it("adds a well formed error code", () => {
+    const error = Object.assign(new TypeError("getaddrinfo failed for Jane"), { code: "ENOTFOUND" });
+    expect(describeError(error)).toBe("TypeError (ENOTFOUND)");
+  });
+
+  it("ignores a code or name that is not a plain identifier", () => {
+    const error = Object.assign(new Error("x"), { code: "Jane Q. Attendee", name: "Jane Q. Attendee" });
+    expect(describeError(error)).toBe("Error");
+  });
+
+  it("does not print an arbitrary object or string", () => {
     expect(describeError({ token: "x" })).toBe("Unknown error");
+    expect(describeError("failed for Jane Q. Attendee")).toBe("Unknown error");
+    expect(describeError(null)).toBe("Unknown error");
   });
 });
 

@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { createFakeTimers } from "../services/testing/fakes";
 import { channelSettings, createUpdateController, type UpdaterEvent } from "../services";
-import { createUpdaterAdapter, type AutoUpdaterLike } from "./updaterAdapter";
+import { createUpdaterAdapter, safeVersion, type AutoUpdaterLike } from "./updaterAdapter";
 
 function fakeUpdater(check: () => Promise<unknown> = async () => null) {
   const listeners = new Map<string, (...args: never[]) => void>();
@@ -66,6 +68,20 @@ describe("createUpdaterAdapter", () => {
     adapter.subscribe((event) => events.push(event));
     emit("update-downloaded", undefined);
     expect(events).toEqual([{ kind: "downloaded", version: "" }]);
+  });
+
+  it.each([
+    ["0.2.0", "0.2.0"],
+    ["1.12.3-preview.4", "1.12.3-preview.4"],
+    ["1.0.0+build.5", "1.0.0+build.5"],
+    ["Jane Q. Attendee", ""],
+    ["1.2.3 ^XA^FDJane^XZ", ""],
+    ["1.2", ""],
+    ["", ""],
+    [undefined, ""],
+    [{}, ""],
+  ])("shows the version %j as %j", (input, expected) => {
+    expect(safeVersion(input)).toBe(expected);
   });
 
   it("checks through the updater and installs with a relaunch", async () => {
@@ -152,5 +168,63 @@ describe("install gating by the update policy", () => {
     const controller = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
     await controller.checkNow();
     expect(controller.state()).toEqual({ kind: "error" });
+  });
+});
+
+describe("pinned electron-updater 6.8.9", () => {
+  it("is pinned exactly in package.json", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../../../../package.json", import.meta.url), "utf8")) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(manifest.devDependencies["electron-updater"]).toBe("6.8.9");
+  });
+
+  it("keeps autoInstallOnAppQuit false through configure, channel changes and every updater event", async () => {
+    const fake = fakeUpdater();
+    const adapter = createUpdaterAdapter(fake.updater, () => undefined);
+    const controller = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
+    expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+
+    for (const event of ["checking-for-update", "update-available", "update-not-available"]) fake.emit(event);
+    fake.emit("update-downloaded", { version: "0.2.0" });
+    fake.emit("error", new Error("boom"));
+    await controller.setChannel("preview");
+    await controller.checkNow();
+    controller.start();
+    controller.stop();
+
+    expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+    expect(fake.updater.autoDownload).toBe(true);
+  });
+
+  it("does not install a downloaded update on its own, only when the quit path asks while idle", async () => {
+    const fake = fakeUpdater();
+    const adapter = createUpdaterAdapter(fake.updater, () => undefined);
+    const controller = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
+
+    fake.emit("update-downloaded", { version: "0.2.0" });
+    await controller.checkNow();
+    await controller.setChannel("preview");
+    controller.jobsSettled();
+    expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+
+    expect(controller.beforeQuit(false)).toBe("install");
+    expect(fake.updater.quitAndInstall).toHaveBeenCalledExactlyOnceWith(false, true);
+  });
+
+  it("does not install from the quit path while a job is in flight", () => {
+    const fake = fakeUpdater();
+    const adapter = createUpdaterAdapter(fake.updater, () => undefined);
+    const controller = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
+    fake.emit("update-downloaded", { version: "0.2.0" });
+    expect(controller.beforeQuit(true)).toBe("defer");
+    expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("is the quit path that calls it: index.ts quits through the coordinator, never through quitAndInstall directly", () => {
+    const source = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/quitAndInstall/);
+    expect(source).toMatch(/createQuitCoordinator\(/);
+    expect(source).toMatch(/autoUpdater as unknown as AutoUpdaterLike/);
   });
 });

@@ -12,6 +12,11 @@ export type Logger = (level: LogLevel, scope: string, message: string) => void;
 const MAX_LINE_LENGTH = 400;
 
 const REDACTIONS: [RegExp, string][] = [
+  // ZPL: a whole label, or any stray command. Attendee names and security codes sit inside these.
+  [/\^XA[\s\S]*?(?:\^XZ|$)/g, "[zpl]"],
+  [/\^[A-Z][A-Z0-9]\S*/g, "[zpl]"],
+  // Person fields in key/value text.
+  [/\b(name|first_?name|last_?name|full_?name|attendee|guest|child|parent|email|phone|security_?code)(["']?\s*[:=]\s*["']?)[^,;"'}\n]+/gi, "$1$2[redacted]"],
   [/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [redacted]"],
   [/\b(token|secret|password|authorization|code|serial)(["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi, "$1$2[redacted]"],
   // Query strings carry codes and tokens; keep the path.
@@ -28,10 +33,16 @@ export function redact(text: string): string {
   return out.length > MAX_LINE_LENGTH ? `${out.slice(0, MAX_LINE_LENGTH)}...` : out;
 }
 
-/** An error as one redacted line. Stack traces are dropped: they can embed argument text. */
+/**
+ * An error as one line: its class and, when it has one, its code (`ENOTFOUND`). The message and the
+ * stack are left out on purpose: they are free text that can carry whatever the failing call was
+ * handling, and a log line that never contains them cannot leak it.
+ */
 export function describeError(error: unknown): string {
-  if (error instanceof Error) return redact(`${error.name}: ${error.message}`);
-  return redact(typeof error === "string" ? error : "Unknown error");
+  if (!(error instanceof Error)) return "Unknown error";
+  const code = (error as { code?: unknown }).code;
+  const name = /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(error.name) ? error.name : "Error";
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{1,40}$/.test(code) ? `${name} (${code})` : name;
 }
 
 export type LogSink = (line: string) => void;

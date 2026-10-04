@@ -45,7 +45,11 @@ export function updateItem(snapshot: AppSnapshot, actions: TrayActions): MenuIte
     case "downloading":
       return info("Downloading an update...");
     case "ready":
-      return info(`Update ${snapshot.update.version} ready. It installs when you quit.`);
+      return info(
+        snapshot.update.version
+          ? `Update ${snapshot.update.version} ready. It installs when you quit.`
+          : "An update is ready. It installs when you quit.",
+      );
     case "error":
       return { label: "Update check failed. Try again", click: actions.checkForUpdates };
     case "idle":

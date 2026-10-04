@@ -2,7 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import { parseParentMessage } from "../../../../vendor/relay/embeddedProtocol";
 import { createFakeTimers } from "../services/testing/fakes";
-import { createRelaySupervisor, restartDelay, type BlockReason, type StartResolution } from "./supervisor";
+import {
+  createRelaySupervisor,
+  describeRelayOutput,
+  restartDelay,
+  sanitizeErrorCode,
+  sanitizeRelayStatus,
+  sanitizeTestPrintReply,
+  type BlockReason,
+  type StartResolution,
+} from "./supervisor";
 import { createForkHarness, fireTimer, pendingDelays, relayStatus } from "./testing/fakeChild";
 
 const OPTIONS = {
@@ -435,5 +444,115 @@ describe("settled", () => {
 
     last().emitMessage({ type: "stopped" });
     await vi.waitFor(() => expect(done).toHaveBeenCalled());
+  });
+});
+
+describe("sanitizeRelayStatus", () => {
+  it("keeps a well formed status as it is", () => {
+    const status = relayStatus({
+      lastJobAt: "2026-10-04T01:00:00.000Z",
+      lastHeartbeatAt: "2026-10-04T01:00:15.000Z",
+      lastError: "send_ambiguous",
+      counts: { claimed: 3, sent: 2, failed: 0, ambiguous: 1 },
+    });
+    expect(sanitizeRelayStatus(status)).toEqual(status);
+  });
+
+  it("drops fields it does not know", () => {
+    const out = sanitizeRelayStatus({ ...relayStatus(), attendeeName: "Jane Q. Attendee", zpl: "^XA^XZ", securityCode: "483920" });
+    expect(Object.keys(out ?? {}).sort()).toEqual(
+      ["cloud", "counts", "inFlight", "lastError", "lastHeartbeatAt", "lastJobAt", "printerIds", "state"].sort(),
+    );
+  });
+
+  it.each([null, undefined, "running", 5, [], {}, { state: "running" }, { state: "x", cloud: "ok" }, { state: "running", cloud: "Jane" }])(
+    "refuses %j",
+    (raw) => {
+      expect(sanitizeRelayStatus(raw)).toBeNull();
+    },
+  );
+
+  it("turns text where a count, time, code or id belongs into a safe value", () => {
+    const out = sanitizeRelayStatus({
+      ...relayStatus(),
+      counts: { claimed: "Jane Q. Attendee", sent: -1, failed: 1.5, ambiguous: { name: "Jane" } },
+      lastJobAt: "Jane Q. Attendee arrived 2026-10-04T01:00:00.000Z",
+      lastHeartbeatAt: { name: "Jane" },
+      lastError: "label for Jane Q. Attendee failed",
+      printerIds: ["printer-1", "Jane Q. Attendee", "^XA^FDJane^XZ", { name: "Jane" }, "x".repeat(200)],
+      inFlight: "yes",
+    });
+    expect(out).toEqual({
+      state: "running",
+      cloud: "ok",
+      printerIds: ["printer-1"],
+      inFlight: false,
+      counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
+      lastJobAt: null,
+      lastHeartbeatAt: null,
+      lastError: null,
+    });
+  });
+
+  it("does not share objects with the message it was given", () => {
+    const status = relayStatus({ printerIds: ["printer-1"] });
+    const out = sanitizeRelayStatus(status);
+    expect(out?.printerIds).not.toBe(status.printerIds);
+    expect(out?.counts).not.toBe(status.counts);
+  });
+});
+
+describe("sanitizeErrorCode and sanitizeTestPrintReply", () => {
+  it.each(["cloud_unreachable", "credentials_rejected", "config_unavailable", "config_invalid", "spool_locked", "invalid_options", "send_failed", "send_ambiguous", "unexpected", "bad_message"])(
+    "passes %s",
+    (code) => {
+      expect(sanitizeErrorCode(code)).toBe(code);
+    },
+  );
+
+  it.each(["Jane Q. Attendee", "^XA^XZ", "", 5, null, { code: "unexpected" }, "__proto__", "constructor"])("replaces %j with unexpected", (code) => {
+    expect(sanitizeErrorCode(code)).toBe("unexpected");
+  });
+
+  it("keeps only the fixed parts of a test print reply", () => {
+    expect(sanitizeTestPrintReply({ ok: true, transportOutcome: "sent", zpl: "^XA^XZ", name: "Jane" })).toEqual({ ok: true, transportOutcome: "sent" });
+    expect(sanitizeTestPrintReply({ ok: false, error: "busy" })).toEqual({ ok: false, error: "busy" });
+    expect(sanitizeTestPrintReply({ ok: false, error: "cloud_unreachable" })).toEqual({ ok: false, error: "cloud_unreachable" });
+  });
+
+  it("replaces free text in a test print reply", () => {
+    expect(sanitizeTestPrintReply({ ok: false, error: "lp failed for Jane Q. Attendee ^XA^XZ", transportOutcome: "Jane" })).toEqual({
+      ok: false,
+      error: "unexpected",
+    });
+    expect(sanitizeTestPrintReply({ ok: "true", error: { name: "Jane" } })).toEqual({ ok: false, error: "unexpected" });
+  });
+});
+
+describe("describeRelayOutput", () => {
+  const line = (message: string) => `2026-10-04T00:00:00.000Z [relay] info ${message}`;
+
+  it.each([
+    ['claimed job {"jobId":"j-1","printerId":"p-1"}', "claimed job"],
+    ["job sent", "job sent"],
+    ['job failed {"stage":"print"}', "job failed"],
+    ["job ambiguous", "job ambiguous"],
+    ["job 6f1c-9a will be retried: lp failed", "job will be retried"],
+    ["cloud unreachable: connect ECONNREFUSED", "cloud unreachable"],
+    ["cycle failed: boom", "cycle failed"],
+    ["unexpected failure: boom", "unexpected failure"],
+  ])("reduces %j to %j", (message, expected) => {
+    expect(describeRelayOutput(line(message))).toBe(expected);
+  });
+
+  it("withholds anything it does not recognise", () => {
+    for (const message of ["Jane Q. Attendee checked in", "^XA^FDJane Q. Attendee^FS^XZ", "security code 483920", ""]) {
+      expect(describeRelayOutput(line(message))).toBe("output withheld");
+    }
+    expect(describeRelayOutput("not even a relay line ^XA^FDJane^XZ")).toBe("output withheld");
+  });
+
+  it("drops the text after a recognised phrase", () => {
+    expect(describeRelayOutput(line("cycle failed: lp said ^XA^FDJane Q. Attendee^XZ code 483920"))).toBe("cycle failed");
   });
 });

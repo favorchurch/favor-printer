@@ -11,6 +11,7 @@ export function createFakeChild() {
     exit: [],
   };
   const stdoutListeners: ((chunk: string) => void)[] = [];
+  const stderrListeners: ((chunk: string) => void)[] = [];
   let kills = 0;
 
   const child = {
@@ -24,7 +25,7 @@ export function createFakeChild() {
       return true;
     },
     stdout: { on: (_event: "data", listener: (chunk: string) => void) => void stdoutListeners.push(listener) },
-    stderr: null,
+    stderr: { on: (_event: "data", listener: (chunk: string) => void) => void stderrListeners.push(listener) },
   } as unknown as RelayChild;
 
   return {
@@ -36,6 +37,7 @@ export function createFakeChild() {
     emitMessage: (message: unknown) => listeners.message.forEach((listener) => listener(message)),
     emitExit: (code: number | null) => listeners.exit.forEach((listener) => listener(code)),
     emitStdout: (text: string) => stdoutListeners.forEach((listener) => listener(text)),
+    emitStderr: (text: string) => stderrListeners.forEach((listener) => listener(text)),
     /** Message types posted to the child, in order. */
     types: () => messages.map((message) => (message as { type: string }).type),
   };

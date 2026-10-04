@@ -6,6 +6,7 @@
  */
 
 import { IPC_CHANNELS, isUpdateChannel, type FavorPrinterApi, type IpcChannel } from "../../shared";
+import type { AppController } from "./controller";
 
 export class InvalidPayloadError extends Error {
   constructor(channel: string) {
@@ -74,6 +75,26 @@ export function handlersFor(api: Omit<FavorPrinterApi, "onSnapshot">): IpcHandle
     [IPC_CHANNELS.migrateLegacyRelay]: () => api.migrateLegacyRelay(),
     [IPC_CHANNELS.advance]: () => api.advance(),
     [IPC_CHANNELS.quit]: () => api.quit(),
+  };
+}
+
+/** The renderer API as the controller answers it. `index.ts` and the privacy tests use this same mapping. */
+export function apiFromController(controller: AppController, quit: () => Promise<void>): Omit<FavorPrinterApi, "onSnapshot"> {
+  return {
+    getSnapshot: async () => controller.snapshot(),
+    scanPrinters: () => controller.scanPrinters(),
+    selectPrinter: (id) => controller.selectPrinter(id),
+    setUpPrinter: () => controller.setUpPrinter(),
+    openPrinterSettings: () => controller.openPrinterSettings(),
+    enroll: (code) => controller.enroll(code),
+    requestTestPrint: () => controller.requestTestPrint(),
+    confirmTestPrint: (came) => controller.confirmTestPrint(came),
+    setPaused: (paused) => controller.setPaused(paused),
+    setOpenAtLogin: (enabled) => controller.setOpenAtLogin(enabled),
+    setChannel: (channel) => controller.setChannel(channel),
+    migrateLegacyRelay: () => controller.migrateLegacyRelay(),
+    advance: () => controller.advance(),
+    quit,
   };
 }
 

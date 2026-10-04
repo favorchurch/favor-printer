@@ -3,7 +3,14 @@
 import { vi } from "vitest";
 
 import type { PrinterDevice, QueueState } from "../../../shared";
-import type { EnrollOutcome, PrinterService, ScanOutcome, SetUpOutcome, StoredCredentials } from "../../services";
+import {
+  createPowerController,
+  type EnrollOutcome,
+  type PrinterService,
+  type ScanOutcome,
+  type SetUpOutcome,
+  type StoredCredentials,
+} from "../../services";
 import { createFakeTimers } from "../../services/testing/fakes";
 import { createAppController, type ControllerDeps } from "../controller";
 import { createPrefsStore, type Prefs } from "../prefs";
@@ -49,6 +56,8 @@ export type HarnessOptions = {
   scan?: ScanOutcome;
   legacyLoaded?: boolean;
   /** How the fake launchd answers a move: `ok`, a failing step, `still_loaded` (exit 0 but the label stays), or `throws`. */
+  /** Use the real power controller against a fake blocker and clock, instead of a spy. */
+  realPower?: boolean;
   migrate?: "ok" | "bootout_failed" | "disable_failed" | "still_loaded" | "throws";
   enroll?: () => Promise<EnrollOutcome>;
   setUp?: () => Promise<SetUpOutcome>;
@@ -117,7 +126,19 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     return origFork();
   };
   const timers = createFakeTimers();
-  const power = { update: vi.fn(), dispose: vi.fn() };
+  const clock = { now: new Date("2026-10-04T01:00:00.000Z") };
+  const blocker = {
+    nextId: 1,
+    active: new Set<number>(),
+    start: vi.fn((_type: "prevent-app-suspension") => {
+      const id = blocker.nextId++;
+      blocker.active.add(id);
+      return id;
+    }),
+    stop: vi.fn((id: number) => void blocker.active.delete(id)),
+  };
+  const spyPower = { update: vi.fn(), dispose: vi.fn() };
+  const power = options.realPower ? createPowerController({ blocker, now: () => clock.now, timers: timers.timers }) : spyPower;
   const updates = { setChannel: vi.fn(async () => undefined), checkNow: vi.fn(async () => undefined) };
   const ui = {
     showSetupWindow: vi.fn(),
@@ -140,6 +161,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     createSupervisor: (hooks) =>
       createRelaySupervisor({
         fork: forks.fork,
+        log: deps.log,
         timers: timers.timers,
         tuning: { stopWaitMs: 100, inFlightCeilingMs: 300, testPrintTimeoutMs: 700, healthyAfterMs: 5_000 },
         ...hooks,
@@ -165,10 +187,12 @@ export function createControllerHarness(options: HarnessOptions = {}) {
   });
 
   return {
+    blocker,
+    clock,
     migrateMode,
     setLegacyLoaded,
     events,
-    supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, forks, timers, power, updates, ui, applyOpenAtLogin, logLines };
+    supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, forks, timers, power: spyPower, updates, ui, applyOpenAtLogin, logLines };
 }
 
 export type ControllerHarness = ReturnType<typeof createControllerHarness>;

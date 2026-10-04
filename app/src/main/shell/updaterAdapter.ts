@@ -20,11 +20,19 @@ export type AutoUpdaterLike = {
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
 };
 
+/** A release version: `1.2.3`, optionally with a prerelease or build suffix. Anything else is not shown. */
+const VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:[-+][0-9A-Za-z.-]{1,40})?$/;
+
+export function safeVersion(value: unknown): string {
+  return typeof value === "string" && VERSION.test(value) ? value : "";
+}
+
 export function createUpdaterAdapter(updater: AutoUpdaterLike, log: Logger): UpdaterAdapter {
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = false;
   updater.logger = {
     info: () => undefined,
+    // The updater's own messages are free text; only an Error's class and code are kept.
     warn: (message) => log("warn", "updater", describeError(message)),
     error: (message) => log("error", "updater", describeError(message)),
   };
@@ -39,7 +47,7 @@ export function createUpdaterAdapter(updater: AutoUpdaterLike, log: Logger): Upd
       updater.on("update-available", () => listener({ kind: "available" }));
       updater.on("update-not-available", () => listener({ kind: "not-available" }));
       updater.on("update-downloaded", ((info: { version?: unknown }) =>
-        listener({ kind: "downloaded", version: typeof info?.version === "string" ? info.version : "" })) as never);
+        listener({ kind: "downloaded", version: safeVersion(info?.version) })) as never);
       updater.on("error", ((error: unknown) => {
         log("error", "updater", `update failed: ${describeError(error)}`);
         listener({ kind: "error" });

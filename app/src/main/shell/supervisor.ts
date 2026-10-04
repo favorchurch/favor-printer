@@ -13,7 +13,7 @@
  */
 
 import type { EmbeddedStartOptions } from "../../../../vendor/relay/embeddedProtocol";
-import type { RelayStatus } from "../../../../vendor/relay/status";
+import type { RelayErrorCode, RelayState, RelayStatus, CloudState } from "../../../../vendor/relay/status";
 import { systemTimers, type Timers } from "../services";
 import type { Logger } from "./log";
 
@@ -100,8 +100,99 @@ export type RelaySupervisor = {
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
-function isRelayStatus(value: unknown): value is RelayStatus {
-  return isObject(value) && typeof value.state === "string" && typeof value.cloud === "string" && isObject(value.counts);
+/**
+ * What crosses from the relay child into the app is rebuilt field by field. The child is trusted to
+ * keep names, label content and security codes out of its messages, and this makes that a property of
+ * the app too: a field it did not expect, or text where a code or a count belongs, is dropped here,
+ * before anything is shown, stored or logged.
+ */
+const RELAY_STATES: Record<RelayState, true> = { starting: true, running: true, paused: true, stopping: true, stopped: true };
+const CLOUD_STATES: Record<CloudState, true> = { ok: true, unreachable: true, revoked: true };
+const ERROR_CODES: Record<RelayErrorCode, true> = {
+  cloud_unreachable: true,
+  credentials_rejected: true,
+  config_unavailable: true,
+  config_invalid: true,
+  spool_locked: true,
+  invalid_options: true,
+  send_failed: true,
+  send_ambiguous: true,
+  unexpected: true,
+};
+const TEST_PRINT_ERRORS = new Set<string>(["unknown_printer", "paused", "busy", "printer_address_unknown"]);
+const TRANSPORT_OUTCOMES = new Set<string>(["sent", "unsent", "ambiguous"]);
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T[\d:.]{8,16}Z$/;
+const PRINTER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+
+const has = <T extends string>(table: Record<T, true>, value: unknown): value is T =>
+  typeof value === "string" && Object.prototype.hasOwnProperty.call(table, value);
+
+const count = (value: unknown): number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+
+const isoOrNull = (value: unknown): string | null => (typeof value === "string" && ISO_TIME.test(value) ? value : null);
+
+/** A clean copy of a relay status event, or null when it is not one. */
+export function sanitizeRelayStatus(raw: unknown): RelayStatus | null {
+  if (!isObject(raw) || !has(RELAY_STATES, raw.state) || !has(CLOUD_STATES, raw.cloud)) return null;
+  const counts = isObject(raw.counts) ? raw.counts : {};
+  return {
+    state: raw.state,
+    cloud: raw.cloud,
+    printerIds: Array.isArray(raw.printerIds)
+      ? raw.printerIds.filter((id): id is string => typeof id === "string" && PRINTER_ID.test(id))
+      : [],
+    inFlight: raw.inFlight === true,
+    counts: { claimed: count(counts.claimed), sent: count(counts.sent), failed: count(counts.failed), ambiguous: count(counts.ambiguous) },
+    lastJobAt: isoOrNull(raw.lastJobAt),
+    lastHeartbeatAt: isoOrNull(raw.lastHeartbeatAt),
+    lastError: has(ERROR_CODES, raw.lastError) ? raw.lastError : null,
+  };
+}
+
+/** A relay error code, or `unexpected` for anything that is not one of the fixed set. */
+export function sanitizeErrorCode(raw: unknown): RelayErrorCode | "bad_message" {
+  if (raw === "bad_message") return raw;
+  return has(ERROR_CODES, raw) ? raw : "unexpected";
+}
+
+export function sanitizeTestPrintReply(message: Record<string, unknown>): TestPrintReply {
+  const reply: TestPrintReply = { ok: message.ok === true };
+  if (typeof message.transportOutcome === "string" && TRANSPORT_OUTCOMES.has(message.transportOutcome)) {
+    reply.transportOutcome = message.transportOutcome as TestPrintReply["transportOutcome"];
+  }
+  if (message.error !== undefined) {
+    reply.error = typeof message.error === "string" && (TEST_PRINT_ERRORS.has(message.error) || has(ERROR_CODES, message.error)) ? message.error : "unexpected";
+  }
+  return reply;
+}
+
+/**
+ * The relay's own log lines are free text (error messages from `lp`, cloud answers), so none is
+ * written as is. A line is reduced to the fixed phrase it starts with, and anything else is withheld.
+ * No job id, printer id, name, label or code survives.
+ */
+const KNOWN_RELAY_LINES: [RegExp, string][] = [
+  [/^cycle failed\b/, "cycle failed"],
+  [/^cloud unreachable\b/, "cloud unreachable"],
+  [/^unexpected failure\b/, "unexpected failure"],
+  [/^could not refresh the printer list\b/, "could not refresh the printer list"],
+  [/^cloud does not assign these printers\b/, "cloud does not assign these printers"],
+  [/^claimed job\b/, "claimed job"],
+  [/^job (sent|failed|ambiguous)\b/, "job $1"],
+  [/^job \S+ will be retried\b/, "job will be retried"],
+  [/^another sender holds this job\b/, "another sender holds a job"],
+  [/^claim no longer valid\b/, "claim no longer valid"],
+];
+
+export function describeRelayOutput(line: string): string {
+  // `<iso time> [relay] <level> <message> {json}`
+  const message = line.replace(/^\S+\s+\[relay\]\s+(?:info|warn|error)\s+/, "").trim();
+  for (const [pattern, phrase] of KNOWN_RELAY_LINES) {
+    const match = pattern.exec(message);
+    if (match) return phrase.replace("$1", match[1] ?? "");
+  }
+  return "output withheld";
 }
 
 export function createRelaySupervisor(deps: {
@@ -177,7 +268,7 @@ export function createRelaySupervisor(deps: {
 
   const pipeOutput = (stream: RelayChild["stdout"], level: "info" | "warn") => {
     stream?.on("data", (chunk) => {
-      for (const line of String(chunk).split(/\r?\n/)) if (line.trim()) log(level, "relay", line.trim());
+      for (const line of String(chunk).split(/\r?\n/)) if (line.trim()) log(level, "relay", describeRelayOutput(line.trim()));
     });
   };
 
@@ -185,9 +276,10 @@ export function createRelaySupervisor(deps: {
     if (!isObject(message)) return;
     switch (message.type) {
       case "event": {
-        if (!isRelayStatus(message.event)) return;
-        set({ phase: state.phase === "starting" ? "running" : state.phase, relay: message.event });
-        deps.onRelayStatus?.(message.event);
+        const event = sanitizeRelayStatus(message.event);
+        if (!event) return;
+        set({ phase: state.phase === "starting" ? "running" : state.phase, relay: event });
+        deps.onRelayStatus?.(event);
         return;
       }
       case "stopped":
@@ -196,9 +288,10 @@ export function createRelaySupervisor(deps: {
         releaseSettleWaiters();
         return;
       case "error":
-        if (typeof message.code === "string") {
-          log("warn", "relay", `relay reported ${message.code}`);
-          set({ lastErrorCode: message.code });
+        {
+          const code = sanitizeErrorCode(message.code);
+          log("warn", "relay", `relay reported ${code}`);
+          set({ lastErrorCode: code });
         }
         return;
       case "testPrintResult": {
@@ -206,13 +299,7 @@ export function createRelaySupervisor(deps: {
         if (index < 0) return;
         const [pending] = pendingTestPrints.splice(index, 1);
         timers.clearTimeout(pending.timer);
-        pending.resolve({
-          ok: message.ok === true,
-          ...(typeof message.transportOutcome === "string"
-            ? { transportOutcome: message.transportOutcome as TestPrintReply["transportOutcome"] }
-            : {}),
-          ...(typeof message.error === "string" ? { error: message.error } : {}),
-        });
+        pending.resolve(sanitizeTestPrintReply(message));
         return;
       }
       default:
