@@ -17,7 +17,7 @@ export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
 export const ENROLLMENT_CODE_PATTERN = /^\d{6}$/;
 
 export function isEnrollmentCode(value: unknown): value is string {
-  return typeof value === "string" && ENROLLMENT_CODE_PATTERN.test(value);
+  return typeof value === "string" && value.length === 6 && ENROLLMENT_CODE_PATTERN.test(value);
 }
 
 export function isUpdateChannel(value: unknown): value is UpdateChannel {
