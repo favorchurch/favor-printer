@@ -8,7 +8,16 @@ import { createUpdaterAdapter, safeVersion, type AutoUpdaterLike } from "./updat
 
 function fakeUpdater(check: () => Promise<unknown> = async () => null) {
   const listeners = new Map<string, (...args: never[]) => void>();
+  let channel: string | null = null;
   const updater: AutoUpdaterLike = {
+    // Like electron-updater: setting a channel turns downgrades on.
+    get channel() {
+      return channel;
+    },
+    set channel(value) {
+      channel = value ?? null;
+      this.allowDowngrade = true;
+    },
     allowPrerelease: false,
     allowDowngrade: true,
     autoDownload: false,
@@ -40,6 +49,43 @@ describe("createUpdaterAdapter", () => {
     adapter.configure(channelSettings(channel));
     expect(updater.allowPrerelease).toBe(channel === "preview");
     expect(updater.allowDowngrade).toBe(false);
+  });
+
+  describe("channel", () => {
+    it("leaves a Stable client with no custom channel", () => {
+      const { adapter, updater } = setup();
+      adapter.configure(channelSettings("stable"));
+      expect(updater.channel).toBeNull();
+      expect(updater.allowPrerelease).toBe(false);
+      expect(updater.allowDowngrade).toBe(false);
+    });
+
+    it("puts Preview on beta, and turns downgrades back off after the channel setter turned them on", () => {
+      const { adapter, updater } = setup();
+      adapter.configure(channelSettings("preview"));
+      expect(updater.channel).toBe("beta");
+      expect(updater.allowPrerelease).toBe(true);
+      expect(updater.allowDowngrade).toBe(false);
+    });
+
+    it("moves back to Stable by naming the default channel, because a set channel cannot be cleared", () => {
+      const { adapter, updater } = setup();
+      adapter.configure(channelSettings("preview"));
+      adapter.configure(channelSettings("stable"));
+      expect(updater.channel).toBe("latest");
+      expect(updater.allowPrerelease).toBe(false);
+      expect(updater.allowDowngrade).toBe(false);
+    });
+
+    it("can switch back and forth without ever allowing a downgrade", () => {
+      const { adapter, updater } = setup();
+      for (const channel of ["preview", "stable", "preview", "stable", "preview"] as const) {
+        adapter.configure(channelSettings(channel));
+        expect(updater.allowDowngrade).toBe(false);
+        expect(updater.allowPrerelease).toBe(channel === "preview");
+      }
+      expect(updater.channel).toBe("beta");
+    });
   });
 
   it("maps the updater's events", () => {

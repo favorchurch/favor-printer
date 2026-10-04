@@ -10,6 +10,8 @@ import { describeError, type Logger } from "./log";
 
 /** The slice of electron-updater's `AppUpdater` used here. */
 export type AutoUpdaterLike = {
+  /** electron-updater's `channel` setter also turns `allowDowngrade` on, and cannot be set back to null. */
+  channel?: string | null;
   allowPrerelease: boolean;
   allowDowngrade: boolean;
   autoDownload: boolean;
@@ -27,6 +29,16 @@ export function safeVersion(value: unknown): string {
   return typeof value === "string" && VERSION.test(value) ? value : "";
 }
 
+/**
+ * Preview follows `beta`. In electron-updater 6.8.9 the GitHub provider offers only stable releases
+ * and `beta` ones to a client on the `alpha` or `beta` channel, and skips every other prerelease tag.
+ * Preview releases are tagged `vX.Y.Z-beta.N` for that reason.
+ */
+export const PREVIEW_CHANNEL = "beta";
+
+/** The default channel file name (`latest.yml`). Once any channel is set it cannot be cleared, so Stable names this one. */
+export const STABLE_CHANNEL = "latest";
+
 export function createUpdaterAdapter(updater: AutoUpdaterLike, log: Logger): UpdaterAdapter {
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = false;
@@ -40,6 +52,13 @@ export function createUpdaterAdapter(updater: AutoUpdaterLike, log: Logger): Upd
   return {
     configure(settings) {
       updater.allowPrerelease = settings.allowPrerelease;
+      if (settings.allowPrerelease) {
+        updater.channel = PREVIEW_CHANNEL;
+      } else if (updater.channel != null) {
+        // Coming back from Preview. A fresh Stable client never sets a channel at all.
+        updater.channel = STABLE_CHANNEL;
+      }
+      // Last: setting a channel turns downgrades on, and an update must never be a lower version.
       updater.allowDowngrade = settings.allowDowngrade;
     },
     subscribe(listener: (event: UpdaterEvent) => void) {
