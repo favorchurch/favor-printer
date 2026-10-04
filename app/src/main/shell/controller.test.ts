@@ -11,6 +11,7 @@ import {
   type ControllerHarness,
   type HarnessOptions,
 } from "./testing/controllerHarness";
+import type { ScanOutcome } from "../services";
 import { relayStatus } from "./testing/fakeChild";
 
 const ENROLLED: HarnessOptions = {
@@ -89,6 +90,66 @@ describe("startup", () => {
     expect(h.forks.children).toHaveLength(1);
     expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_S1" }, printerAttached: false } });
     expect(h.controller.snapshot().status.headline).toBe("No printer found");
+  });
+
+  describe("a remembered queue is not trusted while the printer is attached", () => {
+    const SAVED = { openAtLogin: true, setupComplete: true, queue: "Favor_S1" };
+    const TWO: ScanOutcome = {
+      scan: { kind: "found", devices: [DEVICE, { ...DEVICE, id: "usb://other", deviceUri: "usb://other", usbSerial: "S2" }], selectedId: null, queue: "missing" },
+      queue: null,
+      listFailed: false,
+    };
+
+    it.each(["missing", "disabled"] as const)("does not start the relay when the attached printer's queue is %s", async (queue) => {
+      const h = await started({ credentials: CREDENTIALS, scan: foundPrinter(queue), prefs: SAVED });
+      expect(h.forks.children).toHaveLength(0);
+      expect(h.controller.snapshot().status.color).toBe("amber");
+      expect(h.supervisorPhase()).toBe("blocked");
+    });
+
+    it("forgets the stale queue name", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: foundPrinter("missing"), prefs: SAVED });
+      expect(h.prefsFs.saved()?.queue ?? null).toBeNull();
+    });
+
+    it("does not start while several printers are attached and none is chosen", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: TWO, prefs: SAVED });
+      expect(h.forks.children).toHaveLength(0);
+    });
+
+    it("starts once set up produces a ready queue, with that queue and not the old name", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: foundPrinter("missing"), prefs: SAVED });
+      h.state.scan = foundPrinter("ready", "Favor_New");
+      await expect(h.controller.setUpPrinter()).resolves.toEqual({ ok: true });
+      expect(h.forks.children).toHaveLength(1);
+      expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_New" } } });
+      expect(h.prefsFs.saved()).toMatchObject({ queue: "Favor_New" });
+    });
+
+    it("still uses the remembered queue when the printer is absent", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: NO_PRINTER, prefs: SAVED });
+      expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_S1" }, printerAttached: false } });
+    });
+
+    it("does not use it when the listing failed, because the printer may be attached", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: LIST_FAILED, prefs: SAVED });
+      expect(h.forks.children).toHaveLength(0);
+      // The next listing shows the printer is really absent: now the remembered queue is safe.
+      h.state.scan = NO_PRINTER;
+      await h.controller.scanPrinters();
+      expect(h.forks.children).toHaveLength(1);
+      expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_S1" } } });
+    });
+
+    it("does not let a scan that lands during quit start the relay again", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: NO_PRINTER, prefs: { openAtLogin: true, setupComplete: true } });
+      expect(h.forks.children).toHaveLength(0);
+      const shutdown = h.controller.shutdown();
+      h.state.scan = foundPrinter();
+      await h.controller.scanPrinters();
+      await shutdown;
+      expect(h.forks.children).toHaveLength(0);
+    });
   });
 
   it("does not start while the legacy agent is loaded", async () => {
@@ -535,6 +596,25 @@ describe("shutdown", () => {
     await expect(pending).resolves.toEqual({ outcome: "stopped", jobInFlight: false });
     expect(h.power.dispose).toHaveBeenCalled();
     expect([...h.timers.pending.values()].filter((timer) => timer.kind === "interval")).toHaveLength(0);
+  });
+
+  it("reports abandoned while a label is writing, and settles only when the relay stops", async () => {
+    const h = await started();
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
+    const shutdown = h.controller.shutdown();
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    await expect(shutdown).resolves.toEqual({ outcome: "abandoned", jobInFlight: true });
+    expect(h.forks.last().kills).toBe(0);
+
+    const settled = vi.fn();
+    void h.controller.settled().then(settled);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+
+    h.forks.last().emitMessage({ type: "stopped" });
+    await vi.waitFor(() => expect(settled).toHaveBeenCalled());
   });
 
   it("reports a send that was still writing", async () => {

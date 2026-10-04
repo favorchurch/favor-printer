@@ -41,6 +41,7 @@ import { createAppController } from "./shell/controller";
 import { handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
 import { acquireSingleInstance } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
+import { createQuitCoordinator } from "./shell/quit";
 import { wirePowerMonitor, type PowerMonitorLike } from "./shell/powerWiring";
 import { createPrefsStore } from "./shell/prefs";
 import { createUtilityRelayForker, relayEntryPath, type UtilityProcessModule } from "./shell/relayEnv";
@@ -192,18 +193,19 @@ async function runApp(): Promise<void> {
     log,
   });
 
-  // Quit: stop the relay (waiting for a send that is writing), then let an
-  // update install if the policy allows it, then exit.
-  let quitting = false;
-  const requestQuit = async () => {
-    if (quitting) return;
-    quitting = true;
-    updates.stop();
-    const { jobInFlight } = await controller.shutdown();
-    if (updates.beforeQuit(jobInFlight) !== "install") app.quit();
-  };
+  // Quit: stop the relay (waiting for a send that is writing, and staying open while one still is),
+  // then let an update install if the policy allows it, then exit.
+  const quit = createQuitCoordinator({
+    shutdown: () => controller.shutdown(),
+    settled: () => controller.settled(),
+    updates,
+    quit: () => app.quit(),
+    log: (message) => log("info", "main", message),
+  });
+  const requestQuit = () =>
+    quit.request().catch((error) => log("error", "main", `quit failed: ${describeError(error)}`));
   app.on("before-quit", (event) => {
-    if (quitting) return;
+    if (quit.isQuitAllowed()) return;
     event.preventDefault();
     void requestQuit();
   });

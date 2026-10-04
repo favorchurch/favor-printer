@@ -91,6 +91,11 @@ export type RelaySupervisor = {
   state(): SupervisorState;
   /** The child's last status said a send is writing. */
   jobInFlight(): boolean;
+  /**
+   * Resolves once there is no child: it posted `stopped` or exited. Immediately when none runs.
+   * Quit waits on this after `stop` gave up on a send that was still writing.
+   */
+  settled(): Promise<void>;
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
@@ -138,6 +143,7 @@ export function createRelaySupervisor(deps: {
   let launching: Promise<void> | null = null;
   let stopping: Promise<StopOutcome> | null = null;
   let settleStop: ((outcome: StopOutcome) => void) | null = null;
+  const settleWaiters: (() => void)[] = [];
   const pendingTestPrints: { printerId: string; resolve: (reply: TestPrintReply) => void; timer: unknown }[] = [];
 
   const set = (patch: Partial<SupervisorState>) => {
@@ -148,6 +154,10 @@ export function createRelaySupervisor(deps: {
   const clearRestartTimer = () => {
     if (restartTimer !== null) timers.clearTimeout(restartTimer);
     restartTimer = null;
+  };
+
+  const releaseSettleWaiters = () => {
+    for (const waiter of settleWaiters.splice(0)) waiter();
   };
 
   const failPendingTestPrints = () => {
@@ -183,6 +193,7 @@ export function createRelaySupervisor(deps: {
       case "stopped":
         deps.onStoppedMessage?.();
         settleStop?.("stopped");
+        releaseSettleWaiters();
         return;
       case "error":
         if (typeof message.code === "string") {
@@ -213,6 +224,7 @@ export function createRelaySupervisor(deps: {
     if (child !== exited) return;
     child = null;
     failPendingTestPrints();
+    releaseSettleWaiters();
     const expected = !wanted;
     set({ relay: null, lastExitCode: code });
     if (expected) {
@@ -370,6 +382,11 @@ export function createRelaySupervisor(deps: {
     state: () => state,
 
     jobInFlight: () => state.relay?.inFlight === true,
+
+    settled() {
+      if (!child) return Promise.resolve();
+      return new Promise<void>((resolve) => void settleWaiters.push(resolve));
+    },
   };
   return supervisor;
 }

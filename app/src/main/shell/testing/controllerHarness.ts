@@ -122,9 +122,21 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     log: (level, scope, message) => void logLines.push(`${level} ${scope} ${message}`),
     timers: timers.timers,
   };
-  const controller = createAppController(deps);
+  let supervisorPhase = "idle";
+  const controller = createAppController({
+    ...deps,
+    createSupervisor: (hooks) =>
+      deps.createSupervisor({
+        ...hooks,
+        onChange: (state) => {
+          supervisorPhase = state.phase;
+          hooks.onChange(state);
+        },
+      }),
+  });
 
-  return { controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, forks, timers, power, updates, ui, applyOpenAtLogin, logLines };
+  return {
+    supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, forks, timers, power, updates, ui, applyOpenAtLogin, logLines };
 }
 
 export type ControllerHarness = ReturnType<typeof createControllerHarness>;

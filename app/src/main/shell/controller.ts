@@ -105,6 +105,8 @@ export type AppController = {
   /** Stops the relay for quit. `jobInFlight` says whether a send was still writing. */
   shutdown(): Promise<{ outcome: StopOutcome; jobInFlight: boolean }>;
   jobInFlight(): boolean;
+  /** Resolves when the relay has stopped or exited. */
+  settled(): Promise<void>;
 };
 
 const ASLEEP_WARNING = "This Mac went to sleep. Labels wait until it wakes.";
@@ -118,6 +120,8 @@ export function createAppController(deps: ControllerDeps): AppController {
   let legacyLoaded = false;
   let scan: PrinterScan = { kind: "none" };
   let liveQueue: string | null = null;
+  /** The last `lpinfo` listing failed, so "no printer" may mean "could not look". */
+  let scanFailed = false;
   let printerAttached = false;
   let paused = false;
   let update: UpdateState = { kind: "idle" };
@@ -137,7 +141,16 @@ export function createAppController(deps: ControllerDeps): AppController {
   };
   const listeners = new Set<(snapshot: AppSnapshot) => void>();
 
-  const queueForRelay = () => liveQueue ?? prefs.get().queue;
+  /**
+   * The queue the relay prints to. With a printer attached, only a ready queue bound to that printer
+   * counts: a remembered name could now belong to another device. The remembered queue is used only
+   * when a scan found the printer absent, so the relay can start offline and report "no printer".
+   * A scan that failed says nothing, so it does not unlock the remembered queue either.
+   */
+  const queueForRelay = (): string | null => {
+    if (scan.kind === "found" || scanFailed) return liveQueue;
+    return liveQueue ?? prefs.get().queue;
+  };
 
   const supervisor = deps.createSupervisor({
     resolveStart: createStartResolver({
@@ -218,6 +231,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     }
   };
 
+  let shuttingDown = false;
   let revoking = false;
   async function handleRevoked() {
     // The relay can report the revocation more than once while this is still saving.
@@ -237,13 +251,17 @@ export function createAppController(deps: ControllerDeps): AppController {
   async function runScan(): Promise<void> {
     const outcome = await printers.scan(prefs.get().selectedPrinterId);
     scan = outcome.scan;
-    liveQueue = outcome.queue;
+    scanFailed = outcome.listFailed;
+    // A failed listing says nothing about the queue, so the last answer stands.
+    if (!outcome.listFailed) liveQueue = outcome.queue;
 
-    const patch: { selectedPrinterId?: string; queue?: string } = {};
+    const patch: { selectedPrinterId?: string; queue?: string | null } = {};
     if (outcome.scan.kind === "found" && outcome.scan.selectedId && outcome.scan.selectedId !== prefs.get().selectedPrinterId) {
       patch.selectedPrinterId = outcome.scan.selectedId;
     }
-    if (outcome.queue && outcome.queue !== prefs.get().queue) patch.queue = outcome.queue;
+    // The printer is here: its ready queue is the one to remember, and no ready queue means the
+    // remembered one is stale, so forget it.
+    if (outcome.scan.kind === "found" && outcome.queue !== prefs.get().queue) patch.queue = outcome.queue;
     if (Object.keys(patch).length > 0) await prefs.update(patch).catch(() => undefined);
 
     // A failed `lpinfo` says nothing about the printer, so it never flips the flag.
@@ -256,7 +274,13 @@ export function createAppController(deps: ControllerDeps): AppController {
     }
     updatePower();
     // The relay could not start without a queue; it can now.
-    if (enrolled && supervisorState.phase === "blocked" && supervisorState.blockedReason === "no_queue" && queueForRelay()) {
+    if (
+      !shuttingDown &&
+      enrolled &&
+      supervisorState.phase === "blocked" &&
+      supervisorState.blockedReason === "no_queue" &&
+      queueForRelay()
+    ) {
       await supervisor.start();
     }
     emit();
@@ -457,6 +481,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     async shutdown() {
+      shuttingDown = true;
       if (scanTimer !== null) timers.clearInterval(scanTimer);
       scanTimer = null;
       deps.power.dispose();
@@ -465,6 +490,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     jobInFlight: () => supervisor.jobInFlight(),
+
+    settled: () => supervisor.settled(),
   };
   return controller;
 }

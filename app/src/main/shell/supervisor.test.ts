@@ -374,3 +374,61 @@ describe("restart", () => {
     expect(children[1].messages[0]).toMatchObject({ type: "start" });
   });
 });
+
+describe("settled", () => {
+  it("resolves at once when no child runs", async () => {
+    const { supervisor } = setup();
+    await expect(supervisor.settled()).resolves.toBeUndefined();
+  });
+
+  it("waits for the child to report stopped", async () => {
+    const { supervisor, last } = setup();
+    await supervisor.start();
+    const done = vi.fn();
+    void supervisor.settled().then(done);
+    await Promise.resolve();
+    expect(done).not.toHaveBeenCalled();
+
+    last().emitMessage({ type: "stopped" });
+    await vi.waitFor(() => expect(done).toHaveBeenCalled());
+  });
+
+  it("waits for the child to exit", async () => {
+    const { supervisor, last } = setup();
+    await supervisor.start();
+    const done = vi.fn();
+    void supervisor.settled().then(done);
+    last().emitExit(0);
+    await vi.waitFor(() => expect(done).toHaveBeenCalled());
+  });
+
+  it("releases every waiter", async () => {
+    const { supervisor, last } = setup();
+    await supervisor.start();
+    const done = vi.fn();
+    void supervisor.settled().then(done);
+    void supervisor.settled().then(done);
+    last().emitMessage({ type: "stopped" });
+    await vi.waitFor(() => expect(done).toHaveBeenCalledTimes(2));
+  });
+
+  it("still waits after stop gave up on a send that was writing, and releases when the relay finishes", async () => {
+    const { supervisor, last, timers } = setup();
+    await supervisor.start();
+    last().emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
+    const stopping = supervisor.stop();
+    fireTimer(timers, 100);
+    fireTimer(timers, 100);
+    fireTimer(timers, 100);
+    await expect(stopping).resolves.toBe("abandoned");
+
+    const done = vi.fn();
+    void supervisor.settled().then(done);
+    await Promise.resolve();
+    expect(done).not.toHaveBeenCalled();
+    expect(last().kills).toBe(0);
+
+    last().emitMessage({ type: "stopped" });
+    await vi.waitFor(() => expect(done).toHaveBeenCalled());
+  });
+});

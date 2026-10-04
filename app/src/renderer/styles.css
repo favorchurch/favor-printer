@@ -46,6 +46,7 @@ body {
   color: var(--text);
   display: flex;
   justify-content: center;
+  align-items: center;
 }
 
 #root {
@@ -58,7 +59,8 @@ body {
   flex-direction: column;
   gap: 18px;
   padding: 40px 36px 32px;
-  min-height: 100vh;
+  /* The setup window is 640 high; a taller browser window shows the same card, centred. */
+  min-height: min(100vh, 640px);
 }
 
 .header {
