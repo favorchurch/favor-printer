@@ -28,26 +28,27 @@ jobs:
       - name: Verify vendor/relay against SOURCE.json
         run: node scripts/verify-vendor.mjs
 
-      # Hashes alone cannot tell a sync from a hand edit that also refreshed them.
-      # A sync always moves the recorded source commit, so changed relay files with
-      # an unchanged sha mean someone edited vendor/relay here.
-      - name: Require a new source sha when vendor/relay changes
+      # The RSVP repository is private, so this repository cannot fetch it to prove
+      # a sha is real. Instead, vendor/relay may only change on the branch that the
+      # RSVP relay-sync workflow pushes (with FAVOR_PRINTER_SYNC_TOKEN) in this repo.
+      # Together with the hash check above, a hand edit cannot get in.
+      - name: Accept vendor/relay changes only from the sync branch
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          base="origin/${BASE_REF}"
-          changed="$(git diff --name-only "${base}...HEAD" -- vendor/relay | grep -v '^vendor/relay/SOURCE.json$' || true)"
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD" -- vendor/relay)"
           if [ -z "${changed}" ]; then
-            echo "vendor/relay is unchanged apart from SOURCE.json."
+            echo "vendor/relay is unchanged."
             exit 0
           fi
-          old_sha="$(git show "${base}:vendor/relay/SOURCE.json" 2>/dev/null | jq -r '.sha // empty' || true)"
-          new_sha="$(jq -r '.sha // empty' vendor/relay/SOURCE.json)"
-          if [ -n "${old_sha}" ] && [ "${old_sha}" = "${new_sha}" ]; then
-            echo "::error::vendor/relay files changed but SOURCE.json sha is still ${old_sha}. Re-sync from the RSVP repository instead of editing here."
-            printf '%s\n' "${changed}"
-            exit 1
+          if [ "${HEAD_REPO}" = "${GITHUB_REPOSITORY}" ] && [ "${HEAD_REF}" = "sync/relay-from-rsvp" ]; then
+            echo "vendor/relay changed on ${HEAD_REPO}:${HEAD_REF}, the sync branch."
+            exit 0
           fi
-          echo "vendor/relay moved from '${old_sha:-none}' to ${new_sha}."
+          echo "::error::vendor/relay changed on ${HEAD_REPO}:${HEAD_REF}. Changes are accepted only from the sync/relay-from-rsvp branch of ${GITHUB_REPOSITORY}, pushed by the RSVP relay-sync workflow. Do not edit vendor/relay by hand."
+          printf '%s\n' "${changed}"
+          exit 1

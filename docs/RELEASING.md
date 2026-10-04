@@ -39,9 +39,31 @@ the preview channel in the app also receive pre-releases.
 
 ## Secrets
 
-Add these as secrets of the repository, or better of a GitHub environment named `release` with
-**required reviewers** set, so every signed build waits for a maintainer to approve the run. The
-release job already declares `environment: release`.
+### Required setup
+
+Signing and notarization secrets are only safe if nobody but a maintainer can start a run that reads
+them. All of the following is required before the first release. It is repository configuration, not
+something the workflow can enforce for itself.
+
+1. **Secrets live only in the `release` environment** (Settings > Environments > `release`). Do not add
+   them as repository or organization secrets. The release job declares `environment: release`, so the
+   secrets below resolve from that environment only.
+2. **The `release` environment has required reviewers.** This is mandatory. Every release run waits for
+   a maintainer to approve it before the job starts and any secret is available. Do not allow
+   self-review by the person who pushed the tag when more than one maintainer exists.
+3. **The `release` environment has a deployment rule that allows only `v*` tags** (Deployment branches
+   and tags > Selected branches and tags > add tag pattern `v*`). Runs from branches or other tags are
+   rejected.
+4. **A tag ruleset protects `v*`** (Settings > Rules > Rulesets > New tag ruleset, target `v*`, restrict
+   creations, updates and deletions, bypass only for maintainers). Only maintainers can create release
+   tags.
+
+On top of that the workflow itself refuses to run unless the tagged commit is on `main`. This is its
+first step, before anything reads a secret: it fetches `main` and fails with `tagged commit is not on
+main` when `git merge-base --is-ancestor "$GITHUB_SHA" origin/main` is false. A maintainer cannot
+release an unmerged branch by tagging it.
+
+### The secrets
 
 | Secret | What it is |
 | --- | --- |
@@ -65,12 +87,13 @@ Rules the workflow follows, and that edits must keep:
   Those copies and the `.p12` are deleted right after the import and again by the cleanup step.
 - Pull request builds (`ci.yml`) never receive these secrets.
 
-Rotate a secret by replacing it in GitHub. If the certificate or key may have leaked, revoke it in the
+Rotate a secret by replacing it in the `release` environment. If the certificate or key may have leaked, revoke it in the
 Apple Developer account first, then replace the secret.
 
 ## Cutting a release
 
-1. Merge everything for the release to `main`. CI must be green.
+1. Merge everything for the release to `main`. CI must be green. The release workflow only accepts a
+   tag on a commit that is on `main`.
 2. On a branch, set `version` in `package.json` and merge it. Use a version **higher than every
    version ever published**, including bad ones (see [Rollback](#rollback)).
 3. Tag the merge commit and push the tag:
@@ -80,7 +103,7 @@ Apple Developer account first, then replace the secret.
    git push origin v1.2.3
    ```
 
-4. Approve the `release` run if the environment requires it, and wait for it to finish. The run:
+4. A reviewer of the `release` environment approves the run, and you wait for it to finish. The run:
    checks the tag and `package.json`, verifies `vendor/relay`, lints, typechecks and tests, builds and
    signs both architectures, notarizes the app and the DMGs, staples them, verifies them, and uploads
    to a draft release named after the tag.
@@ -219,8 +242,8 @@ Volunteers who are stuck on the bad build and cannot update can install the fix-
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
 | `ci.yml` | pull requests, pushes to `main` (macOS) | install, lint, typecheck, test, unsigned `pnpm dist`. No secrets. |
-| `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor`, and fails when `vendor/relay` files change without a new source sha in `SOURCE.json`. |
-| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-preview.N` (macOS) | signed build, notarization, stapling, verification, **draft** release. |
+| `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` checks every file under `vendor/relay` against the hashes in `SOURCE.json`. A pull request that changes `vendor/relay/**` fails unless it comes from the `sync/relay-from-rsvp` branch of this repository, which the RSVP relay-sync workflow pushes with `FAVOR_PRINTER_SYNC_TOKEN`. So vendor changes are accepted only from the sync bot branch in this repository, and hashes are checked against `SOURCE.json`. It does **not** prove the recorded sha matches upstream: the RSVP repository is private and cannot be read from here. |
+| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-preview.N` on a commit that is on `main` (macOS, `release` environment) | signed build, notarization, stapling, verification, **draft** release. |
 | `secret-scan.yml` | every push and pull request | gitleaks over the working tree. |
 
 `release.yml` publishes through electron-builder with `releaseType: draft` (set in a generated
