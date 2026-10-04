@@ -62,16 +62,7 @@ async function main() {
       ...(body && req.method !== "GET" && req.method !== "HEAD" ? { body } : {}),
     });
 
-    let response = await handleRelayRequest(request, h.deps);
-    if (response.status === 404 && url.pathname.endsWith("/api/printing/relay/config")) {
-      response = Response.json({
-        apiVersion: 1,
-        relayId: "relay-a",
-        label: "Favor Printer E2E",
-        printerIds: ["p1"],
-        printers: [{ id: "p1", name: "p1", usbSerial: null }],
-      });
-    }
+    const response = await handleRelayRequest(request, h.deps);
 
     res.writeHead(response.status, Object.fromEntries(response.headers));
     res.end(await response.text());

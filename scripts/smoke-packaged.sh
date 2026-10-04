@@ -152,7 +152,9 @@ server.listen(0, "127.0.0.1", () => {
 });
 '
 
-node -e "$STUB_SERVER_JS" "$PORT_FILE" >"$CLOUD_LOG" 2>&1 &
+# Run JS with the packaged Electron binary in node mode: a bare `node` is not
+# reliably on PATH in non-interactive shells (nvm lazy-load).
+ELECTRON_RUN_AS_NODE=1 "$BINARY" -e "$STUB_SERVER_JS" "$PORT_FILE" >"$CLOUD_LOG" 2>&1 &
 STUB_PID=$!
 
 cleanup() {
@@ -192,7 +194,7 @@ RESULT_LINE="$(echo "$SELF_TEST_OUT" | grep '{"type":"self-test"' | head -1 || t
 check "self-test emitted json result line" test -n "$RESULT_LINE"
 
 if [ -n "$RESULT_LINE" ]; then
-  IS_OK="$(node -e 'const r = JSON.parse(process.argv[1]); console.log(r.ok === true && r.running === true && r.cloud === "ok" && r.stopOutcome === "stopped");' "$RESULT_LINE" 2>/dev/null || echo "false")"
+  IS_OK="$(ELECTRON_RUN_AS_NODE=1 "$BINARY" -e 'const r = JSON.parse(process.argv[1]); console.log(r.ok === true && r.running === true && r.cloud === "ok" && r.stopOutcome === "stopped");' "$RESULT_LINE" 2>/dev/null || echo "false")"
   check "self-test JSON shows running+cloud ok and stopped via utilityProcess" test "$IS_OK" = "true"
 else
   FAIL=$((FAIL + 1))

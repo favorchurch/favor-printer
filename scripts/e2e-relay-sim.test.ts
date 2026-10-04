@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -94,6 +95,16 @@ describe("assertSpoolEmpty", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("fails when the spool directory must exist but was never created", async () => {
+    await expect(
+      assertSpoolEmpty(path.join(spoolDir, "does-not-exist"), { mustExist: true }),
+    ).rejects.toThrow(/was never created/);
+  });
+
+  it("passes an existing empty spool directory when it must exist", async () => {
+    await expect(assertSpoolEmpty(spoolDir, { mustExist: true })).resolves.toBeUndefined();
+  });
+
   it("fails when leftover .zpl file is in spool", async () => {
     await writeFile(path.join(spoolDir, "0001.zpl"), "^XA^FDLabel^FS^XZ");
     await expect(assertSpoolEmpty(spoolDir)).rejects.toThrow(
@@ -120,6 +131,21 @@ describe("assertSpoolEmpty", () => {
     await expect(assertSpoolEmpty(spoolDir)).rejects.toThrow(
       /Spool file leak.txt contains raw ZPL after report/,
     );
+  });
+});
+
+describe("smoke-packaged.sh", () => {
+  const script = readFileSync(path.join(__dirname, "smoke-packaged.sh"), "utf8");
+
+  it("runs its JS helpers with the packaged binary, never a bare node", () => {
+    expect(script).not.toMatch(/(^|[\s$(])node\s+-e/m);
+  });
+});
+
+describe("harness-server.ts", () => {
+  it("serves relay config from the real handlers, with no fabricated fallback", () => {
+    const source = readFileSync(path.join(__dirname, "..", "e2e", "harness-server.ts"), "utf8");
+    expect(source).not.toMatch(/relay\/config/);
   });
 });
 

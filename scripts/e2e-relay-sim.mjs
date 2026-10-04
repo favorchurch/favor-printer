@@ -16,7 +16,7 @@
 
 import { fork, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -70,12 +70,15 @@ export function assertJobRecordClaim(job, expectedRelayId) {
  * Asserts that the spool directory has no leftover .zpl, .send, or .json files,
  * and no file containing ZPL payload content after reporting.
  */
-export async function assertSpoolEmpty(spoolDir) {
+export async function assertSpoolEmpty(spoolDir, { mustExist = false } = {}) {
   let names;
   try {
     names = await readdir(spoolDir);
   } catch (err) {
     if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+      if (mustExist) {
+        throw new Error(`Spool directory ${spoolDir} was never created, so an empty spool proves nothing`);
+      }
       return;
     }
     throw err;
@@ -186,9 +189,7 @@ export async function runE2eRelaySim(options = {}) {
   };
 
   try {
-    const tempDir = await mkdir(path.join(os.tmpdir(), `favor-e2e-${Date.now()}`), {
-      recursive: true,
-    }).then(() => path.join(os.tmpdir(), `favor-e2e-${Date.now()}`));
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "favor-e2e-"));
     cleanupTasks.push(() => rm(tempDir, { recursive: true, force: true }));
 
     const sinkPort = await freePort();
@@ -366,7 +367,7 @@ export async function runE2eRelaySim(options = {}) {
     await waitFor(() => relayChild.exitCode !== null, "relay child process exit");
     console.log("[e2e-relay-sim] ok: bundled relay stopped cleanly");
 
-    await assertSpoolEmpty(path.join(relaySupportDir, "spool"));
+    await assertSpoolEmpty(path.join(relaySupportDir, "spool"), { mustExist: true });
     console.log("[e2e-relay-sim] ok: spool is empty of ZPL and payload files after report");
 
     // 4. Revoked (401) run yields revoked event
