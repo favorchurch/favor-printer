@@ -12,7 +12,7 @@ Download and setup steps for volunteers: https://rsvp.favor.church/printer
 - `app/src/shared` — constants and the IPC and status types shared by main, preload and renderer.
 - `vendor/relay/` — the print relay core, synced from the RSVP repository. Do not edit it here; changes
   land in the RSVP repository and arrive through the sync pull request. `SOURCE.json` records the source
-  repository, commit and a sha256 per file, and `pnpm verify:vendor` fails when anything drifts or when
+  repo, path, commit sha and a sha256 per file, and `pnpm verify:vendor` fails when anything drifts or when
   `embedded.ts` is missing.
 - `build/` — packaging resources (`entitlements.mac.plist`).
 - `scripts/` — build, preview and vendor verification scripts.

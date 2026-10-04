@@ -18,7 +18,7 @@ export const REQUIRED_FILES = ["embedded.ts", "index.ts"];
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const SHA256 = /^[0-9a-f]{64}$/;
-const COMMIT = /^[0-9a-f]{40}$/;
+const GIT_SHA = /^[0-9a-f]{40}$/;
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -54,11 +54,14 @@ export async function verifyVendor({ dir = path.join(repoRoot, "vendor", "relay"
     return { ok: false, problems: [`${MANIFEST} ${reason}`] };
   }
 
-  if (typeof manifest?.repository !== "string" || manifest.repository === "") {
-    problems.push(`${MANIFEST} has no repository`);
+  if (typeof manifest?.repo !== "string" || manifest.repo === "") {
+    problems.push(`${MANIFEST} has no repo`);
   }
-  if (typeof manifest?.commit !== "string" || !COMMIT.test(manifest.commit)) {
-    problems.push(`${MANIFEST} commit is not a 40-character sha`);
+  if (typeof manifest?.path !== "string" || manifest.path === "") {
+    problems.push(`${MANIFEST} has no path`);
+  }
+  if (typeof manifest?.sha !== "string" || !GIT_SHA.test(manifest.sha)) {
+    problems.push(`${MANIFEST} sha is not a 40-character commit sha`);
   }
   const files = manifest?.files;
   if (typeof files !== "object" || files === null || Array.isArray(files) || Object.keys(files).length === 0) {

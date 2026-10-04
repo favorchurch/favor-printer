@@ -10,7 +10,7 @@ import { verifyVendor } from "./verify-vendor.mjs";
 type Result = { ok: boolean; problems: string[] };
 const verify = verifyVendor as (options: { dir: string }) => Promise<Result>;
 
-const COMMIT = "a".repeat(40);
+const SHA = "a".repeat(40);
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 const without = (files: Record<string, string>, name: string) =>
   Object.fromEntries(Object.entries(files).filter(([file]) => file !== name));
@@ -25,10 +25,10 @@ const FILES: Record<string, string> = {
 
 let dir: string;
 
-async function writeManifest(fields: { commit?: string; files: Record<string, string> }) {
+async function writeManifest(fields: { sha?: string; files: Record<string, string> }) {
   await writeFile(
     path.join(dir, "SOURCE.json"),
-    JSON.stringify({ repository: "favorchurch/rsvp.favor.church", commit: COMMIT, ...fields }),
+    JSON.stringify({ repo: "favorchurch/rsvp.favor.church", path: "relay", sha: SHA, ...fields }),
   );
 }
 
@@ -108,11 +108,11 @@ describe("verifyVendor", () => {
     expect(await verify({ dir })).toEqual({ ok: false, problems: ["SOURCE.json is not valid JSON"] });
   });
 
-  it("rejects a commit that is not a full sha and a hash that is not sha256", async () => {
+  it("rejects a sha that is not a full commit sha and a hash that is not sha256", async () => {
     await writeSnapshot(FILES);
-    await writeManifest({ commit: "main", files: { ...hashes(FILES), "relay.ts": "abc" } });
+    await writeManifest({ sha: "main", files: { ...hashes(FILES), "relay.ts": "abc" } });
     const result = await verify({ dir });
-    expect(result.problems).toContain("SOURCE.json commit is not a 40-character sha");
+    expect(result.problems).toContain("SOURCE.json sha is not a 40-character commit sha");
     expect(result.problems).toContain("relay.ts: recorded hash is not a sha256");
   });
 
