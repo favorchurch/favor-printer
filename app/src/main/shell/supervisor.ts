@@ -348,6 +348,8 @@ export function createRelaySupervisor(deps: {
 
     async restart() {
       await supervisor.stop();
+      // `stopped` arrives a moment before the process exits; starting before that would find the old child still there.
+      await supervisor.settled();
       await supervisor.start();
     },
 

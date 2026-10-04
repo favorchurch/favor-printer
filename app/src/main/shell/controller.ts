@@ -152,18 +152,32 @@ export function createAppController(deps: ControllerDeps): AppController {
     return liveQueue ?? prefs.get().queue;
   };
 
+  /** The queue the running relay was started with. The relay cannot change it, so a different one means a restart. */
+  let startedQueue: string | null = null;
+  /** The relay was stopped because the printer is attached with no ready queue; it starts again when one appears. */
+  let relayHeldForQueue = false;
+
+  const resolveRelayStart = createStartResolver({
+    isRevoked: () => prefs.get().revoked,
+    secrets,
+    legacy,
+    queue: queueForRelay,
+    printerAttached: () => printerAttached,
+    appSupportDir: deps.appSupportDir,
+    appVersion: deps.version,
+    osVersion: deps.osVersion,
+    apiUrl: deps.apiUrl,
+  });
+
   const supervisor = deps.createSupervisor({
-    resolveStart: createStartResolver({
-      isRevoked: () => prefs.get().revoked,
-      secrets,
-      legacy,
-      queue: queueForRelay,
-      printerAttached: () => printerAttached,
-      appSupportDir: deps.appSupportDir,
-      appVersion: deps.version,
-      osVersion: deps.osVersion,
-      apiUrl: deps.apiUrl,
-    }),
+    resolveStart: async () => {
+      const resolution = await resolveRelayStart();
+      if (resolution.ok) {
+        relayHeldForQueue = false;
+        startedQueue = resolution.options.transport.kind === "cups" ? resolution.options.transport.queue : null;
+      }
+      return resolution;
+    },
     onChange: (state) => {
       supervisorState = state;
       emit();
@@ -273,14 +287,25 @@ export function createAppController(deps: ControllerDeps): AppController {
       }
     }
     updatePower();
-    // The relay could not start without a queue; it can now.
-    if (
-      !shuttingDown &&
-      enrolled &&
-      supervisorState.phase === "blocked" &&
-      supervisorState.blockedReason === "no_queue" &&
-      queueForRelay()
-    ) {
+
+    // A successful scan says what the selected printer's queue is now. The running relay keeps the
+    // queue it started with, and that name may now belong to another printer, so make them agree.
+    if (!outcome.listFailed && outcome.scan.kind === "found" && !shuttingDown && enrolled) {
+      const active = ["starting", "running", "restarting"].includes(supervisorState.phase);
+      if (active && !liveQueue) {
+        log("warn", "printer", "the printer has no ready queue; stopping the relay until it does");
+        relayHeldForQueue = true;
+        await supervisor.stop();
+      } else if (active && liveQueue !== startedQueue) {
+        log("info", "printer", "the printer's queue changed; restarting the relay");
+        await supervisor.restart();
+      }
+    }
+
+    // The relay could not start without a queue, or was held until it had one; it can now.
+    const waitingForQueue =
+      relayHeldForQueue || (supervisorState.phase === "blocked" && supervisorState.blockedReason === "no_queue");
+    if (!shuttingDown && enrolled && waitingForQueue && queueForRelay()) {
       await supervisor.start();
     }
     emit();

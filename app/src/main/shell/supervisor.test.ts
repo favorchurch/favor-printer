@@ -368,7 +368,12 @@ describe("restart", () => {
     const { supervisor, children, last } = setup();
     await supervisor.start();
     const restarting = supervisor.restart();
-    last().emitMessage({ type: "stopped" });
+    const old = last();
+    old.emitMessage({ type: "stopped" });
+    // The process exits a moment after it says stopped; the new one must not start before that.
+    await Promise.resolve();
+    expect(children).toHaveLength(1);
+    old.emitExit(0);
     await restarting;
     expect(children).toHaveLength(2);
     expect(children[1].messages[0]).toMatchObject({ type: "start" });

@@ -224,6 +224,121 @@ describe("printer attach and detach", () => {
   });
 });
 
+describe("the running relay follows the selected printer's queue", () => {
+  const SAVED = { openAtLogin: true, setupComplete: true, queue: "Favor_S1" };
+
+  /** Starts a scan and finishes the relay's stop while it waits, as a real relay would. */
+  async function scanThroughStop(h: ControllerHarness) {
+    const scan = h.controller.scanPrinters();
+    await vi.waitFor(() => expect(h.forks.last().types()).toContain("stop"));
+    h.forks.last().emitMessage({ type: "stopped" });
+    h.forks.last().emitExit(0);
+    await scan;
+  }
+
+  describe("offline start, then the printer appears with no queue", () => {
+    async function offlineThenAttached(queue: "missing" | "disabled" = "missing") {
+      const h = await started({ credentials: CREDENTIALS, scan: NO_PRINTER, prefs: SAVED });
+      // Started offline on the remembered queue.
+      expect(h.forks.children).toHaveLength(1);
+      expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_S1" }, printerAttached: false } });
+
+      h.state.scan = foundPrinter(queue);
+      await scanThroughStop(h);
+      return h;
+    }
+
+    it.each(["missing", "disabled"] as const)("stops the relay when the queue is %s, so it cannot claim jobs", async (queue) => {
+      const h = await offlineThenAttached(queue);
+      expect(h.forks.last().types()).toEqual(["start", "printerAttached", "stop"]);
+      expect(h.forks.last().messages[1]).toEqual({ type: "printerAttached", attached: true });
+      expect(h.forks.children).toHaveLength(1);
+      expect(h.controller.snapshot().status.headline).toBe(queue === "missing" ? "Printer needs setting up" : "Printer is turned off");
+    });
+
+    it("forgets the stale queue name", async () => {
+      const h = await offlineThenAttached();
+      expect(h.prefsFs.saved()?.queue ?? null).toBeNull();
+    });
+
+    it("does not start again on later scans while there is still no queue", async () => {
+      const h = await offlineThenAttached();
+      await h.controller.scanPrinters();
+      await h.controller.scanPrinters();
+      expect(h.forks.children).toHaveLength(1);
+    });
+
+    it("starts again with the new queue once setup produces one", async () => {
+      const h = await offlineThenAttached();
+      h.state.scan = foundPrinter("ready", "Favor_New");
+      await expect(h.controller.setUpPrinter()).resolves.toEqual({ ok: true });
+
+      expect(h.forks.children).toHaveLength(2);
+      expect(h.forks.last().messages[0]).toMatchObject({
+        type: "start",
+        options: { transport: { queue: "Favor_New" }, printerAttached: true },
+      });
+      expect(h.prefsFs.saved()).toMatchObject({ queue: "Favor_New" });
+    });
+
+    it("does not touch the relay when the printer is merely absent again", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: NO_PRINTER, prefs: SAVED });
+      await h.controller.scanPrinters();
+      expect(h.forks.last().types()).toEqual(["start"]);
+    });
+  });
+
+  describe("queue replacement", () => {
+    it("restarts the relay on the new queue", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: foundPrinter("ready", "Favor_S1"), prefs: SAVED });
+      expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_S1" } } });
+
+      h.state.scan = foundPrinter("ready", "Favor_S2");
+      await scanThroughStop(h);
+      await vi.waitFor(() => expect(h.forks.children).toHaveLength(2));
+
+      expect(h.forks.children[0].types()).toContain("stop");
+      expect(h.forks.last().messages[0]).toMatchObject({ type: "start", options: { transport: { queue: "Favor_S2" } } });
+      expect(h.prefsFs.saved()).toMatchObject({ queue: "Favor_S2" });
+    });
+
+    it("restarts a relay that was started offline when the printer shows up on a different queue", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: NO_PRINTER, prefs: SAVED });
+      h.state.scan = foundPrinter("ready", "Favor_Other");
+      await scanThroughStop(h);
+      await vi.waitFor(() => expect(h.forks.children).toHaveLength(2));
+      expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_Other" }, printerAttached: true } });
+    });
+
+    it("leaves the relay alone when the queue is the same", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: foundPrinter("ready", "Favor_S1"), prefs: SAVED });
+      await h.controller.scanPrinters();
+      await h.controller.scanPrinters();
+      expect(h.forks.children).toHaveLength(1);
+      expect(h.forks.last().types()).toEqual(["start"]);
+    });
+
+    it("leaves the relay alone when the listing failed", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: foundPrinter("ready", "Favor_S1"), prefs: SAVED });
+      h.state.scan = LIST_FAILED;
+      await h.controller.scanPrinters();
+      expect(h.forks.last().types()).toEqual(["start"]);
+    });
+
+    it("does not restart the relay during quit", async () => {
+      const h = await started({ credentials: CREDENTIALS, scan: foundPrinter("ready", "Favor_S1"), prefs: SAVED });
+      const shutdown = h.controller.shutdown();
+      h.state.scan = foundPrinter("ready", "Favor_S2");
+      const scan = h.controller.scanPrinters();
+      h.forks.last().emitMessage({ type: "stopped" });
+      h.forks.last().emitExit(0);
+      await shutdown;
+      await scan;
+      expect(h.forks.children).toHaveLength(1);
+    });
+  });
+});
+
 describe("printer selection and set up", () => {
   it("selects only a printer it has seen", async () => {
     const h = await started({ scan: foundPrinter("missing") });
