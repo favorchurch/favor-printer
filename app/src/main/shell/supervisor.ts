@@ -105,6 +105,8 @@ export function createRelaySupervisor(deps: {
   onChange?: (state: SupervisorState) => void;
   /** Called for every relay status event, after `state()` already reflects it. */
   onRelayStatus?: (status: RelayStatus) => void;
+  /** Called when the child posts `{type:"stopped"}`, as opposed to simply exiting. */
+  onStoppedMessage?: () => void;
   log?: Logger;
   timers?: Timers;
   now?: () => number;
@@ -179,6 +181,7 @@ export function createRelaySupervisor(deps: {
         return;
       }
       case "stopped":
+        deps.onStoppedMessage?.();
         settleStop?.("stopped");
         return;
       case "error":

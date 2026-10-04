@@ -46,3 +46,27 @@ export function createLogger(sink: LogSink, now: () => Date = () => new Date()):
 
 /** A logger that keeps nothing. Self-test mode uses it so it leaves no trace. */
 export const silentLogger: Logger = () => undefined;
+
+export type FileOps = {
+  append(file: string, text: string): void;
+  size(file: string): number;
+  rename(from: string, to: string): void;
+  mkdir(dir: string): void;
+};
+
+/** Appends to `file`, moving it to `file.1` once it passes `maxBytes`. A failing disk never throws into the app. */
+export function createRotatingFileSink(file: string, ops: FileOps, maxBytes = 1_000_000): LogSink {
+  let prepared = false;
+  return (line) => {
+    try {
+      if (!prepared) {
+        ops.mkdir(file.slice(0, Math.max(file.lastIndexOf("/"), 0)) || ".");
+        prepared = true;
+      }
+      if (ops.size(file) > maxBytes) ops.rename(file, `${file}.1`);
+      ops.append(file, `${line}\n`);
+    } catch {
+      // Logging is best effort.
+    }
+  };
+}

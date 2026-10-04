@@ -1,0 +1,264 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --text: #1c1c1e;
+  --muted: #5f6368;
+  --line: #d9d9d4;
+  --accent: #2f4fd8;
+  --accent-text: #ffffff;
+  --green: #1f8a4c;
+  --amber: #b26a00;
+  --red: #c62828;
+  --error-bg: #fdecec;
+  --info-bg: #eef1fb;
+  --radius: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --surface: #2a2a2d;
+    --text: #f2f2f3;
+    --muted: #a3a3a8;
+    --line: #3d3d41;
+    --accent: #7b93ff;
+    --accent-text: #101114;
+    --green: #4cc77e;
+    --amber: #f0a73a;
+    --red: #ff6b6b;
+    --error-bg: #3a2020;
+    --info-bg: #23283f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  justify-content: center;
+}
+
+#root {
+  width: 100%;
+  max-width: 520px;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 40px 36px 32px;
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.step {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  outline: none;
+}
+
+.lead {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+ol.plain,
+ul.plain {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+ul.plain:empty {
+  display: none;
+}
+
+.actions {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+}
+
+.button {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.button:focus-visible,
+.code-input:focus-visible,
+.choice:focus-within {
+  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.field-label {
+  font-weight: 600;
+}
+
+.code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.code-input {
+  font: inherit;
+  font-size: 32px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.35em;
+  text-align: center;
+  padding: 14px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.code-input[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
+.note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.note.error {
+  background: var(--error-bg);
+  color: var(--text);
+  border-left: 4px solid var(--red);
+}
+
+.note.info {
+  background: var(--info-bg);
+  border-left: 4px solid var(--accent);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.pill .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.pill.green .dot {
+  background: var(--green);
+}
+
+.pill.amber .dot {
+  background: var(--amber);
+}
+
+.pill.red .dot {
+  background: var(--red);
+}
+
+.choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.choice.selected {
+  border-color: var(--accent);
+}
+
+.choice input {
+  grid-row: span 2;
+}
+
+.choice-title {
+  font-weight: 600;
+}
+
+.choice-detail {
+  color: var(--muted);
+  font-size: 13px;
+}
