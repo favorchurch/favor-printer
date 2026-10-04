@@ -22,25 +22,41 @@ explicit OK. Until then no volunteer's app can see the release.
 The version in `package.json` is the release version. The tag must be `v` plus that exact version. The
 release workflow fails when they differ.
 
-| Tag | Channel | GitHub release | Update manifest |
-| --- | --- | --- | --- |
-| `v1.2.3` | stable | normal release (pre-release flag off, set by the workflow) | `latest-mac.yml` |
-| `v1.2.3-preview.4` | preview | pre-release (flag set by the workflow on the draft) | named after the prerelease suffix by electron-builder (expected `preview-mac.yml`) |
+| Tag | Channel (UI label) | electron-updater channel | GitHub release | Update manifest |
+| --- | --- | --- | --- | --- |
+| `v1.2.3` | Stable | `latest` | normal release (pre-release flag off, set by the workflow) | `latest-mac.yml` |
+| `v1.2.3-beta.4` | Preview | `beta` | pre-release (flag set by the workflow on the draft) | `beta-mac.yml` |
 
-Only `-preview.N` is accepted as a prerelease suffix. Artifact names are fixed and space-free
-(`Favor-Printer-<version>-<arch>.dmg` and `.zip`, for `arm64` and `x64`) because GitHub rewrites spaces
-in asset names, which would break the URLs in the manifest.
+Only `X.Y.Z` and `X.Y.Z-beta.N` are accepted. Any other suffix (`-preview.N`, `-rc.1`, `-alpha.1`) is
+rejected by the release workflow. The app calls the beta channel **Preview** in its UI. The tag says
+`beta` because that is an identifier electron-updater understands: for `alpha` and `beta` channels its
+GitHub provider also offers newer stable releases, and a custom channel name such as `preview` would
+never see stable ones (checked against electron-updater 6.8.9).
 
-Check the manifest name on the first preview release and correct this table if it differs. The release
-workflow already uploads whichever `*-mac.yml` electron-builder wrote.
+The workflow writes the channel into the electron-builder config it generates (`publish.channel`: `latest`
+for stable, `beta` for a beta tag), so a stable build produces `latest-mac.yml` and a beta build
+produces `beta-mac.yml`. A build step fails the run if the release directory does not contain exactly
+that manifest. Artifact names are fixed and space-free (`Favor-Printer-<version>-<arch>.dmg` and `.zip`,
+for `arm64` and `x64`) because GitHub rewrites spaces in asset names, which would break the URLs in the
+manifest.
 
-The release workflow sets the GitHub **pre-release** flag on the draft itself: on for `-preview.N`
-tags, off for stable tags. A final step fails the run if the flag is wrong. Nobody has to set or toggle
-it by hand, and publishing keeps whatever the draft has.
+The release workflow sets the GitHub **pre-release** flag on the draft itself: on for `-beta.N` tags,
+off for stable tags. A final step fails the run if the flag is wrong. Nobody has to set or toggle it by
+hand, and publishing keeps whatever the draft has.
 
-**Stable-channel clients never see preview releases.** They only receive published, non-prerelease
-releases. **Preview-channel clients see both:** the newest published release of either kind, stable or
-preview. Volunteers choose the channel in the app.
+What each channel receives:
+
+- **Stable clients** (channel `latest`, pre-releases not allowed) only get published stable releases.
+  **They never get a beta.**
+- **Preview clients** (channel `beta`, pre-releases allowed) get the newest of the beta releases and
+  any **newer stable** release. When `1.3.0` ships after `1.3.0-beta.2`, Preview clients move to `1.3.0`.
+- **Nobody is downgraded.** Downgrades are disabled (`allowDowngrade` is off), so a client only ever
+  moves to a higher version than the one it runs. A Preview client on `1.4.0-beta.1` is not moved back
+  to stable `1.3.2`, and a volunteer who switches from Preview to Stable stays on the beta until a
+  higher stable version is published.
+
+Volunteers choose the channel in the app. See [Rollback](#rollback) for what this means when a release
+is bad.
 
 ## Secrets
 
@@ -149,15 +165,15 @@ Publishing is manual and needs an explicit OK from the person who owns the relea
    when an earlier version is installed somewhere.
 3. Get the explicit OK.
 4. Publish the draft. The pre-release flag is already right, so do not toggle it. Check that the draft
-   shows **Pre-release** for a `-preview.N` tag and does not for a stable tag, then click **Publish
+   shows **Pre-release** for a `-beta.N` tag and does not for a stable tag, then click **Publish
    release** (leave **Set as a pre-release** exactly as it is), or:
 
    ```sh
    gh release edit v1.2.3 --draft=false
-   gh release edit v1.2.4-preview.1 --draft=false
+   gh release edit v1.2.4-beta.1 --draft=false
    ```
 
-   Never add `--prerelease` or `--prerelease=false` here. Publishing a preview without its flag would
+   Never add `--prerelease` or `--prerelease=false` here. Publishing a beta without its flag would
    push it to stable-channel clients.
 
 5. Watch for the first volunteers to update. If something is wrong, go to [Rollback](#rollback).
@@ -178,14 +194,16 @@ pnpm install --frozen-lockfile
 pnpm verify:vendor && pnpm lint && pnpm typecheck && pnpm test
 pnpm build
 
-# Same release config as CI: draft-only publishing and a signed DMG.
-cat > electron-builder.release.yml <<'YAML'
+# Same release config as CI: draft-only publishing, the update channel and a signed DMG.
+channel=latest   # stable. Use "beta" when building a vX.Y.Z-beta.N tag.
+cat > electron-builder.release.yml <<YAML
 extends: ./electron-builder.yml
 publish:
   provider: github
   owner: favorchurch
   repo: favor-printer
   releaseType: draft
+  channel: ${channel}
 dmg:
   sign: true
 YAML
@@ -215,7 +233,7 @@ for dmg in release/*.dmg; do
   xcrun stapler validate "$dmg"
 done
 
-# Stapling rewrites the DMG. In the manifest (latest-mac.yml, or preview-mac.yml for a preview) replace sha512 and size of each .dmg entry:
+# Stapling rewrites the DMG. In the manifest (latest-mac.yml, or beta-mac.yml for a Preview build) replace sha512 and size of each .dmg entry:
 openssl dgst -sha512 -binary release/Favor-Printer-1.2.3-arm64.dmg | base64
 stat -f%z release/Favor-Printer-1.2.3-arm64.dmg
 ```
@@ -262,7 +280,7 @@ it back. The only fix is a **fix-forward release with a higher version than the 
    commit is also fine when it is small and obviously safe.
 4. Stop the damage while that builds. If the bad release is still the latest published one, return it
    to draft (`gh release edit vX --draft`) so volunteers who have not updated yet do not receive it. If
-   it is a preview, mark nothing else: stable volunteers never received it.
+   it is a beta, nothing else is needed for stable volunteers: they never received it.
 5. Merge the branch (or revert the bad commits) to `main` afterwards so the next release does not
    reintroduce the problem.
 
@@ -275,7 +293,7 @@ Volunteers who are stuck on the bad build and cannot update can install the fix-
 | --- | --- | --- |
 | `ci.yml` | pull requests, pushes to `main` (macOS) | install, lint, typecheck, test, unsigned `pnpm dist`. No secrets. |
 | `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` always. When `vendor/relay/**` changed, it also fetches `favorchurch/rsvp.favor.church` at the commit in `SOURCE.json` with `RSVP_READ_TOKEN`. See the guarantee below. |
-| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-preview.N` on a commit that is on `main` (macOS, `release` environment) | signed build, notarization, stapling, verification, **draft** release. |
+| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-beta.N` on a commit that is on `main` (macOS, `release` environment) | signed build, notarization, stapling, verification, **draft** release. |
 | `secret-scan.yml` | every push and pull request | gitleaks over the working tree. |
 
 ### What `vendor-check` guarantees

@@ -56,7 +56,7 @@ jobs:
           done
           # electron-builder names the manifest after the channel of the version:
           # latest-mac.yml for a stable version, <suffix>-mac.yml for a prerelease
-          # such as 1.2.3-preview.4 (preview-mac.yml).
+          # such as 1.2.3-beta.4 (beta-mac.yml).
           version="$(node -p "require('./package.json').version")"
           case "${version}" in
             *-*) suffix="${version#*-}"; manifest="release/${suffix%%.*}-mac.yml" ;;

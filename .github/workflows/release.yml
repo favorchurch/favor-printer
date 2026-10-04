@@ -5,13 +5,13 @@ name: release
 # draft by hand after an explicit OK (see docs/RELEASING.md).
 #
 #   v1.2.3            stable
-#   v1.2.3-preview.4  preview
+#   v1.2.3-beta.4     preview (the UI says Preview; electron-updater's channel is beta)
 
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
-      - "v[0-9]+.[0-9]+.[0-9]+-preview.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
 
 permissions:
   contents: write # create and fill the draft release, nothing else
@@ -60,11 +60,17 @@ jobs:
             echo "::error::Tag ${TAG} does not match package.json version ${version}."
             exit 1
           fi
-          case "${version}" in
-            *-preview.*) echo "Channel: preview (prerelease)" ;;
-            *-*) echo "::error::Unsupported prerelease suffix in ${version}. Use -preview.N."; exit 1 ;;
-            *) echo "Channel: stable" ;;
-          esac
+          # Only X.Y.Z (stable) and X.Y.Z-beta.N (Preview) are releasable.
+          if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            channel=beta
+          elif [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            channel=latest
+          else
+            echo "::error::Unsupported version ${version}. Use X.Y.Z or X.Y.Z-beta.N."
+            exit 1
+          fi
+          echo "Channel: ${channel} (manifest ${channel}-mac.yml)"
+          echo "CHANNEL=${channel}" >> "${GITHUB_ENV}"
 
       # A draft release is the only thing this workflow may create. Refuse to
       # touch a release for this tag that a maintainer has already published.
@@ -170,17 +176,20 @@ jobs:
           echo "APPLE_API_KEY=${key_path}" >> "${GITHUB_ENV}"
           (umask 077 && printf '%s' "${APPLE_API_KEY_P8_BASE64}" | base64 --decode > "${key_path}")
 
-      # Same settings as electron-builder.yml, plus draft-only publishing and a
-      # signed DMG so it can be notarized, stapled and assessed on its own.
+      # Same settings as electron-builder.yml, plus draft-only publishing, the
+      # update channel (latest for stable, beta for Preview, so the manifest is
+      # latest-mac.yml or beta-mac.yml) and a signed DMG so it can be notarized,
+      # stapled and assessed on its own.
       - name: Write the release builder config
         run: |
-          cat > electron-builder.release.yml <<'YAML'
+          cat > electron-builder.release.yml <<YAML
           extends: ./electron-builder.yml
           publish:
             provider: github
             owner: favorchurch
             repo: favor-printer
             releaseType: draft
+            channel: ${CHANNEL}
           dmg:
             sign: true
           YAML
@@ -230,8 +239,12 @@ jobs:
           const fs = require("node:fs");
           const path = require("node:path");
           const crypto = require("node:crypto");
-          const manifest = fs.readdirSync("release").find((f) => /-mac\.yml$/.test(f) && f !== "builder-effective-config.yaml");
-          if (!manifest) throw new Error("no *-mac.yml in release/");
+          const manifests = fs.readdirSync("release").filter((f) => /-mac\.yml$/.test(f));
+          const expected = `${process.env.CHANNEL}-mac.yml`;
+          if (manifests.length !== 1 || manifests[0] !== expected) {
+            throw new Error(`expected exactly ${expected} in release/, found: ${manifests.join(", ") || "none"}`);
+          }
+          const manifest = expected;
           const file = path.join("release", manifest);
           let refreshed = 0;
           const text = fs
@@ -306,7 +319,7 @@ jobs:
           pnpm exec electron-builder publish --config electron-builder.release.yml "${files[@]}"
 
       # electron-builder's draft release is never marked as a pre-release, so this
-      # workflow sets the flag itself: on for vX.Y.Z-preview.N tags, off for vX.Y.Z.
+      # workflow sets the flag itself: on for vX.Y.Z-beta.N tags, off for vX.Y.Z.
       # The release is still a draft, so no client can see it yet. Publishing later
       # keeps the flag (see docs/RELEASING.md).
       - name: Set the pre-release flag on the draft
@@ -315,7 +328,7 @@ jobs:
         run: |
           set -euo pipefail
           case "${TAG}" in
-            *-preview.*) gh release edit "${TAG}" --draft --prerelease ;;
+            *-beta.*) gh release edit "${TAG}" --draft --prerelease ;;
             *) gh release edit "${TAG}" --draft --prerelease=false ;;
           esac
 
@@ -335,7 +348,7 @@ jobs:
             exit 1
           fi
           case "${TAG}" in
-            *-preview.*) want_prerelease=true ;;
+            *-beta.*) want_prerelease=true ;;
             *) want_prerelease=false ;;
           esac
           if [ "$(printf '%s' "${release}" | jq -r '.prerelease')" != "${want_prerelease}" ]; then
