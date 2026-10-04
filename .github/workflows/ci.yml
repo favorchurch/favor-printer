@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pnpm version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # Unsigned build: no signing identity and no notarization credentials are
+      # present, so electron-builder skips both. This job never reads a secret.
+      - name: Build (unsigned)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm dist
+
+      - name: Check build output
+        run: |
+          set -euo pipefail
+          for pattern in "release/Favor-Printer-*-arm64.dmg" "release/Favor-Printer-*-x64.dmg" \
+                         "release/Favor-Printer-*-arm64.zip" "release/Favor-Printer-*-x64.zip"; do
+            # shellcheck disable=SC2086
+            ls $pattern > /dev/null || { echo "::error::No artifact matches $pattern"; exit 1; }
+          done
+          test -f release/latest-mac.yml

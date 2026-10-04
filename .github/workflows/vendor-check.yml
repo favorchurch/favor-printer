@@ -1,0 +1,53 @@
+name: vendor-check
+
+# vendor/relay is written only by the sync pull request from the RSVP repository.
+# This runs on every pull request (no path filter) so it can be a required check.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Uses only Node built-ins, so no install is needed.
+      - name: Verify vendor/relay against SOURCE.json
+        run: node scripts/verify-vendor.mjs
+
+      # Hashes alone cannot tell a sync from a hand edit that also refreshed them.
+      # A sync always moves the recorded source commit, so changed relay files with
+      # an unchanged sha mean someone edited vendor/relay here.
+      - name: Require a new source sha when vendor/relay changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          base="origin/${BASE_REF}"
+          changed="$(git diff --name-only "${base}...HEAD" -- vendor/relay | grep -v '^vendor/relay/SOURCE.json$' || true)"
+          if [ -z "${changed}" ]; then
+            echo "vendor/relay is unchanged apart from SOURCE.json."
+            exit 0
+          fi
+          old_sha="$(git show "${base}:vendor/relay/SOURCE.json" 2>/dev/null | jq -r '.sha // empty' || true)"
+          new_sha="$(jq -r '.sha // empty' vendor/relay/SOURCE.json)"
+          if [ -n "${old_sha}" ] && [ "${old_sha}" = "${new_sha}" ]; then
+            echo "::error::vendor/relay files changed but SOURCE.json sha is still ${old_sha}. Re-sync from the RSVP repository instead of editing here."
+            printf '%s\n' "${changed}"
+            exit 1
+          fi
+          echo "vendor/relay moved from '${old_sha:-none}' to ${new_sha}."
