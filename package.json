@@ -10,7 +10,7 @@
   "main": "dist/main.js",
   "packageManager": "pnpm@10.28.0",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
