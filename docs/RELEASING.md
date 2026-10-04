@@ -87,7 +87,30 @@ Rules the workflow follows, and that edits must keep:
   Those copies and the `.p12` are deleted right after the import and again by the cleanup step.
 - Pull request builds (`ci.yml`) never receive these secrets.
 
-Rotate a secret by replacing it in the `release` environment. If the certificate or key may have leaked, revoke it in the
+### `RSVP_READ_TOKEN` (vendor check, not a release secret)
+
+`vendor-check.yml` needs to read the private `favorchurch/rsvp.favor.church` repository, which the
+default `GITHUB_TOKEN` cannot do. It uses a read-only token named `RSVP_READ_TOKEN`. Unlike the signing
+secrets above, it belongs to pull request checks, so it is a **repository Actions secret** of
+`favorchurch/favor-printer` (Settings > Secrets and variables > Actions), not a `release` environment
+secret. It cannot sign or publish anything.
+
+Create it as a fine-grained personal access token (Settings > Developer settings > Personal access
+tokens > Fine-grained tokens) owned by a maintainer or, better, a machine account:
+
+- Resource owner: `favorchurch`. Repository access: **Only select repositories**, and select only
+  `favorchurch/rsvp.favor.church`.
+- Repository permissions: **Contents: Read-only**. Metadata: Read-only is added automatically.
+  Nothing else.
+- Set an expiry and put the renewal date in the calendar. When it expires, `vendor-check` fails closed
+  on every pull request that touches `vendor/relay`.
+
+The token is passed to one workflow step through the environment, sent to GitHub in an HTTP header
+rather than a URL or command line, and masked. It is not available to pull requests from forks, so
+those fail closed too when they change `vendor/relay` (see below).
+
+Rotate a secret by replacing it in the `release` environment (`RSVP_READ_TOKEN`: in the repository
+secrets). If the certificate or key may have leaked, revoke it in the
 Apple Developer account first, then replace the secret.
 
 ## Cutting a release
@@ -242,9 +265,30 @@ Volunteers who are stuck on the bad build and cannot update can install the fix-
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
 | `ci.yml` | pull requests, pushes to `main` (macOS) | install, lint, typecheck, test, unsigned `pnpm dist`. No secrets. |
-| `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` checks every file under `vendor/relay` against the hashes in `SOURCE.json`. A pull request that changes `vendor/relay/**` fails unless it comes from the `sync/relay-from-rsvp` branch of this repository, which the RSVP relay-sync workflow pushes with `FAVOR_PRINTER_SYNC_TOKEN`. So vendor changes are accepted only from the sync bot branch in this repository, and hashes are checked against `SOURCE.json`. It does **not** prove the recorded sha matches upstream: the RSVP repository is private and cannot be read from here. |
+| `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` always. When `vendor/relay/**` changed, it also fetches `favorchurch/rsvp.favor.church` at the commit in `SOURCE.json` with `RSVP_READ_TOKEN`. See the guarantee below. |
 | `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-preview.N` on a commit that is on `main` (macOS, `release` environment) | signed build, notarization, stapling, verification, **draft** release. |
 | `secret-scan.yml` | every push and pull request | gitleaks over the working tree. |
+
+### What `vendor-check` guarantees
+
+When a pull request or a push to `main` changes anything under `vendor/relay/**`, the workflow:
+
+1. fails if `RSVP_READ_TOKEN` is not available (pull requests from forks, or the secret is unset). It
+   fails closed and never skips the comparison;
+2. fetches the RSVP repository at the 40-character commit recorded in `SOURCE.json` and fails if that
+   commit does not exist there;
+3. selects the relay runtime files the way the RSVP sync script does: the files reached from
+   `embedded.ts` and `index.ts` by following relative imports (no tests, docs, simulator or
+   packaging), and fails if `vendor/relay` has a file that is not in that set or lacks one that is;
+4. requires every `vendor/relay` runtime file to equal the file at that commit **byte for byte**;
+5. recomputes the sha256 of every file from the fetched tree and requires `SOURCE.json` to list exactly
+   those hashes.
+
+So a merged `vendor/relay` is exactly the relay runtime of a commit that exists in the RSVP repository,
+and `SOURCE.json` cannot be edited to say otherwise. It does **not** prove that the commit is on the
+RSVP `main` branch or has been reviewed there. As an extra check, not the guarantee, a pull request that
+changes `vendor/relay/**` must also come from the `sync/relay-from-rsvp` branch of this repository,
+which the RSVP relay-sync workflow pushes with `FAVOR_PRINTER_SYNC_TOKEN`.
 
 `release.yml` publishes through electron-builder with `releaseType: draft` (set in a generated
 `electron-builder.release.yml` that extends `electron-builder.yml`, and backed up by `EP_DRAFT=true`).
