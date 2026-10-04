@@ -7,6 +7,8 @@ import { expectArgvOnly, fail, ok, scriptedRunner, type RecordedCall } from "./t
 const HOME = "/Users/volunteer";
 const UID = 501;
 const TARGET = "gui/501/church.favor.printrelay";
+/** What launchd answers for a label it does not know. */
+const NOT_FOUND = fail(113, 'Could not find service "church.favor.printrelay" in domain for user gui: 501');
 const PLIST = "/Users/volunteer/Library/LaunchAgents/church.favor.printrelay.plist";
 
 /** launchctl subcommand -> result. `print` defaults to "not loaded" (exit 113). */
@@ -24,7 +26,7 @@ function setup(
     // The last answer repeats, so one entry covers any number of calls.
     const answer = queue && (queue.length > 1 ? queue.shift() : queue[0]);
     if (answer) return answer;
-    return args[0] === "print" ? fail(113, "Could not find service") : ok();
+    return args[0] === "print" ? NOT_FOUND : ok();
   });
 
   const legacy = createLegacyRelay({
@@ -62,13 +64,49 @@ describe("detect", () => {
   });
 
   it("reports an agent launchd does not know, with or without the plist", async () => {
-    expect(await setup({ print: fail(113) }, true).legacy.detect()).toEqual({ plistPresent: true, loaded: false });
-    expect(await setup({ print: fail(113) }, false).legacy.detect()).toEqual({ plistPresent: false, loaded: false });
+    expect(await setup({ print: NOT_FOUND }, true).legacy.detect()).toEqual({ plistPresent: true, loaded: false });
+    expect(await setup({ print: NOT_FOUND }, false).legacy.detect()).toEqual({ plistPresent: false, loaded: false });
   });
 
   it("assumes loaded when launchctl cannot be asked", async () => {
     expect((await setup({ print: fail(null, "spawn ENOENT") }).legacy.detect()).loaded).toBe(true);
     expect((await setup({ print: fail(null, "", true) }).legacy.detect()).loaded).toBe(true);
+  });
+});
+
+describe("detect fails closed", () => {
+  it.each([
+    ["exit 113 with other text", fail(113, "something else went wrong")],
+    ["exit 113 with no text", fail(113)],
+    ["another non-zero exit", fail(1, "Could not find service")],
+    ["permission error", fail(2, "Operation not permitted")],
+    ["could not be started", fail(null, "spawn ENOENT")],
+    ["timed out", fail(113, 'Could not find service "x"', true)],
+    ["no exit code even with the not-found text", fail(null, 'Could not find service "x"')],
+  ])("treats %s as loaded", async (_name, print) => {
+    const { legacy } = setup({ print });
+    expect((await legacy.detect()).loaded).toBe(true);
+    expect(await legacy.canStartRelay()).toEqual({ allowed: false, reason: "legacy_loaded" });
+  });
+
+  it("treats only the known not-found answer as not loaded", async () => {
+    const { legacy } = setup({ print: NOT_FOUND });
+    expect((await legacy.detect()).loaded).toBe(false);
+    expect(await legacy.canStartRelay()).toEqual({ allowed: true });
+  });
+
+  it("reads the not-found text from stdout too", async () => {
+    const { legacy } = setup({ print: { code: 113, stdout: 'Could not find service "x"', stderr: "", timedOut: false } });
+    expect((await legacy.detect()).loaded).toBe(false);
+  });
+
+  it("fails closed in the check after a failed bootout when the answer is not the known one", async () => {
+    for (const print of [fail(1, "launchctl: odd failure"), fail(113, "odd"), fail(null, "spawn ENOENT")]) {
+      const { legacy, calls } = setup({ bootout: fail(5), print });
+      expect(await legacy.migrate()).toEqual({ ok: false, reason: "bootout_failed" });
+      expect(subcommands(calls)).toEqual(["bootout", "print"]);
+      expect(await legacy.canStartRelay()).toEqual({ allowed: false, reason: "bootout_failed" });
+    }
   });
 });
 
@@ -95,7 +133,7 @@ describe("migrate", () => {
   });
 
   it("counts an agent that was already gone as booted out, and still disables it", async () => {
-    const { legacy, calls } = setup({ bootout: fail(3, "No such process"), print: fail(113) });
+    const { legacy, calls } = setup({ bootout: fail(3, "No such process"), print: NOT_FOUND });
     expect(await legacy.migrate()).toEqual({ ok: true });
     expect(subcommands(calls)).toEqual(["bootout", "print", "disable"]);
   });
@@ -123,7 +161,7 @@ describe("migrate", () => {
 
 describe("canStartRelay", () => {
   it("allows the relay when the legacy agent is not loaded", async () => {
-    expect(await setup({ print: fail(113) }).legacy.canStartRelay()).toEqual({ allowed: true });
+    expect(await setup({ print: NOT_FOUND }).legacy.canStartRelay()).toEqual({ allowed: true });
   });
 
   it("refuses while the legacy agent is loaded", async () => {
@@ -141,7 +179,7 @@ describe("canStartRelay", () => {
   });
 
   it("refuses after a failed bootout even if the agent later looks gone", async () => {
-    const { legacy } = setup({ bootout: fail(5), print: [ok("state = running"), fail(113)] });
+    const { legacy } = setup({ bootout: fail(5), print: [ok("state = running"), NOT_FOUND] });
     await legacy.migrate();
     expect(await legacy.canStartRelay()).toEqual({ allowed: false, reason: "bootout_failed" });
   });
@@ -161,7 +199,7 @@ describe("canStartRelay", () => {
 
   it("allows the relay after a successful migration", async () => {
     // launchd reports the agent loaded before the migration and unknown after it.
-    const { legacy } = setup({ print: [ok("state = running"), fail(113)] });
+    const { legacy } = setup({ print: [ok("state = running"), NOT_FOUND] });
     expect((await legacy.detect()).loaded).toBe(true);
     expect(await legacy.migrate()).toEqual({ ok: true });
     expect(await legacy.canStartRelay()).toEqual({ allowed: true });

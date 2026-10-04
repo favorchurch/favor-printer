@@ -6,8 +6,9 @@
  * step reads the old plist or its relay.env, so no credential is copied: the
  * file system adapter can only ask whether the plist exists.
  *
- * Detection fails closed. If `launchctl` cannot be asked, the agent is treated
- * as loaded.
+ * Detection fails closed. Only launchd's "could not find service" answer means
+ * the agent is not loaded. Any other result, including a failure to run
+ * `launchctl` at all, is treated as loaded.
  */
 
 import path from "node:path";
@@ -37,6 +38,10 @@ export function legacyPlistPath(homeDir: string): string {
   return path.join(homeDir, "Library", "LaunchAgents", `${LEGACY_LAUNCH_AGENT_LABEL}.plist`);
 }
 
+/** `launchctl print` for a label launchd does not know: exit 113, "Could not find service ...". */
+const NOT_FOUND_EXIT = 113;
+const NOT_FOUND_TEXT = /could not find service/i;
+
 export function createLegacyRelay(deps: {
   run: CommandRunner;
   homeDir: string;
@@ -52,9 +57,11 @@ export function createLegacyRelay(deps: {
       deps.fileExists(legacyPlistPath(deps.homeDir)),
       deps.run(BINARIES.launchctl, ["print", target]),
     ]);
-    // Exit 0: loaded. A plain non-zero exit: launchd does not know the label.
-    // No exit code (could not start, timed out): unknown, so assume loaded.
-    return { plistPresent, loaded: print.code === null || print.code === 0 };
+    // Only the known not-found answer is "not loaded". Exit 0 is loaded, and any
+    // other result (other exit code, no exit code, timeout) is unknown: assume loaded.
+    const notFound =
+      print.code === NOT_FOUND_EXIT && !print.timedOut && NOT_FOUND_TEXT.test(`${print.stderr}\n${print.stdout}`);
+    return { plistPresent, loaded: !notFound };
   };
 
   return {

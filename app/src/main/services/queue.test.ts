@@ -128,6 +128,32 @@ describe("isSameDevice", () => {
     expect(isSameDevice(URI_A, "usb://Zebra%20Technologies/ZTC%20ZD421-203dpi%20ZPL")).toBe(false);
   });
 
+  it("does not match equal serials across a Zebra and a non-Zebra URI", () => {
+    const zebra = "usb://Zebra%20Technologies/ZTC%20ZD421-203dpi%20ZPL?serial=SN12345";
+    const other = "usb://DYMO/LabelWriter%20450?serial=SN12345";
+    expect(isSameDevice(zebra, other)).toBe(false);
+    expect(isSameDevice(other, zebra)).toBe(false);
+  });
+
+  it("does not bind a non-Zebra queue that has the Zebra's serial", () => {
+    const zebra = device({ deviceUri: "usb://Zebra%20Technologies/ZTC%20ZD421?serial=SN12345", usbSerial: "SN12345" });
+    const found = findQueue(
+      zebra,
+      [{ queue: "Label_Printer", deviceUri: "usb://DYMO/LabelWriter%20450?serial=SN12345" }],
+      new Map([["Label_Printer", true]]),
+    );
+    expect(found).toEqual({ state: "missing", queue: null });
+  });
+
+  it("matches the same make in any letter case, and any two Zebra spellings", () => {
+    expect(isSameDevice("usb://ACME/Model%20A?serial=S1", "usb://acme/Model%20B?serial=S1")).toBe(true);
+    expect(isSameDevice("usb://Zebra/ZD620?serial=S1", "usb://Zebra%20Technologies/ZTC%20ZD620?serial=S1")).toBe(true);
+  });
+
+  it("does not match different makes that are both unlike Zebra", () => {
+    expect(isSameDevice("usb://HP/Laser?serial=S1", "usb://DYMO/Label?serial=S1")).toBe(false);
+  });
+
   it("does not match a non-USB URI", () => {
     expect(isSameDevice(URI_A, "ipp://printer.local/ipp/print")).toBe(false);
   });
@@ -165,8 +191,26 @@ describe("findQueue (reuse vs create)", () => {
     expect(found).toEqual({ state: "ready", queue: "New" });
   });
 
-  it("treats a queue lpstat -p did not list as enabled", () => {
+  it("never reports ready for a queue whose enabled state is unknown", () => {
+    // lpstat -p did not list the queue, so nothing says it is enabled.
     const found = findQueue(device(), [{ queue: "My_Zebra", deviceUri: URI_A }], new Map());
-    expect(found.state).toBe("ready");
+    expect(found).toEqual({ state: "disabled", queue: "My_Zebra" });
+    expect(found.state).not.toBe("ready");
+  });
+
+  it("does not let another queue's enabled state stand in for an unlisted one", () => {
+    const found = findQueue(
+      device(),
+      [{ queue: "My_Zebra", deviceUri: URI_A }],
+      new Map([["Some_Other_Queue", true]]),
+    );
+    expect(found.state).toBe("disabled");
+  });
+
+  it("is ready only when lpstat -p said enabled", () => {
+    const devices = [{ queue: "My_Zebra", deviceUri: URI_A }];
+    expect(findQueue(device(), devices, new Map([["My_Zebra", true]])).state).toBe("ready");
+    expect(findQueue(device(), devices, new Map([["My_Zebra", false]])).state).toBe("disabled");
+    expect(findQueue(device(), devices, new Map()).state).toBe("disabled");
   });
 });

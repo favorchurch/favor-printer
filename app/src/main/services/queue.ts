@@ -6,7 +6,7 @@
 
 import { validateCupsQueue } from "../../../../vendor/relay/cups";
 import type { PrinterDevice, QueueState } from "../../shared";
-import { parseUsbUri } from "./lpinfo";
+import { isZebraMake, parseUsbUri, type UsbUri } from "./lpinfo";
 
 export type QueueDevice = { queue: string; deviceUri: string };
 
@@ -59,17 +59,26 @@ export function parseLpstatPrinters(stdout: string): Map<string, boolean> {
   return queues;
 }
 
+/** Serials are only unique per manufacturer, so a serial never matches across makes. Any two Zebra spellings count as one make. */
+function sameMake(a: UsbUri, b: UsbUri): boolean {
+  return a.make.toLowerCase() === b.make.toLowerCase() || (isZebraMake(a.make) && isZebraMake(b.make));
+}
+
 /** True when two device URIs name the same physical printer. */
 export function isSameDevice(a: string, b: string): boolean {
   if (a === b) return true;
   const left = parseUsbUri(a);
   const right = parseUsbUri(b);
-  if (!left || !right) return false;
+  if (!left || !right || !sameMake(left, right)) return false;
   if (left.serial && right.serial) return left.serial === right.serial;
-  return !left.serial && !right.serial && left.make === right.make && left.model === right.model;
+  return !left.serial && !right.serial && left.model === right.model;
 }
 
-/** An enabled queue wins over a disabled one when several point at the device. */
+/**
+ * An enabled queue wins over a disabled one when several point at the device.
+ * Only a queue `lpstat -p` reported as enabled is ready: a queue it did not list
+ * has an unknown state, which counts as unavailable ("disabled"), never ready.
+ */
 export function findQueue(
   device: PrinterDevice,
   devices: readonly QueueDevice[],
@@ -77,7 +86,7 @@ export function findQueue(
 ): QueueLookup {
   const bound = devices.filter((candidate) => isSameDevice(candidate.deviceUri, device.deviceUri));
   if (bound.length === 0) return { state: "missing", queue: null };
-  const ready = bound.find((candidate) => enabled.get(candidate.queue) !== false);
+  const ready = bound.find((candidate) => enabled.get(candidate.queue) === true);
   if (ready) return { state: "ready", queue: ready.queue };
   return { state: "disabled", queue: bound[0].queue };
 }

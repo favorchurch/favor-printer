@@ -14,11 +14,28 @@ export const ZEBRA_PPD = "drv:///sample.drv/zebra.ppd";
 
 const LPINFO_TIMEOUT_MS = 30_000;
 
+/** `lpstat` could not be read, so the state of the queues is unknown. */
+export class QueueLookupError extends Error {
+  constructor(detail: string) {
+    super(`Could not read the CUPS queues: ${detail}`);
+    this.name = "QueueLookupError";
+  }
+}
+
+/** The text `lpstat` prints, with its exit code checked. With no queues at all it exits 1 and says so; that is an empty list. */
+function lpstatOutput(result: CommandResult): string {
+  if (result.code === 0) return result.stdout;
+  if (result.code !== null && !result.timedOut && /no destinations added/i.test(`${result.stderr}\n${result.stdout}`)) {
+    return "";
+  }
+  throw new QueueLookupError(result.timedOut ? "lpstat timed out" : `lpstat exited ${result.code ?? "without a code"}`);
+}
+
 export type ScanOutcome = {
   scan: PrinterScan;
   /** The queue bound to the selected printer, when there is one. */
   queue: string | null;
-  /** `lpinfo` itself failed, so "none" may mean "could not look". */
+  /** `lpinfo` or `lpstat` failed, so the result may mean "could not look". The queue is then never "ready". */
   listFailed: boolean;
 };
 
@@ -40,13 +57,13 @@ export function classifyLpadminFailure(result: CommandResult): "permission" | "f
 export function createPrinterService(deps: { run: CommandRunner }): PrinterService {
   const { run } = deps;
 
-  /** `lpstat` exits 1 with "No destinations added." when no queue exists, so the output is read whatever the code. */
+  /** Throws QueueLookupError when `lpstat` fails. */
   async function lookupQueue(device: PrinterDevice): Promise<QueueLookup> {
     const [devices, printers] = await Promise.all([
       run(BINARIES.lpstat, ["-v"]),
       run(BINARIES.lpstat, ["-p"]),
     ]);
-    return findQueue(device, parseLpstatDevices(devices.stdout), parseLpstatPrinters(printers.stdout));
+    return findQueue(device, parseLpstatDevices(lpstatOutput(devices)), parseLpstatPrinters(lpstatOutput(printers)));
   }
 
   return {
@@ -66,16 +83,33 @@ export function createPrinterService(deps: { run: CommandRunner }): PrinterServi
           listFailed: false,
         };
       }
-      const found = await lookupQueue(selected);
-      return {
-        scan: { kind: "found", devices, selectedId: selected.id, queue: found.state },
-        queue: found.queue,
-        listFailed: false,
-      };
+      try {
+        const found = await lookupQueue(selected);
+        return {
+          scan: { kind: "found", devices, selectedId: selected.id, queue: found.state },
+          queue: found.queue,
+          listFailed: false,
+        };
+      } catch (error) {
+        if (!(error instanceof QueueLookupError)) throw error;
+        // Unknown is unavailable: the printer is seen, but its queue is never reported ready.
+        return {
+          scan: { kind: "found", devices, selectedId: selected.id, queue: "disabled" },
+          queue: null,
+          listFailed: true,
+        };
+      }
     },
 
     async setUp(device) {
-      const existing = await lookupQueue(device);
+      let existing: QueueLookup;
+      try {
+        existing = await lookupQueue(device);
+      } catch (error) {
+        if (!(error instanceof QueueLookupError)) throw error;
+        // Without knowing what exists, creating a queue could duplicate one.
+        return { ok: false, reason: "failed", queue: null };
+      }
       if (existing.state === "ready") return { ok: true, queue: existing.queue };
 
       // A disabled queue for this device is switched back on. Anything else gets a new queue.

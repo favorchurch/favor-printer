@@ -126,6 +126,61 @@ describe("scan", () => {
   });
 });
 
+describe("lpstat failures are never ready", () => {
+  const listed = { lpinfo: lpinfoWith(URI_A) };
+  const queueLines = {
+    devices: ok(`device for My_Zebra: ${URI_A}`),
+    printers: ok("printer My_Zebra is idle.  enabled since Sat 04 Oct 2026 10:00:00 PHT"),
+  };
+
+  it.each([
+    ["lpstat -v exits non-zero", { ...listed, ...queueLines, devices: fail(1, "lpstat: Bad file descriptor") }],
+    ["lpstat -p exits non-zero", { ...listed, ...queueLines, printers: fail(1, "lpstat: Bad file descriptor") }],
+    ["lpstat -v cannot start", { ...listed, ...queueLines, devices: fail(null, "spawn ENOENT") }],
+    ["lpstat -p times out", { ...listed, ...queueLines, printers: fail(null, "", true) }],
+    ["lpstat exits non-zero but still prints queue lines", { ...listed, ...queueLines, printers: { ...queueLines.printers, code: 1 } }],
+  ])("scan: %s", async (_name, responses) => {
+    const { run } = cups(responses);
+    const outcome = await createPrinterService({ run }).scan(null);
+    expect(outcome.listFailed).toBe(true);
+    expect(outcome.queue).toBeNull();
+    expect(outcome.scan).toMatchObject({ kind: "found", selectedId: URI_A });
+    if (outcome.scan.kind !== "found") throw new Error("expected found");
+    expect(outcome.scan.queue).not.toBe("ready");
+  });
+
+  it("scan: a queue missing from lpstat -p is not ready", async () => {
+    const { run } = cups({ ...listed, devices: queueLines.devices, printers: ok("printer Another is idle.  enabled since Sat 04 Oct 2026 10:00:00 PHT") });
+    const outcome = await createPrinterService({ run }).scan(null);
+    expect(outcome.listFailed).toBe(false);
+    if (outcome.scan.kind !== "found") throw new Error("expected found");
+    expect(outcome.scan.queue).not.toBe("ready");
+  });
+
+  it("scan: the no-destinations message is an empty list, not a failure", async () => {
+    const { run } = cups(listed);
+    const outcome = await createPrinterService({ run }).scan(null);
+    expect(outcome.listFailed).toBe(false);
+    expect(outcome.scan).toMatchObject({ queue: "missing" });
+  });
+
+  it("setUp: reports failure instead of guessing, and runs no lpadmin", async () => {
+    const { run, calls } = cups({ ...queueLines, devices: fail(1, "lpstat: Bad file descriptor") });
+    expect(await createPrinterService({ run }).setUp(DEVICE_A)).toEqual({ ok: false, reason: "failed", queue: null });
+    expect(calls.some((call) => call.file === BINARIES.lpadmin)).toBe(false);
+  });
+
+  it("setUp: a queue missing from lpstat -p is not reused as ready", async () => {
+    const { run, calls } = cups({ devices: queueLines.devices, printers: ok("printer Another is idle.  enabled since Sat 04 Oct 2026 10:00:00 PHT") });
+    const outcome = await createPrinterService({ run }).setUp(DEVICE_A);
+    expect(outcome).toEqual({ ok: true, queue: "My_Zebra" });
+    // It was switched on, not assumed ready.
+    expect(calls.filter((call) => call.file === BINARIES.lpadmin)).toEqual([
+      { file: BINARIES.lpadmin, args: ["-p", "My_Zebra", "-E"] },
+    ]);
+  });
+});
+
 describe("setUp", () => {
   it("reuses an enabled queue bound to the device and runs no lpadmin", async () => {
     const { run, calls } = cups({
