@@ -1,0 +1,5 @@
+# Packages whose install scripts may run. Everything else stays blocked.
+# esbuild verifies its platform binary. Electron has no install script: it
+# downloads its binary on first run, and electron-builder downloads its own copy.
+onlyBuiltDependencies:
+  - esbuild

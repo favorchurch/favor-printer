@@ -2,7 +2,10 @@ node_modules/
 dist/
 out/
 release/
+coverage/
+*.tsbuildinfo
 *.p12
 *.p8
 .env*
 .DS_Store
+graft/
