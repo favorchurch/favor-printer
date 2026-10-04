@@ -48,6 +48,8 @@ export type HarnessOptions = {
   credentials?: StoredCredentials | null;
   scan?: ScanOutcome;
   legacyLoaded?: boolean;
+  /** How the fake launchd answers a move: `ok`, a failing step, `still_loaded` (exit 0 but the label stays), or `throws`. */
+  migrate?: "ok" | "bootout_failed" | "disable_failed" | "still_loaded" | "throws";
   enroll?: () => Promise<EnrollOutcome>;
   setUp?: () => Promise<SetUpOutcome>;
 };
@@ -67,13 +69,35 @@ export function createControllerHarness(options: HarnessOptions = {}) {
   };
 
   let legacyLoaded = options.legacyLoaded ?? false;
+  const migrateMode = { current: options.migrate ?? "ok" };
+  let legacyFailure: "bootout_failed" | "disable_failed" | null = null;
+  const events: string[] = [];
+  /** Mirrors services/legacyRelay.ts: a failed move blocks the relay until a move succeeds. */
   const legacy = {
-    detect: vi.fn(async () => ({ plistPresent: legacyLoaded, loaded: legacyLoaded })),
+    detect: vi.fn(async () => {
+      events.push("detect");
+      return { plistPresent: legacyLoaded, loaded: legacyLoaded };
+    }),
     migrate: vi.fn(async () => {
-      legacyLoaded = false;
+      events.push("migrate");
+      const mode = migrateMode.current;
+      if (mode === "throws") throw new Error("launchctl exploded");
+      if (mode === "bootout_failed" || mode === "disable_failed") {
+        legacyFailure = mode;
+        return { ok: false, reason: mode } as const;
+      }
+      legacyFailure = null;
+      if (mode === "ok") legacyLoaded = false;
       return { ok: true } as const;
     }),
-    canStartRelay: vi.fn(async () => (legacyLoaded ? ({ allowed: false, reason: "legacy_loaded" } as const) : ({ allowed: true } as const))),
+    canStartRelay: vi.fn(async () => {
+      events.push("canStart");
+      if (legacyFailure) return { allowed: false, reason: legacyFailure } as const;
+      return legacyLoaded ? ({ allowed: false, reason: "legacy_loaded" } as const) : ({ allowed: true } as const);
+    }),
+  };
+  const setLegacyLoaded = (value: boolean) => {
+    legacyLoaded = value;
   };
 
   const state = { scan: options.scan ?? NO_PRINTER };
@@ -87,6 +111,11 @@ export function createControllerHarness(options: HarnessOptions = {}) {
   );
 
   const forks = createForkHarness();
+  const origFork = forks.fork;
+  forks.fork = () => {
+    events.push("fork");
+    return origFork();
+  };
   const timers = createFakeTimers();
   const power = { update: vi.fn(), dispose: vi.fn() };
   const updates = { setChannel: vi.fn(async () => undefined), checkNow: vi.fn(async () => undefined) };
@@ -136,6 +165,9 @@ export function createControllerHarness(options: HarnessOptions = {}) {
   });
 
   return {
+    migrateMode,
+    setLegacyLoaded,
+    events,
     supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, forks, timers, power, updates, ui, applyOpenAtLogin, logLines };
 }
 

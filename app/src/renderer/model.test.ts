@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { ENROLLMENT_CODE_PATTERN } from "../shared";
 import type { AppSnapshot, PrinterScan } from "../shared";
+import { LEGACY_FAILED_DETAIL } from "../main/shell/controller";
+import { LEGACY_FAILED_COPY } from "./screens";
 import { snapshotFor } from "../main/shell/testing/snapshot";
 import {
   cleanCodeInput,
@@ -65,6 +67,35 @@ describe("pickScreen", () => {
     });
   });
 
+  describe("legacy relay", () => {
+    const legacy = { legacyRelayLoaded: true };
+
+    it("offers the move at the welcome step", () => {
+      expect(pick({ ...legacy, setupStep: "welcome" })).toBe("legacy");
+    });
+
+    it("offers the move outside setup too", () => {
+      expect(pick({ ...legacy, setupStep: null })).toBe("legacy");
+    });
+
+    it("asks for confirmation only after the volunteer chose to move", () => {
+      expect(pick({ ...legacy, setupStep: "welcome" }, { confirmingMigration: true })).toBe("legacy-confirm");
+      expect(pick({ ...legacy, setupStep: "welcome" }, { confirmingMigration: false })).toBe("legacy");
+    });
+
+    it("stays on the offer, with the error, after a failed move", () => {
+      expect(pick({ ...legacy, setupStep: "welcome" }, { migrateError: true })).toBe("legacy");
+    });
+
+    it("comes before the revoked screen, because two relays must not run", () => {
+      expect(pick({ ...legacy, setupStep: null, status: { color: "red", headline: "x", detail: null } })).toBe("legacy");
+    });
+
+    it("is gone once the old relay is, and the confirmation flag alone shows nothing", () => {
+      expect(pick({ legacyRelayLoaded: false, setupStep: "welcome" }, { confirmingMigration: true })).toBe("welcome");
+    });
+  });
+
   describe("outside setup", () => {
     it("shows the revoked screen in the red state", () => {
       expect(pick({ setupStep: null, status: { color: "red", headline: "x", detail: null } })).toBe("revoked");
@@ -117,5 +148,11 @@ describe("copy", () => {
 
   it("has clear text for every test print failure", () => {
     expect(Object.keys(TEST_PRINT_ERROR_COPY).sort()).toEqual(["busy", "failed", "no_printer", "paused"]);
+  });
+});
+
+describe("legacy failure copy", () => {
+  it("is the same text in the window and under the tray status", () => {
+    expect(LEGACY_FAILED_COPY).toBe(LEGACY_FAILED_DETAIL);
   });
 });

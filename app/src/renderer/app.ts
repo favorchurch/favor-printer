@@ -43,7 +43,7 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   const applySnapshot = (next: AppSnapshot) => {
     // A new step starts clean: an old error does not follow the volunteer forward.
     if (next.setupStep !== current.setupStep) {
-      local = { ...local, codeError: null, setUpRefused: false, testPrint: { kind: "idle" }, migrateError: false };
+      local = { ...local, codeError: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false };
     }
     current = next;
     render();
@@ -86,10 +86,13 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
         if (cameOut) applySnapshot(await api.advance());
         else patch({ testPrint: { kind: "no-label" } });
       }),
+    askMigrateLegacy: () => patch({ confirmingMigration: true }),
+    cancelMigrateLegacy: () => patch({ confirmingMigration: false }),
     migrateLegacy: () =>
       void busy(async () => {
-        const result = await api.migrateLegacyRelay();
-        local = { ...local, migrateError: !result.ok };
+        // Only reachable from the confirmation screen.
+        const result = await api.migrateLegacyRelay().catch(() => ({ ok: false }) as const);
+        local = { ...local, confirmingMigration: false, migrateError: !result.ok };
         applySnapshot(await api.getSnapshot());
       }),
     closeWindow: options.closeWindow ?? (() => window.close()),

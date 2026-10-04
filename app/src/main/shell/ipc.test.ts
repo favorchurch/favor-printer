@@ -150,6 +150,32 @@ describe("payload validation", () => {
   });
 });
 
+describe("migrateLegacyRelay", () => {
+  it.each([
+    [{ ok: true }],
+    [{ ok: false, reason: "bootout_failed" }],
+    [{ ok: false, reason: "disable_failed" }],
+  ] as const)("hands the renderer the outcome unchanged: %j", async (result) => {
+    const { invoke, api } = setup();
+    api.migrateLegacyRelay.mockResolvedValueOnce(result as never);
+    await expect(invoke(IPC_CHANNELS.migrateLegacyRelay)).resolves.toEqual(result);
+  });
+
+  it("takes no arguments, so a renderer cannot pass in a confirmation of its own", async () => {
+    const { invoke, api } = setup();
+    for (const args of [[true], ["confirmed"], [{ confirmed: true }]]) {
+      await expect(invoke(IPC_CHANNELS.migrateLegacyRelay, ...args)).rejects.toBeInstanceOf(InvalidPayloadError);
+    }
+    expect(api.migrateLegacyRelay).not.toHaveBeenCalled();
+  });
+
+  it("is refused for an untrusted sender before it can turn anything off", async () => {
+    const { invoke, api } = setup(false);
+    await expect(invoke(IPC_CHANNELS.migrateLegacyRelay)).rejects.toBeInstanceOf(InvalidPayloadError);
+    expect(api.migrateLegacyRelay).not.toHaveBeenCalled();
+  });
+});
+
 describe("sender check", () => {
   it("refuses every channel from an untrusted sender, before validating or running anything", async () => {
     const { invoke, api, onRejected } = setup(false);

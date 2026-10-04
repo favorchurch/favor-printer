@@ -12,6 +12,7 @@ import {
   type HarnessOptions,
 } from "./testing/controllerHarness";
 import type { ScanOutcome } from "../services";
+import { LEGACY_FAILED_DETAIL } from "./controller";
 import { relayStatus } from "./testing/fakeChild";
 
 const ENROLLED: HarnessOptions = {
@@ -172,6 +173,155 @@ describe("startup", () => {
     const snapshot = h.controller.snapshot();
     expect(snapshot.status.color).toBe("red");
     expect(snapshot.enrolled).toBe(false);
+  });
+});
+
+describe("legacy relay migration", () => {
+  const LEGACY: HarnessOptions = { ...ENROLLED, legacyLoaded: true };
+
+  it("offers the move but runs nothing by itself", async () => {
+    const h = await started(LEGACY);
+    await h.controller.refresh();
+    await h.controller.scanPrinters();
+
+    expect(h.legacy.migrate).not.toHaveBeenCalled();
+    expect(h.forks.children).toHaveLength(0);
+    const snapshot = h.controller.snapshot();
+    expect(snapshot.legacyRelayLoaded).toBe(true);
+    expect(snapshot.status).toMatchObject({
+      color: "amber",
+      headline: "The old print relay is still running",
+      detail: "Move to Favor Printer to start printing.",
+    });
+  });
+
+  it("holds setup at the welcome step until the old relay is moved", async () => {
+    const h = createControllerHarness({ scan: foundPrinter(), legacyLoaded: true });
+    await h.controller.initialize();
+    expect((await h.controller.advance()).setupStep).toBe("welcome");
+    expect((await h.controller.advance()).setupStep).toBe("welcome");
+
+    await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: true });
+    expect((await h.controller.advance()).setupStep).toBe("printer");
+  });
+
+  describe("on success", () => {
+    it("checks that the label is gone before the relay starts", async () => {
+      const h = await started(LEGACY);
+      const before = h.events.length;
+      await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: true });
+
+      // launchd is asked to move it, then asked again whether it is gone, and only then does the relay start.
+      expect(h.events.slice(before)).toEqual(["migrate", "detect", "canStart", "fork"]);
+      expect(h.forks.children).toHaveLength(1);
+      expect(h.controller.snapshot().legacyRelayLoaded).toBe(false);
+      expect(h.controller.snapshot().status.headline).not.toBe("The old print relay is still running");
+    });
+
+    it("does not start a relay for a laptop that is not enrolled yet", async () => {
+      const h = createControllerHarness({ scan: foundPrinter(), legacyLoaded: true });
+      await h.controller.initialize();
+      await h.controller.migrateLegacyRelay();
+      expect(h.forks.children).toHaveLength(0);
+      expect(h.controller.snapshot().legacyRelayLoaded).toBe(false);
+    });
+
+    it("does not start a relay for a revoked laptop", async () => {
+      const h = await started({ ...LEGACY, prefs: { openAtLogin: true, setupComplete: true, revoked: true } });
+      await h.controller.migrateLegacyRelay();
+      expect(h.forks.children).toHaveLength(0);
+    });
+
+    it("runs nothing when there is no old relay to move", async () => {
+      const h = await started();
+      await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: true });
+      expect(h.legacy.migrate).not.toHaveBeenCalled();
+    });
+
+    it("answers a double click with one move", async () => {
+      const h = await started(LEGACY);
+      const first = h.controller.migrateLegacyRelay();
+      const second = h.controller.migrateLegacyRelay();
+      expect(second).toBe(first);
+      await first;
+      expect(h.legacy.migrate).toHaveBeenCalledTimes(1);
+      expect(h.forks.children).toHaveLength(1);
+    });
+  });
+
+  describe("fails closed", () => {
+    it.each(["bootout_failed", "disable_failed"] as const)("keeps the relay blocked and says so after %s", async (reason) => {
+      const h = await started(LEGACY);
+      h.migrateMode.current = reason;
+      await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: false, reason });
+
+      expect(h.forks.children).toHaveLength(0);
+      const snapshot = h.controller.snapshot();
+      expect(snapshot.legacyRelayLoaded).toBe(true);
+      expect(snapshot.status).toMatchObject({ color: "amber", headline: "The old print relay is still running", detail: LEGACY_FAILED_DETAIL });
+    });
+
+    it("treats a zero exit with the label still loaded as a failure", async () => {
+      const h = await started(LEGACY);
+      h.migrateMode.current = "still_loaded";
+      await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: false, reason: "bootout_failed" });
+      expect(h.forks.children).toHaveLength(0);
+      expect(h.controller.snapshot().legacyRelayLoaded).toBe(true);
+      expect(h.controller.snapshot().status.detail).toBe(LEGACY_FAILED_DETAIL);
+    });
+
+    it("treats an unexpected error as a failure and never logs its text", async () => {
+      const h = await started(LEGACY);
+      h.migrateMode.current = "throws";
+      await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: false, reason: "bootout_failed" });
+      expect(h.forks.children).toHaveLength(0);
+      expect(h.controller.snapshot().legacyRelayLoaded).toBe(true);
+      expect(h.logLines.join("\n")).not.toContain("exploded");
+    });
+
+    it("stays blocked on later scans and refreshes, even when launchd no longer lists the label", async () => {
+      const h = await started(LEGACY);
+      h.migrateMode.current = "disable_failed";
+      await h.controller.migrateLegacyRelay();
+      // The bootout did work, but the disable did not: it could come back at login.
+      h.setLegacyLoaded(false);
+
+      await h.controller.refresh();
+      await h.controller.scanPrinters();
+      expect(h.forks.children).toHaveLength(0);
+      expect(h.controller.snapshot().legacyRelayLoaded).toBe(true);
+      expect(h.controller.snapshot().status.detail).toBe(LEGACY_FAILED_DETAIL);
+    });
+
+    it("stays blocked after a refresh until a move succeeds", async () => {
+      const h = await started(LEGACY);
+      h.migrateMode.current = "bootout_failed";
+      await h.controller.migrateLegacyRelay();
+      await h.controller.refresh();
+      expect(h.forks.children).toHaveLength(0);
+    });
+
+    it("recovers when a later try succeeds: starts the relay and clears the error", async () => {
+      const h = await started(LEGACY);
+      h.migrateMode.current = "bootout_failed";
+      await h.controller.migrateLegacyRelay();
+      expect(h.forks.children).toHaveLength(0);
+
+      h.migrateMode.current = "ok";
+      await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: true });
+      expect(h.forks.children).toHaveLength(1);
+      const snapshot = h.controller.snapshot();
+      expect(snapshot.legacyRelayLoaded).toBe(false);
+      expect(snapshot.status.detail).not.toBe(LEGACY_FAILED_DETAIL);
+    });
+
+    it("keeps setup at the welcome step after a failure", async () => {
+      const h = createControllerHarness({ scan: foundPrinter(), legacyLoaded: true });
+      await h.controller.initialize();
+      h.migrateMode.current = "bootout_failed";
+      await h.controller.migrateLegacyRelay();
+      expect((await h.controller.advance()).setupStep).toBe("welcome");
+    });
   });
 });
 

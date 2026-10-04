@@ -10,6 +10,7 @@ const context = (patch: Partial<FlowContext>): FlowContext => ({
   revoked: false,
   cloudOk: false,
   testPrintConfirmed: false,
+  legacyLoaded: false,
   ...patch,
 });
 
@@ -27,6 +28,11 @@ describe("advanceStep", () => {
     ["done", {}, null],
   ])("%s with %j goes to %s", (step, patch, expected) => {
     expect(advanceStep(context({ step, ...patch }))).toBe(expected);
+  });
+
+  it("holds the welcome step while the old relay is loaded", () => {
+    expect(advanceStep(context({ step: "welcome", legacyLoaded: true }))).toBe("welcome");
+    expect(advanceStep(context({ step: "welcome", legacyLoaded: false }))).toBe("printer");
   });
 
   it("does not let a ready printer skip the code", () => {

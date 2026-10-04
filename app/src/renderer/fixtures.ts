@@ -38,6 +38,12 @@ const base: AppSnapshot = {
 
 const ready: AppSnapshot["status"] = { color: "green", headline: "Ready to print", detail: null };
 
+const LEGACY_STATUS: AppSnapshot["status"] = {
+  color: "amber",
+  headline: "The old print relay is still running",
+  detail: "Move to Favor Printer to start printing.",
+};
+
 const withStep = (setupStep: SetupStep | null, patch: Partial<AppSnapshot> = {}): AppSnapshot => ({ ...base, setupStep, ...patch });
 
 export const FIXTURE_NAMES = [
@@ -50,12 +56,50 @@ export const FIXTURE_NAMES = [
   "connected",
   "test-print-confirm",
   "revoked",
+  "legacy-relay",
+  "legacy-confirm",
+  "legacy-failed",
 ] as const;
 export type FixtureName = (typeof FIXTURE_NAMES)[number];
 
-export type Fixture = { snapshot: AppSnapshot; local?: Partial<LocalState> };
+export type Fixture = {
+  snapshot: AppSnapshot;
+  local?: Partial<LocalState>;
+  /** The mock API refuses to turn the old relay off, so the failure state can be walked through. */
+  failMigration?: boolean;
+};
 
-export function fixtureFor(name: string | null): Fixture {
+/** Short names a capture script is likely to use, mapped to the fixture they mean. */
+const ALIASES: Record<string, FixtureName> = {
+  welcome: "default",
+  noprinter: "no-printer",
+  several: "several-printers",
+  fallback: "queue-fallback",
+  code: "enter-code",
+  invalid: "invalid-code",
+  test: "test-print-confirm",
+  "test-print": "test-print-confirm",
+  legacy: "legacy-relay",
+  migrate: "legacy-relay",
+};
+
+/** `?state=x`, `#state=x` or `#x`. */
+export function stateFromLocation(search: string, hash: string): string | null {
+  const fromQuery = new URLSearchParams(search).get("state");
+  if (fromQuery) return fromQuery;
+  const fromHash = hash.replace(/^#/, "");
+  if (!fromHash) return null;
+  return new URLSearchParams(fromHash).get("state") ?? (fromHash.includes("=") ? null : fromHash);
+}
+
+export function normalizeFixtureName(name: string | null): FixtureName {
+  const key = (name ?? "").trim().toLowerCase().replace(/_/g, "-");
+  if ((FIXTURE_NAMES as readonly string[]).includes(key)) return key as FixtureName;
+  return ALIASES[key] ?? ALIASES[key.replace(/-/g, "")] ?? "default";
+}
+
+export function fixtureFor(requested: string | null): Fixture {
+  const name = normalizeFixtureName(requested);
   const oneReady: AppSnapshot["printer"] = { kind: "found", devices: [ZD421], selectedId: ZD421.id, queue: "ready" };
   const enrolled = { enrolled: true, label: "Front desk laptop", status: ready, printer: oneReady };
   switch (name) {
@@ -83,13 +127,26 @@ export function fixtureFor(name: string | null): Fixture {
           printer: oneReady,
         }),
       };
+    case "legacy-relay":
+      return { snapshot: withStep("welcome", { legacyRelayLoaded: true, status: LEGACY_STATUS }) };
+    case "legacy-confirm":
+      return {
+        snapshot: withStep("welcome", { legacyRelayLoaded: true, status: LEGACY_STATUS }),
+        local: { confirmingMigration: true },
+      };
+    case "legacy-failed":
+      return {
+        snapshot: withStep("welcome", { legacyRelayLoaded: true, status: LEGACY_STATUS }),
+        local: { migrateError: true },
+        failMigration: true,
+      };
     default:
       return { snapshot: base };
   }
 }
 
 /** A stand-in for the preload API: steps move forward as they would in the app. */
-export function createMockApi(start: AppSnapshot): FavorPrinterApi {
+export function createMockApi(start: AppSnapshot, options: { failMigration?: boolean } = {}): FavorPrinterApi {
   let snapshot = start;
   const listeners = new Set<(next: AppSnapshot) => void>();
   const set = (patch: Partial<AppSnapshot>) => {
@@ -128,7 +185,11 @@ export function createMockApi(start: AppSnapshot): FavorPrinterApi {
     setPaused: async () => undefined,
     setOpenAtLogin: async () => undefined,
     setChannel: async () => undefined,
-    migrateLegacyRelay: async () => ({ ok: true }),
+    migrateLegacyRelay: async () => {
+      if (options.failMigration) return { ok: false, reason: "bootout_failed" };
+      set({ legacyRelayLoaded: false, status: { color: "amber", headline: "Not set up yet", detail: "Enter the six-digit code from an admin." } });
+      return { ok: true };
+    },
     advance: async () => {
       const step = snapshot.setupStep;
       if (step === null) return set({ setupStep: "code" });

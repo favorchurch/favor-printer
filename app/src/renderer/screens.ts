@@ -25,9 +25,15 @@ export type Actions = {
   submitCode(code: string): void;
   requestTestPrint(): void;
   answerLabel(cameOut: boolean): void;
+  /** "Move to Favor Printer": asks for confirmation, changes nothing yet. */
+  askMigrateLegacy(): void;
+  cancelMigrateLegacy(): void;
+  /** Confirmed: turns the old relay off. */
   migrateLegacy(): void;
   closeWindow(): void;
 };
+
+export const LEGACY_FAILED_COPY = "The old relay could not be turned off. Printing stays off. Ask an admin for help.";
 
 export type ScreenContext = { snapshot: AppSnapshot; local: LocalState; actions: Actions };
 
@@ -83,14 +89,30 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         "Set up Favor Printer",
         lead("This app lets your Zebra label printer print check-in labels from Favor RSVP. Setup takes about two minutes."),
         h("ol", { class: "plain" }, h("li", null, "Pick your printer"), h("li", null, "Enter the code from an admin"), h("li", null, "Print a test label")),
-        snapshot.legacyRelayLoaded
-          ? note("The old print relay is still running on this Mac. Move to Favor Printer first, so two relays do not print the same labels.")
-          : null,
-        local.migrateError ? note("The old relay could not be turned off. Ask an admin for help.", "error") : null,
+        actions(button("Get started", a.advance, { primary: true })),
+      );
+
+    case "legacy":
+      return frame(
+        screen,
+        snapshot,
+        "Replace the old print relay",
+        lead("An older print relay is still running on this Mac. If both ran, they could claim the same labels, so Favor Printer stays off until the old one is turned off."),
+        h("p", { class: "hint" }, "Nothing is deleted, and no password or code is copied from the old relay."),
+        local.migrateError ? note(LEGACY_FAILED_COPY, "error") : null,
+        actions(button(local.migrateError ? "Try again" : "Move to Favor Printer", a.askMigrateLegacy, { primary: true, disabled: local.busy })),
+      );
+
+    case "legacy-confirm":
+      return frame(
+        screen,
+        snapshot,
+        "Turn off the old print relay?",
+        lead("Favor Printer will stop the old relay now and keep it from starting when you log in. Labels printed by the old relay stop until you finish setting up here."),
+        h("p", { class: "hint" }, "Favor Printer checks that the old relay is gone before it starts printing."),
         actions(
-          snapshot.legacyRelayLoaded
-            ? button("Move to Favor Printer", a.migrateLegacy, { primary: true, disabled: local.busy })
-            : button("Get started", a.advance, { primary: true }),
+          button(local.busy ? "Turning it off..." : "Turn off old relay", a.migrateLegacy, { primary: true, disabled: local.busy }),
+          button("Cancel", a.cancelMigrateLegacy, { disabled: local.busy }),
         ),
       );
 

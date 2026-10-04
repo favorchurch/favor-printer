@@ -17,6 +17,8 @@ export type FlowContext = {
   /** The relay has reached the cloud with the saved credentials. */
   cloudOk: boolean;
   testPrintConfirmed: boolean;
+  /** The old launchd relay is still loaded. Setup does not go past the welcome until it is moved. */
+  legacyLoaded: boolean;
 };
 
 export function printerReady(scan: PrinterScan): boolean {
@@ -31,7 +33,7 @@ export function advanceStep(context: FlowContext): SetupStep | null {
       if (context.revoked) return "code";
       return context.enrolled ? null : "welcome";
     case "welcome":
-      return "printer";
+      return context.legacyLoaded ? "welcome" : "printer";
     case "printer":
       return context.printerReady ? "code" : "printer";
     case "code":

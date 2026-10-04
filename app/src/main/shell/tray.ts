@@ -21,6 +21,7 @@ export type TrayActions = {
   testPrint(): void;
   openSetup(): void;
   reenroll(): void;
+  /** Opens the setup window at the offer to move off the old relay. The confirmation is asked there. */
   migrateLegacy(): void;
   setOpenAtLogin(enabled: boolean): void;
   checkForUpdates(): void;

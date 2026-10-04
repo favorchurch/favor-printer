@@ -9,6 +9,10 @@ import type { AppSnapshot, EnrollResult, SetupStep, TestPrintResult } from "../s
 
 export type ScreenId =
   | "welcome"
+  /** The old relay is loaded: offer to move to Favor Printer. */
+  | "legacy"
+  /** Asks the volunteer to confirm before anything is turned off. */
+  | "legacy-confirm"
   | "printer-none"
   | "printer-several"
   | "printer-no-queue"
@@ -38,6 +42,9 @@ export type LocalState = {
   testPrint: TestPrintProgress;
   /** An action is running: its button is disabled. */
   busy: boolean;
+  /** The volunteer chose "Move to Favor Printer" and is being asked to confirm. */
+  confirmingMigration: boolean;
+  /** The last move failed. Printing stays off. */
   migrateError: boolean;
 };
 
@@ -46,6 +53,7 @@ export const INITIAL_LOCAL: LocalState = {
   codeError: null,
   testPrint: { kind: "idle" },
   busy: false,
+  confirmingMigration: false,
   migrateError: false,
 };
 
@@ -53,6 +61,10 @@ export const STEP_ORDER: SetupStep[] = ["welcome", "printer", "code", "connected
 
 export function pickScreen(snapshot: AppSnapshot, local: LocalState): ScreenId {
   const step = snapshot.setupStep;
+  // The old relay comes first: nothing else is useful while two relays could claim the same jobs.
+  if (snapshot.legacyRelayLoaded && (step === null || step === "welcome")) {
+    return local.confirmingMigration ? "legacy-confirm" : "legacy";
+  }
   if (step === null) return snapshot.status.color === "red" ? "revoked" : "status";
   switch (step) {
     case "welcome":

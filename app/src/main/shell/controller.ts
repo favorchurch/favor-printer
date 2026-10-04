@@ -109,6 +109,9 @@ export type AppController = {
   settled(): Promise<void>;
 };
 
+/** Shown under the status while the old relay could not be turned off. Printing stays off. */
+export const LEGACY_FAILED_DETAIL = "The old relay could not be turned off. Printing stays off. Ask an admin for help.";
+
 const ASLEEP_WARNING = "This Mac went to sleep. Labels wait until it wakes.";
 const LOCKED_WARNING = "The screen is locked. Keep the lid open so printing is not interrupted.";
 
@@ -196,7 +199,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   const snapshot = (): AppSnapshot => {
     const current = prefs.get();
     const relay = supervisorState.relay;
-    const status = deriveStatus({
+    const derived = deriveStatus({
       enrolled,
       revoked: current.revoked,
       legacyRelayLoaded: legacyLoaded,
@@ -207,6 +210,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       paused,
       update,
     });
+    const status = legacyLoaded && migrationFailed && derived.color !== "red" ? { ...derived, detail: LEGACY_FAILED_DETAIL } : derived;
     const warnings = powerWarnings({ onBattery: power.onBattery === true });
     if (power.asleep) warnings.push(ASLEEP_WARNING);
     if (power.locked) warnings.push(LOCKED_WARNING);
@@ -245,6 +249,9 @@ export function createAppController(deps: ControllerDeps): AppController {
     }
   };
 
+  /** The last move off the old relay failed. The relay stays blocked and this is shown until one succeeds. */
+  let migrationFailed = false;
+  let migrating: Promise<MigrateLegacyResult> | null = null;
   let shuttingDown = false;
   let revoking = false;
   async function handleRevoked() {
@@ -320,7 +327,13 @@ export function createAppController(deps: ControllerDeps): AppController {
     return scanning;
   }
 
+  /** A failed move counts as "still loaded" until one succeeds, even if launchd no longer lists the label. */
+  async function refreshLegacy() {
+    legacyLoaded = (await legacy.detect()).loaded || migrationFailed;
+  }
+
   const flowContext = () => ({
+    legacyLoaded,
     step: setupStep,
     printerReady: printerReady(scan),
     enrolled,
@@ -338,7 +351,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         deps.applyOpenAtLogin(true);
       }
       enrolled = (await secrets.load()) !== null && !prefs.get().revoked;
-      legacyLoaded = (await legacy.detect()).loaded;
+      await refreshLegacy();
       setupStep = initialStep({ enrolled, revoked: prefs.get().revoked, setupComplete: prefs.get().setupComplete });
       await scanOnce();
       if (enrolled) await supervisor.start();
@@ -463,12 +476,33 @@ export function createAppController(deps: ControllerDeps): AppController {
       await deps.updates.setChannel(channel);
     },
 
-    async migrateLegacyRelay() {
-      const result = await legacy.migrate();
-      legacyLoaded = (await legacy.detect()).loaded;
-      if (result.ok && enrolled) await supervisor.start();
-      emit();
-      return result;
+    migrateLegacyRelay() {
+      if (migrating) return migrating;
+      migrating = (async (): Promise<MigrateLegacyResult> => {
+        // Nothing to move: do not run launchctl for no reason.
+        if (!legacyLoaded) return { ok: true };
+
+        let result: MigrateLegacyResult;
+        try {
+          result = await legacy.migrate();
+          // Trust launchd, not the exit codes: the label must really be gone before anything else happens.
+          legacyLoaded = (await legacy.detect()).loaded;
+          if (result.ok && legacyLoaded) result = { ok: false, reason: "bootout_failed" };
+        } catch (error) {
+          log("error", "legacy", `could not move off the old relay: ${error instanceof Error ? error.name : "error"}`);
+          result = { ok: false, reason: "bootout_failed" };
+        }
+
+        migrationFailed = !result.ok;
+        // Fail closed: after any failure the old relay counts as still running, so ours stays blocked.
+        if (!result.ok) legacyLoaded = true;
+        else if (enrolled && !prefs.get().revoked) await supervisor.start();
+        emit();
+        return result;
+      })().finally(() => {
+        migrating = null;
+      });
+      return migrating;
     },
 
     async advance() {
@@ -500,7 +534,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     async refresh() {
-      legacyLoaded = (await legacy.detect()).loaded;
+      await refreshLegacy();
       await scanOnce();
       emit();
     },

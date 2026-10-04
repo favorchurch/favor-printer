@@ -230,7 +230,8 @@ async function runApp(): Promise<void> {
       testPrint: () => void controller.testPrintFromMenu(),
       openSetup: () => controller.openSetup(),
       reenroll: () => controller.beginReenroll(),
-      migrateLegacy: () => void controller.migrateLegacyRelay(),
+      // The window asks for confirmation before anything is turned off.
+      migrateLegacy: () => controller.openSetup(),
       setOpenAtLogin: (enabled) => void controller.setOpenAtLogin(enabled),
       checkForUpdates: () => void updates.checkNow(),
       setChannel: (channel) => void controller.setChannel(channel),
@@ -269,7 +270,8 @@ async function runApp(): Promise<void> {
 
   await controller.initialize();
   updates.start();
-  if (controller.snapshot().setupStep !== null) showSetup();
+  const first = controller.snapshot();
+  if (first.setupStep !== null || first.legacyRelayLoaded) showSetup();
   log("info", "main", `${PRODUCT_NAME} ${app.getVersion()} started`);
 }
 
