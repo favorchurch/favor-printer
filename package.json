@@ -19,6 +19,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --maxWorkers=2",
+    "e2e:relay-sim": "node scripts/e2e-relay-sim.mjs",
     "dist": "pnpm build && electron-builder --publish never"
   },
   "devDependencies": {
