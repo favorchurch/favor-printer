@@ -292,7 +292,7 @@ Volunteers who are stuck on the bad build and cannot update can install the fix-
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
 | `ci.yml` | pull requests, pushes to `main` (macOS) | install, lint, typecheck, test, unsigned `pnpm dist`. No secrets. |
-| `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` always. When `vendor/relay/**` changed, it also fetches `favorchurch/rsvp.favor.church` at the commit in `SOURCE.json` with `RSVP_READ_TOKEN`. See the guarantee below. |
+| `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` always. When `vendor/relay/**` changed, it also fetches `favorchurch/rsvp.favor.church` at the commit in `MANIFEST.json` (`source.commit`) with `RSVP_READ_TOKEN`. See the guarantee below. |
 | `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-beta.N` on a commit that is on `main` (macOS, `release` environment) | signed build, notarization, stapling, verification, **draft** release. |
 | `secret-scan.yml` | every push and pull request | gitleaks over the working tree. |
 
@@ -302,17 +302,17 @@ When a pull request or a push to `main` changes anything under `vendor/relay/**`
 
 1. fails if `RSVP_READ_TOKEN` is not available (pull requests from forks, or the secret is unset). It
    fails closed and never skips the comparison;
-2. fetches the RSVP repository at the 40-character commit recorded in `SOURCE.json` and fails if that
+2. fetches the RSVP repository at the 40-character commit recorded in `MANIFEST.json` and fails if that
    commit does not exist there;
 3. selects the relay runtime files the way the RSVP sync script does: the files reached from
    `embedded.ts` and `index.ts` by following relative imports (no tests, docs, simulator or
    packaging), and fails if `vendor/relay` has a file that is not in that set or lacks one that is;
 4. requires every `vendor/relay` runtime file to equal the file at that commit **byte for byte**;
-5. recomputes the sha256 of every file from the fetched tree and requires `SOURCE.json` to list exactly
-   those hashes.
+5. recomputes the sha256 and size of every file and the `treeSha256` from the fetched tree and requires
+   `MANIFEST.json` to list exactly those values.
 
 So a merged `vendor/relay` is exactly the relay runtime of a commit that exists in the RSVP repository,
-and `SOURCE.json` cannot be edited to say otherwise. It does **not** prove that the commit is on the
+and `MANIFEST.json` cannot be edited to say otherwise. It does **not** prove that the commit is on the
 RSVP `main` branch or has been reviewed there. As an extra check, not the guarantee, a pull request that
 changes `vendor/relay/**` must also come from the `sync/relay-from-rsvp` branch of this repository,
 which the RSVP relay-sync workflow pushes with `FAVOR_PRINTER_SYNC_TOKEN`.

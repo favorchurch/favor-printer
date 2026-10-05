@@ -11,9 +11,9 @@ Download and setup steps for volunteers: https://rsvp.favor.church/printer
   favorchurch/rsvp.favor.church#486 and favorchurch/favor-printer#1).
 - `app/src/shared` — constants and the IPC and status types shared by main, preload and renderer.
 - `vendor/relay/` — the print relay core, synced from the RSVP repository. Do not edit it here; changes
-  land in the RSVP repository and arrive through the sync pull request. `SOURCE.json` records the source
-  repo, path, commit sha and a sha256 per file, and `pnpm verify:vendor` fails when anything drifts or when
-  `embedded.ts` is missing.
+  land in the RSVP repository and arrive through the sync pull request. `MANIFEST.json` records the source
+  repository, path and commit, plus the sha256 and size of each file and a tree hash over them, and
+  `pnpm verify:vendor` fails when anything drifts or when `embedded.ts` is missing.
 - `build/` — packaging resources (`entitlements.mac.plist`).
 - `scripts/` — build, preview and vendor verification scripts.
 
@@ -35,7 +35,7 @@ pnpm build
 | --- | --- |
 | `pnpm build` | Bundles `dist/main.js`, `dist/preload.js`, `dist/relay.js` (from `vendor/relay/embedded.ts`) and `dist/renderer/` with esbuild. Main, preload and renderer are skipped, and reported, while their sources do not exist yet. A missing relay entry fails the build. |
 | `pnpm preview:renderer` | Serves `dist/renderer` on http://localhost:4173 (loopback only, no dependencies). Open `/index.html?state=<name>` for a fixture state. Run `pnpm build` first. |
-| `pnpm verify:vendor` | Checks `vendor/relay` against `SOURCE.json`. |
+| `pnpm verify:vendor` | Checks `vendor/relay` against `MANIFEST.json`. |
 | `pnpm dist` | `pnpm build`, then electron-builder: `.app`, DMG and zip for arm64 and x64, plus `latest-mac.yml`, in `release/`. Never publishes. |
 | `pnpm lint`, `pnpm typecheck`, `pnpm test` | ESLint, `tsc --noEmit`, Vitest. |
 

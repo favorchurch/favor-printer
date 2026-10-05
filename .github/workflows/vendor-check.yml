@@ -30,7 +30,7 @@ jobs:
           node-version: 22.13.0
 
       # Uses only Node built-ins, so no install is needed.
-      - name: Verify vendor/relay against SOURCE.json
+      - name: Verify vendor/relay against MANIFEST.json
         run: node scripts/verify-vendor.mjs
 
       - name: Detect changes under vendor/relay
@@ -54,10 +54,10 @@ jobs:
           echo "vendor/relay changed: ${changed}"
 
       # The RSVP repository is private. This step fetches it at the commit recorded
-      # in SOURCE.json and requires vendor/relay to equal that commit's relay runtime
-      # files byte for byte. It never trusts the hashes or the sha in SOURCE.json by
+      # in MANIFEST.json (source.commit) and requires vendor/relay to equal that commit's
+      # relay runtime files byte for byte. It never trusts the hashes or the commit in MANIFEST.json by
       # themselves, so a hand edit that refreshes them cannot pass.
-      - name: Compare vendor/relay with the RSVP commit in SOURCE.json
+      - name: Compare vendor/relay with the RSVP commit in MANIFEST.json
         if: steps.changes.outputs.changed == 'true'
         env:
           RSVP_READ_TOKEN: ${{ secrets.RSVP_READ_TOKEN }}
@@ -70,16 +70,26 @@ jobs:
             exit 1
           fi
 
-          sha="$(node -p "require('./vendor/relay/SOURCE.json').sha")"
-          repo="$(node -p "require('./vendor/relay/SOURCE.json').repo")"
+          schema="$(node -p "require('./vendor/relay/MANIFEST.json').schema")"
+          sha="$(node -p "require('./vendor/relay/MANIFEST.json').source.commit")"
+          repo="$(node -p "require('./vendor/relay/MANIFEST.json').source.repository")"
+          srcpath="$(node -p "require('./vendor/relay/MANIFEST.json').source.path")"
+          if [ "${schema}" != "1" ]; then
+            echo "::error::MANIFEST.json schema is '${schema}', expected 1."
+            exit 1
+          fi
           if [ "${repo}" != "${RSVP_REPOSITORY}" ]; then
-            echo "::error::SOURCE.json repo is '${repo}', expected ${RSVP_REPOSITORY}."
+            echo "::error::MANIFEST.json source.repository is '${repo}', expected ${RSVP_REPOSITORY}."
+            exit 1
+          fi
+          if [ "${srcpath}" != "relay" ]; then
+            echo "::error::MANIFEST.json source.path is '${srcpath}', expected relay."
             exit 1
           fi
           case "${sha}" in
-            *[!0-9a-f]* | "") echo "::error::SOURCE.json sha is not a lowercase hex commit sha."; exit 1 ;;
+            *[!0-9a-f]* | "") echo "::error::MANIFEST.json source.commit is not a lowercase hex commit sha."; exit 1 ;;
           esac
-          [ "${#sha}" -eq 40 ] || { echo "::error::SOURCE.json sha is not 40 characters."; exit 1; }
+          [ "${#sha}" -eq 40 ] || { echo "::error::MANIFEST.json source.commit is not 40 characters."; exit 1; }
 
           # The token goes in an HTTP header set through the environment, not in a URL
           # or in argv, and the header value is masked in case anything prints it.
@@ -95,7 +105,7 @@ jobs:
           git -C "${rsvp_dir}" init -q
           if ! git -C "${rsvp_dir}" fetch -q --depth=1 --no-tags \
                 "https://github.com/${RSVP_REPOSITORY}" "${sha}" 2>/dev/null; then
-            echo "::error::Commit ${sha} (from SOURCE.json) could not be fetched from ${RSVP_REPOSITORY}. It does not exist there, or RSVP_READ_TOKEN cannot read the repository."
+            echo "::error::Commit ${sha} (from MANIFEST.json) could not be fetched from ${RSVP_REPOSITORY}. It does not exist there, or RSVP_READ_TOKEN cannot read the repository."
             exit 1
           fi
           git -C "${rsvp_dir}" checkout -q --detach FETCH_HEAD
@@ -114,7 +124,7 @@ jobs:
           const vendorDir = path.resolve(process.env.VENDOR_DIR);
           const sourceDir = path.resolve(process.env.SOURCE_DIR);
           const ENTRY_POINTS = ["embedded.ts", "index.ts"];
-          const MANIFEST = "SOURCE.json";
+          const MANIFEST = "MANIFEST.json";
           const problems = [];
 
           const posix = (p) => p.split(path.sep).join("/");
@@ -191,23 +201,30 @@ jobs:
             }
           }
 
-          // 3. SOURCE.json hashes, recomputed from the fetched tree.
+          // 3. MANIFEST.json entries and treeSha256, recomputed from the fetched tree
+          //    (same recipe as buildManifest in the RSVP sync script).
           const manifest = JSON.parse(fs.readFileSync(path.join(vendorDir, MANIFEST), "utf8"));
-          const recorded = manifest.files ?? {};
+          const recorded = new Map((manifest.files ?? []).map((entry) => [entry.path, entry]));
+          if (recorded.size !== (manifest.files ?? []).length) problems.push("MANIFEST.json lists a file more than once");
+          const tree = crypto.createHash("sha256");
           for (const [name, bytes] of expected) {
             const hash = sha256(bytes);
-            if (recorded[name] !== hash) problems.push(`${name}: SOURCE.json hash is not ${hash} (the hash at the RSVP commit)`);
+            const entry = recorded.get(name);
+            if (entry?.sha256 !== hash) problems.push(`${name}: MANIFEST.json hash is not ${hash} (the hash at the RSVP commit)`);
+            if (entry?.bytes !== bytes.length) problems.push(`${name}: MANIFEST.json size is not ${bytes.length} (the size at the RSVP commit)`);
+            tree.update(`${name}\n${hash}\n`);
           }
-          for (const name of Object.keys(recorded)) {
-            if (!expected.has(name)) problems.push(`${name}: listed in SOURCE.json but not a relay runtime file at the RSVP commit`);
+          for (const name of recorded.keys()) {
+            if (!expected.has(name)) problems.push(`${name}: listed in MANIFEST.json but not a relay runtime file at the RSVP commit`);
           }
+          if (manifest.treeSha256 !== tree.digest("hex")) problems.push("MANIFEST.json treeSha256 is not the tree hash at the RSVP commit");
 
           if (problems.length > 0) {
-            console.error("vendor/relay does not match the RSVP commit recorded in SOURCE.json:");
+            console.error("vendor/relay does not match the RSVP commit recorded in MANIFEST.json:");
             for (const problem of problems) console.error(`::error::${problem}`);
             process.exit(1);
           }
-          console.log(`vendor/relay matches ${manifest.repo}@${manifest.sha}: ${expected.size} runtime files, byte for byte.`);
+          console.log(`vendor/relay matches ${manifest.source.repository}@${manifest.source.commit}: ${expected.size} runtime files, byte for byte.`);
           JS
 
       # Extra check, not the guarantee: vendor/relay may also only change on the branch
