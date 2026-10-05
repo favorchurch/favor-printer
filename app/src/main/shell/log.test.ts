@@ -38,6 +38,12 @@ describe("redact: zpl and person fields", () => {
     expect(redact("bad ^FDZoe O'Brien")).not.toContain("O'Brien");
   });
 
+  it("leaves CUPS diagnostics like ^C readable", () => {
+    expect(redact("lp: Error - The printer or class does not exist ^C")).toBe(
+      "lp: Error - The printer or class does not exist ^C",
+    );
+  });
+
   it.each([
     ['{"name":"Jane Q. Attendee","age":7}', "Jane"],
     ["attendee=Jane Q. Attendee, room 4", "Jane"],

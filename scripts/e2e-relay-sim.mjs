@@ -77,7 +77,7 @@ export async function assertSpoolEmpty(spoolDir, { mustExist = false } = {}) {
   } catch (err) {
     if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
       if (mustExist) {
-        throw new Error(`Spool directory ${spoolDir} was never created, so an empty spool proves nothing`);
+        throw new Error(`Spool directory ${spoolDir} was never created, so an empty spool proves nothing`, { cause: err });
       }
       return;
     }

@@ -25,7 +25,7 @@ function decode(value: string): string {
 
 /** Returns null for anything that is not `usb://<make>/<model>[?query]`. */
 export function parseUsbUri(uri: string): UsbUri | null {
-  const match = /^usb:\/\/([^/?]+)\/([^?]*)(?:\?(.*))?$/.exec(uri);
+  const match = uri.match(/^usb:\/\/([^/?]+)\/([^?]*)(?:\?(.*))?$/);
   if (!match) return null;
   const [, make, model, query] = match;
 
@@ -52,7 +52,7 @@ export function parseLpinfo(stdout: string): PrinterDevice[] {
   const seen = new Set<string>();
 
   for (const line of stdout.split(/\r?\n/)) {
-    const match = /^\s*(\S+)\s+(\S.*?)\s*$/.exec(line);
+    const match = line.match(/^\s*(\S+)\s+(\S.*?)\s*$/);
     if (!match || match[1] !== "direct") continue;
     const deviceUri = match[2];
     const usb = parseUsbUri(deviceUri);
