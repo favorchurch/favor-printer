@@ -147,7 +147,14 @@ describe("copy", () => {
   });
 
   it("has clear text for every test print failure", () => {
-    expect(Object.keys(TEST_PRINT_ERROR_COPY).sort()).toEqual(["busy", "failed", "no_printer", "paused"]);
+    expect(Object.keys(TEST_PRINT_ERROR_COPY).sort()).toEqual(["busy", "failed", "no_printer", "paused", "printer_not_enabled"]);
+  });
+
+  it("tells the volunteer to ask an admin when the printer is not enabled, not to plug it in", () => {
+    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).toMatch(/admin/i);
+    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).toMatch(/enable/i);
+    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).not.toMatch(/plug/i);
+    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).not.toBe(TEST_PRINT_ERROR_COPY.no_printer);
   });
 });
 

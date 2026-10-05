@@ -39,7 +39,11 @@ export type SetUpPrinterResult =
 export type TestPrintResult =
   /** The relay handed the label to CUPS. This is not proof a label printed. */
   | { ok: true }
-  | { ok: false; reason: "no_printer" | "paused" | "busy" | "failed" };
+  /**
+   * `no_printer`: no printer is known to the relay. `printer_not_enabled`: the relay knows the id but the
+   * cloud has not listed it as enabled (disabled, removed, or not confirmed yet).
+   */
+  | { ok: false; reason: "no_printer" | "printer_not_enabled" | "paused" | "busy" | "failed" };
 
 export type MigrateLegacyResult =
   | { ok: true }
