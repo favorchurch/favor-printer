@@ -27,7 +27,8 @@ export type CommandRunner = (
 
 /** Absolute paths: a packaged app starts with a minimal PATH. */
 export const BINARIES = {
-  lpinfo: "/usr/bin/lpinfo",
+  // macOS installs the CUPS admin tools lpinfo and lpadmin in /usr/sbin.
+  lpinfo: "/usr/sbin/lpinfo",
   lpstat: "/usr/bin/lpstat",
   lpadmin: "/usr/sbin/lpadmin",
   launchctl: "/bin/launchctl",

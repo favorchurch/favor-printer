@@ -13,6 +13,8 @@ import { findQueue, parseLpstatDevices, parseLpstatPrinters, queueNameFor, type 
 export const ZEBRA_PPD = "drv:///sample.drv/zebra.ppd";
 
 const LPINFO_TIMEOUT_MS = 30_000;
+/** USB only: probing the network backends makes a plain `lpinfo -v` take 15s or more. */
+export const LPINFO_ARGS = ["--include-schemes", "usb", "-v"];
 
 /** `lpstat` could not be read, so the state of the queues is unknown. */
 export class QueueLookupError extends Error {
@@ -68,7 +70,7 @@ export function createPrinterService(deps: { run: CommandRunner }): PrinterServi
 
   return {
     async scan(selectedId) {
-      const listing = await run(BINARIES.lpinfo, ["-v"], { timeoutMs: LPINFO_TIMEOUT_MS });
+      const listing = await run(BINARIES.lpinfo, LPINFO_ARGS, { timeoutMs: LPINFO_TIMEOUT_MS });
       if (listing.code !== 0) return { scan: { kind: "none" }, queue: null, listFailed: true };
 
       const devices = parseLpinfo(listing.stdout);

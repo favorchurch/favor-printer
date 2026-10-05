@@ -33,10 +33,10 @@ function cups(responses: Cups = {}) {
 const lpinfoWith = (...uris: string[]) => ok(["network ipp", ...uris.map((uri) => `direct ${uri}`)].join("\n"));
 
 describe("scan", () => {
-  it("runs lpinfo -v as argv", async () => {
+  it("runs lpinfo for USB devices only, as argv", async () => {
     const { run, calls } = cups({ lpinfo: lpinfoWith() });
     await createPrinterService({ run }).scan(null);
-    expect(calls[0]).toEqual({ file: BINARIES.lpinfo, args: ["-v"] });
+    expect(calls[0]).toEqual({ file: BINARIES.lpinfo, args: ["--include-schemes", "usb", "-v"] });
     expectArgvOnly(calls);
   });
 

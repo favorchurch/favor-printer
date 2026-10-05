@@ -1,3 +1,4 @@
+import { accessSync, constants } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { BINARIES, createCommandRunner, type ExecFile } from "./command";
@@ -76,5 +77,13 @@ describe("createCommandRunner", () => {
 describe("BINARIES", () => {
   it("are absolute paths", () => {
     for (const file of Object.values(BINARIES)) expect(file).toMatch(/^\/[^\s]+$/);
+  });
+
+  // A wrong path fails only at runtime as ENOENT ("could not look for printers"), which the
+  // adapter-injected service tests cannot see. Check the real files on the macOS hosts we ship to.
+  it.runIf(process.platform === "darwin")("exist and are executable on macOS", () => {
+    for (const file of Object.values(BINARIES)) {
+      expect(() => accessSync(file, constants.X_OK), file).not.toThrow();
+    }
   });
 });
