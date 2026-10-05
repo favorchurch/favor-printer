@@ -20,6 +20,13 @@ export function isEnrollmentCode(value: unknown): value is string {
   return typeof value === "string" && value.length === 6 && ENROLLMENT_CODE_PATTERN.test(value);
 }
 
+/** The same pattern the RSVP server requires of `usbSerial` (parseEnrollInput). */
+export const USB_SERIAL_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+export function isUsableUsbSerial(value: unknown): value is string {
+  return typeof value === "string" && USB_SERIAL_PATTERN.test(value);
+}
+
 export function isUpdateChannel(value: unknown): value is UpdateChannel {
   return typeof value === "string" && (UPDATE_CHANNELS as readonly string[]).includes(value);
 }

@@ -6,7 +6,7 @@
  *   welcome -> printer -> code -> connected -> test-print -> done -> (closed)
  */
 
-import type { PrinterScan, SetupStep } from "../../shared";
+import { isUsableUsbSerial, type PrinterScan, type SetupStep } from "../../shared";
 
 export type FlowContext = {
   step: SetupStep | null;
@@ -22,7 +22,9 @@ export type FlowContext = {
 };
 
 export function printerReady(scan: PrinterScan): boolean {
-  return scan.kind === "found" && scan.selectedId !== null && scan.queue === "ready";
+  if (scan.kind !== "found" || scan.queue !== "ready") return false;
+  // Enrollment binds the laptop to the USB serial, so a printer without a usable one is not ready.
+  return scan.devices.some((device) => device.id === scan.selectedId && isUsableUsbSerial(device.usbSerial));
 }
 
 /** The step after `advance`. The same step comes back when the next one is not reachable yet. */

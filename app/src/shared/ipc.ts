@@ -29,7 +29,7 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
 export type EnrollResult =
   | { ok: true }
-  | { ok: false; reason: "invalid_code" | "throttled" | "disabled" | "unreachable" | "invalid_request" };
+  | { ok: false; reason: "invalid_code" | "throttled" | "disabled" | "unreachable" | "invalid_request" | "printer_not_found" };
 
 export type SetUpPrinterResult =
   | { ok: true }

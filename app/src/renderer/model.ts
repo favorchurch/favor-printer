@@ -5,7 +5,7 @@
  * print progress. Kept free of the DOM so it is tested as plain functions.
  */
 
-import type { AppSnapshot, EnrollResult, SetupStep, TestPrintResult } from "../shared";
+import { isUsableUsbSerial, type AppSnapshot, type EnrollResult, type SetupStep, type TestPrintResult } from "../shared";
 
 export type ScreenId =
   | "welcome"
@@ -73,6 +73,9 @@ export function pickScreen(snapshot: AppSnapshot, local: LocalState): ScreenId {
       const { printer } = snapshot;
       if (printer.kind === "none") return "printer-none";
       if (printer.selectedId === null) return "printer-several";
+      const selected = printer.devices.find((device) => device.id === printer.selectedId);
+      // Enrollment needs the USB serial: without one, ask for the printer to be plugged in.
+      if (!selected || !isUsableUsbSerial(selected.usbSerial)) return "printer-none";
       if (printer.queue === "ready") return "printer-ready";
       return local.setUpRefused ? "printer-fallback" : "printer-no-queue";
     }
@@ -98,6 +101,7 @@ export const ENROLL_ERROR_COPY: Record<EnrollFailureReason, string> = {
   throttled: "Too many tries. Wait a few minutes, then enter the code again.",
   disabled: "Enrolling is turned off right now. Ask an admin for help.",
   unreachable: "Could not reach Favor RSVP. Check the internet connection and try again.",
+  printer_not_found: "We can't see your Zebra printer. Check it's on and plugged in, then try again.",
   invalid_request: "The app could not send that request. Update Favor Printer and try again.",
 };
 

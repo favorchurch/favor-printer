@@ -66,12 +66,14 @@ describe("initialStep", () => {
 });
 
 describe("printerReady", () => {
-  const device = { id: "a", deviceUri: "a", usbSerial: null, model: "ZD421" };
+  const device = { id: "a", deviceUri: "a", usbSerial: "D2J190800123", model: "ZD421" };
   it.each<[string, PrinterScan, boolean]>([
     ["none", { kind: "none" }, false],
     ["several, none chosen", { kind: "found", devices: [device, { ...device, id: "b" }], selectedId: null, queue: "missing" }, false],
     ["no queue", { kind: "found", devices: [device], selectedId: "a", queue: "missing" }, false],
     ["queue disabled", { kind: "found", devices: [device], selectedId: "a", queue: "disabled" }, false],
+    ["ready but no serial", { kind: "found", devices: [{ ...device, usbSerial: null }], selectedId: "a", queue: "ready" }, false],
+    ["ready but unusable serial", { kind: "found", devices: [{ ...device, usbSerial: "bad serial" }], selectedId: "a", queue: "ready" }, false],
     ["ready", { kind: "found", devices: [device], selectedId: "a", queue: "ready" }, true],
   ])("%s -> %s", (_name, scan, expected) => {
     expect(printerReady(scan)).toBe(expected);

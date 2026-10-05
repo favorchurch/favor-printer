@@ -61,31 +61,31 @@ describe("enroll", () => {
     [503, "unreachable"],
   ])("maps HTTP %i to %s", async (status, reason) => {
     const fetchMock = vi.fn(async () => json(status, {}));
-    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toEqual({ ok: false, reason });
+    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toMatchObject({ ok: false, reason, status });
   });
 
   it("maps an enrollment_disabled error to disabled whatever the status", async () => {
     const fetchMock = vi.fn(async () => json(503, { error: "enrollment_disabled" }));
-    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toEqual({ ok: false, reason: "disabled" });
+    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toMatchObject({ ok: false, reason: "disabled", status: 503 });
   });
 
   it("maps a network failure to unreachable", async () => {
     const fetchMock = vi.fn(async () => {
       throw new TypeError("fetch failed");
     });
-    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toEqual({ ok: false, reason: "unreachable" });
+    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toMatchObject({ ok: false, reason: "unreachable" });
   });
 
   it("does not accept a success answer without credentials", async () => {
     for (const body of [{}, { relayId: "r" }, { token: "t" }, { relayId: "", token: "t" }, "text", null]) {
       const fetchMock = vi.fn(async () => json(200, body));
-      expect(await enroll(request(fetchMock as unknown as typeof fetch))).toEqual({ ok: false, reason: "unreachable" });
+      expect(await enroll(request(fetchMock as unknown as typeof fetch))).toMatchObject({ ok: false, reason: "unreachable" });
     }
   });
 
   it("does not accept a success answer that is not JSON", async () => {
     const fetchMock = vi.fn(async () => new Response("<html>", { status: 200 }));
-    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toEqual({ ok: false, reason: "unreachable" });
+    expect(await enroll(request(fetchMock as unknown as typeof fetch))).toMatchObject({ ok: false, reason: "unreachable" });
   });
 
   it.each(["", "12345", "1234567", "12345a", " 123456"])("rejects the code %j without a request", async (code) => {
@@ -110,9 +110,24 @@ describe("enroll", () => {
   });
 });
 
+describe("enroll without a usable printer serial", () => {
+  it.each([null, "", "has space", "semi;colon", "é-serial", "x".repeat(65)])("refuses %j and never calls fetch", async (usbSerial) => {
+    const fetchMock = vi.fn();
+    const outcome = await enroll(request(fetchMock as unknown as typeof fetch, { usbSerial }));
+    expect(outcome).toEqual({ ok: false, reason: "printer_not_found" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a serial of the shape the server allows", async () => {
+    const fetchMock = vi.fn(async () => json(200, { relayId: "r", token: "t" }));
+    const outcome = await enroll(request(fetchMock as unknown as typeof fetch, { usbSerial: "A.b_c-9".padEnd(64, "x") }));
+    expect(outcome.ok).toBe(true);
+  });
+});
+
 describe("mapEnrollStatus and copy", () => {
   it("has plain copy for every failure reason", () => {
-    const reasons: EnrollFailure[] = ["invalid_code", "throttled", "disabled", "unreachable", "invalid_request"];
+    const reasons: EnrollFailure[] = ["invalid_code", "throttled", "disabled", "unreachable", "invalid_request", "printer_not_found"];
     for (const reason of reasons) expect(ENROLL_FAILURE_COPY[reason].length).toBeGreaterThan(10);
     expect(Object.keys(ENROLL_FAILURE_COPY).sort()).toEqual([...reasons].sort());
   });

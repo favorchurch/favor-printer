@@ -7,6 +7,7 @@
 
 import {
   isEnrollmentCode,
+  isUsableUsbSerial,
   isUpdateChannel,
   type AppSnapshot,
   type EnrollResult,
@@ -396,15 +397,35 @@ export function createAppController(deps: ControllerDeps): AppController {
     enroll(code) {
       if (enrolling) return enrolling;
       enrolling = (async (): Promise<EnrollResult> => {
-        if (!isEnrollmentCode(code)) return { ok: false, reason: "invalid_code" };
+        if (!isEnrollmentCode(code)) {
+          log("warn", "enroll", "enrollment failed: invalid_code (not six digits)");
+          return { ok: false, reason: "invalid_code" };
+        }
+        // The printer may have been unplugged since the last scan.
+        await scanOnce();
+        const usbSerial = selectedDevice()?.usbSerial ?? null;
+        if (!isUsableUsbSerial(usbSerial)) {
+          log("warn", "enroll", "enrollment not sent: printer_not_found, printer serial missing");
+          // Back to the plug-in step; the code can be entered again once the printer is seen.
+          if (setupStep === "code") {
+            setupStep = "printer";
+            emit();
+          }
+          return { ok: false, reason: "printer_not_found" };
+        }
         const outcome = await deps.enroll({
           apiUrl: deps.apiUrl ?? "https://rsvp.favor.church",
           code,
-          usbSerial: selectedDevice()?.usbSerial ?? null,
+          usbSerial,
           appVersion: deps.version,
           osVersion: deps.osVersion,
         });
-        if (!outcome.ok) return { ok: false, reason: outcome.reason };
+        if (!outcome.ok) {
+          // Never the code, the token or the serial: only whether a serial was there.
+          const status = outcome.status === undefined ? "" : ` (HTTP ${outcome.status})`;
+          log("warn", "enroll", `enrollment failed: ${outcome.reason}${status}, printer serial ${usbSerial ? "present" : "missing"}`);
+          return { ok: false, reason: outcome.reason };
+        }
         try {
           await secrets.save({ relayId: outcome.credentials.relayId, token: outcome.credentials.token });
         } catch (error) {
@@ -413,6 +434,7 @@ export function createAppController(deps: ControllerDeps): AppController {
           return { ok: false, reason: "disabled" };
         }
         await prefs.update({ label: outcome.credentials.label, revoked: false }).catch(() => undefined);
+        log("info", "enroll", "enrolled this laptop");
         enrolled = true;
         testPrintConfirmed = false;
         setupStep = "connected";
@@ -510,6 +532,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     async advance() {
+      // Leaving the printer step needs a fresh look: the printer may have been unplugged since the last scan.
+      if (setupStep === "printer") await scanOnce();
       const next = advanceStep(flowContext());
       if (next === "printer") await scanOnce();
       setStep(next);

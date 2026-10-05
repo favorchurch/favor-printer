@@ -580,6 +580,61 @@ describe("enroll", () => {
     },
   );
 
+  it("does not enroll when the printer is gone, and goes back to the printer step", async () => {
+    const h = createControllerHarness({ scan: foundPrinter() });
+    await h.controller.initialize();
+    await h.controller.advance();
+    await h.controller.advance();
+    expect(h.controller.snapshot().setupStep).toBe("code");
+
+    h.state.scan = NO_PRINTER;
+    await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: false, reason: "printer_not_found" });
+    expect(h.enroll).not.toHaveBeenCalled();
+    expect(h.controller.snapshot().setupStep).toBe("printer");
+    expect(h.logLines.join("\n")).toContain("printer_not_found");
+  });
+
+  it("does not leave the printer step when the printer was unplugged after the last scan", async () => {
+    const h = createControllerHarness({ scan: foundPrinter() });
+    await h.controller.initialize();
+    await h.controller.advance();
+    h.state.scan = NO_PRINTER;
+    expect((await h.controller.advance()).setupStep).toBe("printer");
+  });
+
+  it("does not leave the printer step for a printer with no usable serial", async () => {
+    const h = createControllerHarness({ scan: foundPrinter() });
+    await h.controller.initialize();
+    await h.controller.advance();
+    const ready = foundPrinter();
+    h.state.scan = { ...ready, scan: { kind: "found", devices: [{ ...DEVICE, usbSerial: null }], selectedId: DEVICE.id, queue: "ready" } };
+    expect((await h.controller.advance()).setupStep).toBe("printer");
+  });
+
+  it("logs every enroll outcome without the code, the token or the serial", async () => {
+    const secretCode = "482915";
+    const outcomes = [
+      { ok: false, reason: "invalid_code", status: 404 },
+      { ok: false, reason: "throttled", status: 429 },
+      { ok: false, reason: "unreachable" },
+      { ok: true, credentials: { ...CREDENTIALS, label: null } },
+    ] as const;
+    for (const outcome of outcomes) {
+      const device = { ...DEVICE, usbSerial: "ZSERIAL9876" };
+      const scan: ScanOutcome = { scan: { kind: "found", devices: [device], selectedId: device.id, queue: "ready" }, queue: "Favor_S1", listFailed: false };
+      const h = createControllerHarness({ scan, enroll: async () => outcome as never });
+      await h.controller.initialize();
+      await h.controller.enroll(secretCode);
+      const text = h.logLines.join("\n");
+      expect(text).toMatch(/enroll/);
+      expect(text).toContain(outcome.ok ? "enrolled" : outcome.reason);
+      if (!outcome.ok && "status" in outcome) expect(text).toContain(`HTTP ${outcome.status}`);
+      expect(text).not.toContain(secretCode);
+      expect(text).not.toContain("tok-secret-value");
+      expect(text).not.toContain("ZSERIAL9876");
+    }
+  });
+
   it("fails without keeping the token when secure storage is unavailable", async () => {
     const h = await setup();
     h.secrets.save.mockRejectedValueOnce(new Error("Secure storage is not available"));
@@ -601,6 +656,7 @@ describe("enroll", () => {
     await h.controller.initialize();
     const first = h.controller.enroll("123456");
     const second = h.controller.enroll("123456");
+    await vi.waitFor(() => expect(h.enroll).toHaveBeenCalledTimes(1));
     finish();
     await expect(first).resolves.toEqual({ ok: true });
     await expect(second).resolves.toEqual({ ok: true });

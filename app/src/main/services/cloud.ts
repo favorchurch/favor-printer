@@ -14,7 +14,7 @@
  * The status mapping is kept in `mapEnrollStatus` so a contract change is one edit.
  */
 
-import { isEnrollmentCode, type EnrollResult } from "../../shared";
+import { isEnrollmentCode, isUsableUsbSerial, type EnrollResult } from "../../shared";
 import { RelayAuthError } from "../../../../vendor/relay/apiClient";
 import { secureApiUrl } from "../../../../vendor/relay/config";
 import type { CloudState } from "../../../../vendor/relay/status";
@@ -28,7 +28,7 @@ export type EnrolledCredentials = {
   label: string | null;
 };
 
-export type EnrollOutcome = { ok: true; credentials: EnrolledCredentials } | { ok: false; reason: EnrollFailure };
+export type EnrollOutcome = { ok: true; credentials: EnrolledCredentials } | { ok: false; reason: EnrollFailure; /** HTTP status, when the cloud answered. */ status?: number };
 
 export type EnrollRequest = {
   apiUrl: string;
@@ -45,6 +45,7 @@ export const ENROLL_FAILURE_COPY: Record<EnrollFailure, string> = {
   throttled: "Too many tries. Wait a few minutes, then enter the code again.",
   disabled: "Enrolling is turned off right now. Ask an admin for help.",
   unreachable: "Could not reach Favor RSVP. Check the internet connection and try again.",
+  printer_not_found: "We can't see your Zebra printer. Check it's on and plugged in, then try again.",
   invalid_request: "The app could not send that request. Update Favor Printer and try again.",
 };
 
@@ -77,6 +78,8 @@ async function readJson(response: Response): Promise<unknown> {
 /** Never throws. The returned token goes to the secret store and nowhere else. */
 export async function enroll(request: EnrollRequest): Promise<EnrollOutcome> {
   if (!isEnrollmentCode(request.code)) return { ok: false, reason: "invalid_code" };
+  // The server rejects anything else with a 400, so do not send it.
+  if (!isUsableUsbSerial(request.usbSerial)) return { ok: false, reason: "printer_not_found" };
 
   let baseUrl: string;
   try {
@@ -105,10 +108,10 @@ export async function enroll(request: EnrollRequest): Promise<EnrollOutcome> {
   const body = await readJson(response);
   if (response.ok) {
     const credentials = parseCredentials(body);
-    return credentials ? { ok: true, credentials } : { ok: false, reason: "unreachable" };
+    return credentials ? { ok: true, credentials } : { ok: false, reason: "unreachable", status: response.status };
   }
   const errorCode = isRecord(body) && typeof body.error === "string" ? body.error : undefined;
-  return { ok: false, reason: mapEnrollStatus(response.status, errorCode) };
+  return { ok: false, reason: mapEnrollStatus(response.status, errorCode), status: response.status };
 }
 
 /** What an HTTP answer to a relay call says about the cloud. 401 means the laptop was removed. */

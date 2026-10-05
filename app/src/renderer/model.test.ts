@@ -16,7 +16,7 @@ import {
   type LocalState,
 } from "./model";
 
-const device = (id: string) => ({ id, deviceUri: id, usbSerial: null, model: "ZD421" });
+const device = (id: string) => ({ id, deviceUri: id, usbSerial: "D2J190800123", model: "ZD421" });
 const found = (patch: Partial<Extract<PrinterScan, { kind: "found" }>> = {}): PrinterScan => ({
   kind: "found",
   devices: [device("a")],
@@ -37,6 +37,11 @@ describe("pickScreen", () => {
   });
 
   describe("printer step", () => {
+    it("shows plug-in guidance for a printer with no usable serial, even with a ready queue", () => {
+      const noSerial = found({ devices: [{ ...device("a"), usbSerial: null }] });
+      expect(pick({ setupStep: "printer", printer: noSerial })).toBe("printer-none");
+    });
+
     it("shows plug-in guidance when no printer is seen", () => {
       expect(pick({ setupStep: "printer", printer: { kind: "none" } })).toBe("printer-none");
     });
@@ -141,9 +146,10 @@ describe("cleanCodeInput", () => {
 
 describe("copy", () => {
   it("has clear text for every enrollment failure, matching the cloud's contract", () => {
-    expect(Object.keys(ENROLL_ERROR_COPY).sort()).toEqual(["disabled", "invalid_code", "invalid_request", "throttled", "unreachable"]);
+    expect(Object.keys(ENROLL_ERROR_COPY).sort()).toEqual(["disabled", "invalid_code", "invalid_request", "printer_not_found", "throttled", "unreachable"]);
     expect(ENROLL_ERROR_COPY.invalid_code).toMatch(/expired/i);
     expect(ENROLL_ERROR_COPY.throttled).toMatch(/wait/i);
+    expect(ENROLL_ERROR_COPY.printer_not_found).toBe("We can't see your Zebra printer. Check it's on and plugged in, then try again.");
   });
 
   it("has clear text for every test print failure", () => {
