@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json
+appId: church.favor.printer
+productName: Favor Printer
+copyright: Copyright © Favor Church
+
+directories:
+  buildResources: build
+  output: release
+
+# `pnpm build` bundles everything the app runs (main, preload, relay, renderer,
+# and electron-updater) into dist/, so no node_modules ship in the package.
+files:
+  - package.json
+  - dist/**
+  - "!dist/**/*.map"
+asar: true
+
+# Releases of this repository are the download and auto-update source.
+# Channels: tag vX.Y.Z is stable, vX.Y.Z-preview.N is a prerelease.
+publish:
+  provider: github
+  owner: favorchurch
+  repo: favor-printer
+
+# Artifact names are fixed and space-free: GitHub rewrites spaces in asset names,
+# which would break the URLs in latest-mac.yml.
+artifactName: Favor-Printer-${version}-${arch}.${ext}
+
+mac:
+  category: public.app-category.utilities
+  # Menu-bar only: no Dock icon, no app switcher entry.
+  extendInfo:
+    LSUIElement: true
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Signing and notarization are driven by the environment, so one config serves
+  # unsigned PR builds and signed releases:
+  #   signing      CSC_LINK + CSC_KEY_PASSWORD (Developer ID Application .p12),
+  #                or CSC_IDENTITY_AUTO_DISCOVERY=false to build unsigned.
+  #   notarization runs only when one credential set is present:
+  #                APPLE_API_KEY (path to the .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER
+  #                (preferred), or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID.
+  #                With none of them it is skipped with a warning.
+  notarize: true
+
+dmg:
+  # The app inside is signed and notarized; the disk image itself is not signed.
+  sign: false
