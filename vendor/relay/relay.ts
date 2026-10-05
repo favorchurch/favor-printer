@@ -51,7 +51,7 @@ export type RelaySignal =
   | { kind: "inFlight"; value: boolean };
 
 /** Why a test label was not attempted. */
-export type TestSendRefusal = "paused" | "busy" | "printer_address_unknown";
+export type TestSendRefusal = "paused" | "busy" | "printer_unavailable";
 
 export type TestSendResult =
   | { kind: "refused"; reason: TestSendRefusal }
@@ -120,6 +120,8 @@ export class Relay {
 
   private lastHeartbeatAt = 0;
   private knownPrinters: Array<PrinterTarget & { id: string }> = [];
+  /** True once a heartbeat answer has been received by this process. */
+  private heartbeatAnswered = false;
   private readonly busy = new Set<string>();
   /** Jobs this process is working right now, from the start of a send to the end of its report. */
   private readonly live = new Set<string>();
@@ -159,6 +161,10 @@ export class Relay {
     this.holdsLock = true;
     // stop() arrived while the lock was being taken: do not start a loop.
     if (this.stopping) return;
+    // Printer eligibility comes from a heartbeat answer received in this start
+    // cycle, never from an earlier one: the cloud may have disabled or removed a
+    // printer while the relay was stopped.
+    this.forgetPrinters();
     this.stopped = false;
     this.halted = false;
     this.loop = this.runLoop();
@@ -227,12 +233,20 @@ export class Relay {
     // every real send, and a test label (written outside the loop and chain).
     while (this.activeSends.size > 0) await Promise.allSettled([...this.activeSends]);
     await this.testSend;
+    this.forgetPrinters();
     this.loop = null;
     this.startup = null;
     if (this.holdsLock) {
       this.holdsLock = false;
       await this.options.spool.releaseLock();
     }
+  }
+
+  /** Drop everything learned from heartbeat answers, so the next cycle asks again before any send. */
+  private forgetPrinters() {
+    this.knownPrinters = [];
+    this.heartbeatAnswered = false;
+    this.lastHeartbeatAt = 0;
   }
 
   /** Why a test label cannot go out right now, or null. Cheap, so callers can ask before fetching one. */
@@ -251,11 +265,13 @@ export class Relay {
   async sendTestLabel(printerId: string, zpl: string): Promise<TestSendResult> {
     const blocked = this.testSendBlocker();
     if (blocked) return { kind: "refused", reason: blocked };
-    // CUPS addresses a queue, not a host, and ignores the target.
-    const known = this.knownPrinters.find((printer) => printer.id === printerId);
-    const target: PrinterTarget | undefined =
-      known ?? (this.options.transport.statusUnknown ? { host: "", port: 0 } : undefined);
-    if (!target) return { kind: "refused", reason: "printer_address_unknown" };
+    // Only an enabled printer this relay is configured for, as the cloud's last
+    // heartbeat answer listed it. CUPS ignores the address, but the printer
+    // still has to be one of those: a disabled or unknown one gets nothing.
+    const target = this.knownPrinters.find((printer) => printer.id === printerId);
+    if (!target || !this.canSendTo(printerId)) {
+      return { kind: "refused", reason: "printer_unavailable" };
+    }
 
     // Nothing awaits between the check above and these lines, so no real send
     // can start in between.
@@ -308,6 +324,24 @@ export class Relay {
     return this.accepting && !this.testing;
   }
 
+  /**
+   * Allow-list, not deny-list: a printer is sent to only when it is one of this
+   * relay's configured printers AND the cloud's heartbeat answer, received by
+   * this process, lists it as enabled. Until that first answer nothing is known,
+   * so a claimed entry left in the spool by an earlier run waits untouched; a
+   * printer the cloud has since disabled or removed never gets a byte.
+   */
+  private canSendTo(printerId: string) {
+    return (
+      this.printerIds.includes(printerId) &&
+      this.knownPrinters.some((printer) => printer.id === printerId)
+    );
+  }
+
+  private mayStartSendTo(printerId: string) {
+    return this.mayStartSend && this.canSendTo(printerId);
+  }
+
   private get printerIds() {
     const { printerIds } = this.options;
     return typeof printerIds === "function" ? printerIds() : printerIds;
@@ -315,9 +349,19 @@ export class Relay {
 
   private async runTick() {
     this.authBlocked = false;
+    // Once the cloud rejects the credentials, every further call this cycle
+    // would be rejected too. Stop here and let the backoff run.
+    // Learn which printers are enabled before the first send of this process.
+    if (!this.heartbeatAnswered && !this.halted) {
+      await this.guarded("heartbeat", () => this.heartbeatIfDue());
+      if (this.authBlocked) return;
+    }
     await this.guarded("drain", () => this.drain());
+    if (this.authBlocked) return;
     if (this.accepting) await this.guarded("claim", () => this.claimNew());
+    if (this.authBlocked) return;
     await this.guarded("drain", () => this.drain());
+    if (this.authBlocked) return;
     if (!this.halted) await this.guarded("heartbeat", () => this.heartbeatIfDue());
   }
 
@@ -417,7 +461,7 @@ export class Relay {
     // Paused or stopping: the entry stays claimed. It prints after resume or a
     // restart, or the cloud refuses its late `sending` and it is dropped.
     // A test label in progress holds the printer for a moment too.
-    if (!this.mayStartSend) return;
+    if (!this.mayStartSendTo(entry.printerId)) return;
     return this.trackSend(entry, () => this.print(entry));
   }
 
@@ -441,7 +485,7 @@ export class Relay {
         beforeWrite: async () => {
           // Paused or stopped while the connection was opening: nothing has
           // been committed, so leave the job claimed and write nothing.
-          if (!this.mayStartSend) return false;
+          if (!this.mayStartSendTo(entry.printerId)) return false;
           // Exclusive right to write this job, across processes. The loser
           // writes nothing and leaves the entry to the winner.
           if (!(await spool.claimSend(entry.id))) {
@@ -464,21 +508,35 @@ export class Relay {
             await spool.releaseSend(entry.id);
             return false;
           }
+          let answer: Awaited<ReturnType<typeof api.sending>>;
           try {
-            const answer = await api.sending(entry.id, entry.claimToken);
-            if (answer.kind === "ok") return true;
-            // The cloud already gave this job to someone else or expired it.
-            await spool.remove(entry.id);
-            this.log("warn", "claim no longer valid; dropped before sending", {
-              jobId: entry.id,
-            });
-            return false;
+            answer = await api.sending(entry.id, entry.claimToken);
           } catch (error) {
             // Nothing was written, so the entry is safe to retry later.
             await spool.write(entry);
             await spool.releaseSend(entry.id);
             throw error;
           }
+          if (answer.kind !== "ok") {
+            // The cloud already gave this job to someone else or expired it.
+            await spool.remove(entry.id);
+            this.log("warn", "claim no longer valid; dropped before sending", {
+              jobId: entry.id,
+            });
+            return false;
+          }
+          // A pause or stop that landed while the cloud was answering still
+          // wins: write nothing. The cloud already holds the job as `sending`
+          // (a `failed` report from there would send it to review), so put the
+          // entry back as claimed, exactly as when the answer is lost. Its
+          // retried `sending` is accepted again, so it prints once after resume
+          // or restart, or is dropped if the lease has run out meanwhile.
+          if (!this.mayStartSendTo(entry.printerId)) {
+            await spool.write(entry);
+            await spool.releaseSend(entry.id);
+            return false;
+          }
+          return true;
         },
       });
 
@@ -559,9 +617,18 @@ export class Relay {
         ...this.options.heartbeatIdentity?.(),
       });
 
-    const first = await send();
+    let first: Awaited<ReturnType<typeof send>>;
+    try {
+      first = await send();
+    } catch (error) {
+      // Nothing is known about the printers yet, so try again next cycle
+      // rather than waiting out the heartbeat interval.
+      if (!this.heartbeatAnswered) this.lastHeartbeatAt = 0;
+      throw error;
+    }
     const hadAddresses = this.knownPrinters.length > 0;
     this.knownPrinters = first.printers.filter((p) => p.enabled);
+    this.heartbeatAnswered = true;
     // The first beat only learns where the printers are; report reachability now.
     if (!hadAddresses && this.knownPrinters.length > 0) {
       await send();

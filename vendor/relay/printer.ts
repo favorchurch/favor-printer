@@ -9,6 +9,7 @@
 
 import net from "node:net";
 
+import { RelayAuthError } from "./apiClient";
 import type { PrinterTarget } from "./protocol";
 
 export type SendHooks = {
@@ -87,8 +88,11 @@ export function createTcpTransport(options: TcpTransportOptions = {}): PrinterTr
           socket.destroy();
           return { kind: "aborted" };
         }
-      } catch {
+      } catch (error) {
         socket.destroy();
+        // Rejected credentials are not a failed connection: let the relay see
+        // them and back off, instead of retrying the spool on every poll.
+        if (error instanceof RelayAuthError) throw error;
         return { kind: "aborted" };
       }
 

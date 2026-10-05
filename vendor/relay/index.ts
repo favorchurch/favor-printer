@@ -65,7 +65,7 @@ export type EmbeddedRelayOptions = {
 export type TestPrintResult = {
   ok: boolean;
   transportOutcome?: "sent" | "unsent" | "ambiguous";
-  error?: "unknown_printer" | "paused" | "busy" | "printer_address_unknown" | RelayErrorCode;
+  error?: "unknown_printer" | "paused" | "busy" | "printer_unavailable" | RelayErrorCode;
 };
 
 export type EmbeddedRelay = {

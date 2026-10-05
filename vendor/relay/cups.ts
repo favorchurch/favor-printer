@@ -25,6 +25,7 @@
 
 import { execFile } from "node:child_process";
 
+import { RelayAuthError } from "./apiClient";
 import type { PrinterTransport, ProbeResult, SendResult } from "./printer";
 
 /** Allowed characters for a CUPS queue name. Anything else is rejected outright. */
@@ -185,7 +186,12 @@ export function createCupsTransport(options: CupsTransportOptions): PrinterTrans
       let proceed: boolean;
       try {
         proceed = await hooks.beforeWrite();
-      } catch {
+      } catch (error) {
+        // Rejected credentials reach the relay so it backs off; nothing was written.
+        if (error instanceof RelayAuthError) {
+          child.cancel();
+          throw error;
+        }
         proceed = false;
       }
       if (!proceed) {
