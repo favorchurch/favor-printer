@@ -122,6 +122,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         snapshot,
         "Plug in your Zebra printer",
         lead("Connect the printer to this Mac with its USB cable and turn it on. It can take a few seconds to show up."),
+        local.codeError === "printer_not_found" ? h("p", { class: "note error", role: "alert" }, ENROLL_ERROR_COPY.printer_not_found) : null,
         actions(button("Look again", a.scanAgain, { primary: true, disabled: local.busy })),
       );
 

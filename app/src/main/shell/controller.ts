@@ -331,6 +331,12 @@ export function createAppController(deps: ControllerDeps): AppController {
     return scanning;
   }
 
+  /** A scan that starts after this call: one already running may have begun before a change. */
+  async function freshScan(): Promise<void> {
+    await scanning;
+    await scanOnce();
+  }
+
   /** A failed move counts as "still loaded" until one succeeds, even if launchd no longer lists the label. */
   async function refreshLegacy() {
     legacyLoaded = (await legacy.detect()).loaded || migrationFailed;
@@ -402,7 +408,7 @@ export function createAppController(deps: ControllerDeps): AppController {
           return { ok: false, reason: "invalid_code" };
         }
         // The printer may have been unplugged since the last scan.
-        await scanOnce();
+        await freshScan();
         const usbSerial = selectedDevice()?.usbSerial ?? null;
         if (!isUsableUsbSerial(usbSerial)) {
           log("warn", "enroll", "enrollment not sent: printer_not_found, printer serial missing");
@@ -533,7 +539,7 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     async advance() {
       // Leaving the printer step needs a fresh look: the printer may have been unplugged since the last scan.
-      if (setupStep === "printer") await scanOnce();
+      if (setupStep === "printer") await freshScan();
       const next = advanceStep(flowContext());
       if (next === "printer") await scanOnce();
       setStep(next);

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppSnapshot, FavorPrinterApi } from "../shared";
 import { boot } from "./boot";
+import { INITIAL_LOCAL, ENROLL_ERROR_COPY } from "./model";
+import { renderScreen } from "./screens";
 import { createMockApi, FIXTURE_NAMES, fixtureFor } from "./fixtures";
 import { fixtureButtons, shouldShowFixtureBar, startPreview } from "./preview";
 
@@ -81,6 +83,25 @@ describe("fixtureButtons", () => {
     const buttons = fixtureButtons("default", onSelect) as unknown as FakeElement[];
     buttons.find((button) => button.getAttribute("data-fixture") === "no-printer")?.click();
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("no-printer");
+  });
+});
+
+describe("printer_not_found on the plug-in screen", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+  const render = (codeError: "printer_not_found" | null) =>
+    renderScreen("printer-none", {
+      snapshot: fixtureFor("no-printer").snapshot,
+      local: { ...INITIAL_LOCAL, codeError },
+      actions: {} as never,
+    }) as unknown as FakeElement;
+
+  it("shows the copy after a printer_not_found result", () => {
+    expect(text(render("printer_not_found"))).toContain(ENROLL_ERROR_COPY.printer_not_found);
+  });
+
+  it("shows no error otherwise", () => {
+    expect(text(render(null))).not.toContain(ENROLL_ERROR_COPY.printer_not_found);
   });
 });
 

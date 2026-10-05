@@ -594,6 +594,22 @@ describe("enroll", () => {
     expect(h.logLines.join("\n")).toContain("printer_not_found");
   });
 
+  it("does not reuse a scan that began before the printer was unplugged", async () => {
+    const h = createControllerHarness({ scan: foundPrinter() });
+    await h.controller.initialize();
+    await h.controller.advance();
+    await h.controller.advance();
+    let release: (outcome: ScanOutcome) => void = () => undefined;
+    vi.mocked(h.printers.scan).mockImplementationOnce(() => new Promise<ScanOutcome>((resolve) => (release = resolve)));
+    const inFlight = h.controller.scanPrinters();
+    h.state.scan = NO_PRINTER;
+    const result = h.controller.enroll("123456");
+    release(foundPrinter());
+    await inFlight;
+    await expect(result).resolves.toEqual({ ok: false, reason: "printer_not_found" });
+    expect(h.enroll).not.toHaveBeenCalled();
+  });
+
   it("does not leave the printer step when the printer was unplugged after the last scan", async () => {
     const h = createControllerHarness({ scan: foundPrinter() });
     await h.controller.initialize();
