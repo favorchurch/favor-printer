@@ -440,7 +440,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         case "unknown_printer":
           return { ok: false, reason: "no_printer" };
         case "printer_unavailable":
-          return { ok: false, reason: "printer_not_enabled" };
+          return { ok: false, reason: "printer_not_ready" };
         default:
           return { ok: false, reason: "failed" };
       }

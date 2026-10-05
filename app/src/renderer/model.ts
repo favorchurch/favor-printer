@@ -103,8 +103,8 @@ export const ENROLL_ERROR_COPY: Record<EnrollFailureReason, string> = {
 
 export const TEST_PRINT_ERROR_COPY: Record<Extract<TestPrintResult, { ok: false }>["reason"], string> = {
   no_printer: "No printer is ready. Plug in the Zebra and check the menu bar icon.",
-  printer_not_enabled:
-    "This printer isn't turned on for printing yet. Ask an admin to enable it in RSVP printing settings, then try again in a minute.",
+  printer_not_ready:
+    "This printer isn't ready yet. Wait a minute and try again. If it keeps happening, ask an admin to check that this printer is enabled in RSVP printing settings.",
   paused: "Printing is paused. Choose Resume printing in the menu, then try again.",
   busy: "The printer is busy with a label. Wait a moment, then try again.",
   failed: "The test label could not be sent. Try again.",

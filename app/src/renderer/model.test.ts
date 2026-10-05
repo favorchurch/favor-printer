@@ -147,14 +147,17 @@ describe("copy", () => {
   });
 
   it("has clear text for every test print failure", () => {
-    expect(Object.keys(TEST_PRINT_ERROR_COPY).sort()).toEqual(["busy", "failed", "no_printer", "paused", "printer_not_enabled"]);
+    expect(Object.keys(TEST_PRINT_ERROR_COPY).sort()).toEqual(["busy", "failed", "no_printer", "paused", "printer_not_ready"]);
   });
 
-  it("tells the volunteer to ask an admin when the printer is not enabled, not to plug it in", () => {
-    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).toMatch(/admin/i);
-    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).toMatch(/enable/i);
-    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).not.toMatch(/plug/i);
-    expect(TEST_PRINT_ERROR_COPY.printer_not_enabled).not.toBe(TEST_PRINT_ERROR_COPY.no_printer);
+  it("is neutral when the printer is not ready: retry first, ask an admin only if it persists, never plug it in", () => {
+    const copy = TEST_PRINT_ERROR_COPY.printer_not_ready;
+    expect(copy).toMatch(/isn.t ready yet/i);
+    expect(copy).toMatch(/wait a minute and try again/i);
+    expect(copy).toMatch(/if it keeps happening, ask an admin/i);
+    expect(copy).not.toMatch(/turned (on|off)/i);
+    expect(copy).not.toMatch(/plug/i);
+    expect(copy).not.toBe(TEST_PRINT_ERROR_COPY.no_printer);
   });
 });
 
