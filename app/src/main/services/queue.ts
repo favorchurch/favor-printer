@@ -40,7 +40,7 @@ export function queueNameFor(device: PrinterDevice): string {
 export function parseLpstatDevices(stdout: string): QueueDevice[] {
   const devices: QueueDevice[] = [];
   for (const line of stdout.split(/\r?\n/)) {
-    const match = /^device for (\S+): (\S.*?)\s*$/.exec(line);
+    const match = line.match(/^device for (\S+): (\S.*?)\s*$/);
     if (match) devices.push({ queue: match[1], deviceUri: match[2] });
   }
   return devices;
@@ -53,7 +53,7 @@ export function parseLpstatDevices(stdout: string): QueueDevice[] {
 export function parseLpstatPrinters(stdout: string): Map<string, boolean> {
   const queues = new Map<string, boolean>();
   for (const line of stdout.split(/\r?\n/)) {
-    const match = /^printer (\S+) (.*)$/.exec(line);
+    const match = line.match(/^printer (\S+) (.*)$/);
     if (match) queues.set(match[1], !/\bdisabled\b/.test(match[2]));
   }
   return queues;

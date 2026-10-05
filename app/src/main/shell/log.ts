@@ -14,7 +14,7 @@ const MAX_LINE_LENGTH = 400;
 const REDACTIONS: [RegExp, string][] = [
   // ZPL: a whole label, or any stray command. Attendee names and security codes sit inside these.
   [/\^XA[\s\S]*?(?:\^XZ|$)/g, "[zpl]"],
-  [/\^[A-Z][A-Z0-9]\S*/g, "[zpl]"],
+  [/\^[A-Z][A-Z0-9]?.*?(?=\^|\r?\n|$)/g, "[zpl]"],
   // Person fields in key/value text.
   [/\b(name|first_?name|last_?name|full_?name|attendee|guest|child|parent|email|phone|security_?code)(["']?\s*[:=]\s*["']?)[^,;"'}\n]+/gi, "$1$2[redacted]"],
   [/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [redacted]"],
