@@ -732,7 +732,7 @@ describe("test print", () => {
     ["paused", "paused"],
     ["busy", "busy"],
     ["unknown_printer", "no_printer"],
-    ["printer_address_unknown", "no_printer"],
+    ["printer_unavailable", "no_printer"],
     ["cloud_unreachable", "failed"],
   ] as const)("maps the relay's %s to %s", async (error, reason) => {
     const h = await running();

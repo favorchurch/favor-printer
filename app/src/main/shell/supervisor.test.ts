@@ -192,6 +192,14 @@ describe("testPrint", () => {
     await expect(pending).resolves.toEqual({ ok: false, error: "paused" });
   });
 
+  it("passes printer_unavailable through, so the app can tell it from a failure", async () => {
+    const { supervisor, last } = setup();
+    await supervisor.start();
+    const pending = supervisor.testPrint("printer-1");
+    last().emitMessage({ type: "testPrintResult", printerId: "printer-1", ok: false, error: "printer_unavailable" });
+    await expect(pending).resolves.toEqual({ ok: false, error: "printer_unavailable" });
+  });
+
   it("fails without a relay", async () => {
     const { supervisor } = setup();
     await expect(supervisor.testPrint("printer-1")).resolves.toEqual({ ok: false, error: "unexpected" });
@@ -518,6 +526,10 @@ describe("sanitizeErrorCode and sanitizeTestPrintReply", () => {
     expect(sanitizeTestPrintReply({ ok: true, transportOutcome: "sent", zpl: "^XA^XZ", name: "Jane" })).toEqual({ ok: true, transportOutcome: "sent" });
     expect(sanitizeTestPrintReply({ ok: false, error: "busy" })).toEqual({ ok: false, error: "busy" });
     expect(sanitizeTestPrintReply({ ok: false, error: "cloud_unreachable" })).toEqual({ ok: false, error: "cloud_unreachable" });
+  });
+
+  it.each(["unknown_printer", "paused", "busy", "printer_unavailable"])("passes the test print refusal %s", (error) => {
+    expect(sanitizeTestPrintReply({ ok: false, error })).toEqual({ ok: false, error });
   });
 
   it("replaces free text in a test print reply", () => {

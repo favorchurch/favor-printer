@@ -13,6 +13,7 @@
  */
 
 import type { EmbeddedStartOptions } from "../../../../vendor/relay/embeddedProtocol";
+import type { TestPrintResult } from "../../../../vendor/relay/index";
 import type { RelayErrorCode, RelayState, RelayStatus, CloudState } from "../../../../vendor/relay/status";
 import { systemTimers, type Timers } from "../services";
 import type { Logger } from "./log";
@@ -119,7 +120,18 @@ const ERROR_CODES: Record<RelayErrorCode, true> = {
   send_ambiguous: true,
   unexpected: true,
 };
-const TEST_PRINT_ERRORS = new Set<string>(["unknown_printer", "paused", "busy", "printer_address_unknown"]);
+/**
+ * Why the relay did not attempt a test label, keyed on the vendored relay's own type: a refusal added
+ * by a re-vendor fails the typecheck here until it is listed (and mapped in the controller), instead
+ * of being sanitized to `unexpected`.
+ */
+type TestPrintRefusal = Exclude<NonNullable<TestPrintResult["error"]>, RelayErrorCode>;
+const TEST_PRINT_REFUSALS: Record<TestPrintRefusal, true> = {
+  unknown_printer: true,
+  paused: true,
+  busy: true,
+  printer_unavailable: true,
+};
 const TRANSPORT_OUTCOMES = new Set<string>(["sent", "unsent", "ambiguous"]);
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T[\d:.]{8,16}Z$/;
 const PRINTER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -162,7 +174,7 @@ export function sanitizeTestPrintReply(message: Record<string, unknown>): TestPr
     reply.transportOutcome = message.transportOutcome as TestPrintReply["transportOutcome"];
   }
   if (message.error !== undefined) {
-    reply.error = typeof message.error === "string" && (TEST_PRINT_ERRORS.has(message.error) || has(ERROR_CODES, message.error)) ? message.error : "unexpected";
+    reply.error = typeof message.error === "string" && (has(TEST_PRINT_REFUSALS, message.error) || has(ERROR_CODES, message.error)) ? message.error : "unexpected";
   }
   return reply;
 }
