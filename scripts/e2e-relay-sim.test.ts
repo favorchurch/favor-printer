@@ -96,9 +96,15 @@ describe("assertSpoolEmpty", () => {
   });
 
   it("fails when the spool directory must exist but was never created", async () => {
-    await expect(
-      assertSpoolEmpty(path.join(spoolDir, "does-not-exist"), { mustExist: true }),
-    ).rejects.toThrow(/was never created/);
+    let thrown: unknown;
+    try {
+      await assertSpoolEmpty(path.join(spoolDir, "does-not-exist"), { mustExist: true });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toMatch(/was never created/);
+    expect((thrown as { cause?: { code?: string } }).cause?.code).toBe("ENOENT");
   });
 
   it("passes an existing empty spool directory when it must exist", async () => {
