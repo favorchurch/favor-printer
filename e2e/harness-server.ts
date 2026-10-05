@@ -8,10 +8,16 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { handleRelayRequest } from "@/lib/printing/relayApi";
+import { createMemoryRelayRegistryStore } from "@/lib/printing/relayRegistryMemory";
 import { createRelayTestHarness, RELAY_TOKENS } from "@/lib/printing/relayTestHarness";
 
 async function main() {
   const h = createRelayTestHarness();
+  const registryStore = createMemoryRelayRegistryStore({ printers: h.store.printers });
+  h.deps.relays = {
+    store: registryStore,
+    reserveEnrollmentAttempt: async () => ({ refund: async () => {} }),
+  };
 
   const server = http.createServer(async (req, res) => {
     const chunks: Buffer[] = [];

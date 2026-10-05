@@ -153,6 +153,12 @@ describe("harness-server.ts", () => {
     const source = readFileSync(path.join(__dirname, "..", "e2e", "harness-server.ts"), "utf8");
     expect(source).not.toMatch(/relay\/config/);
   });
+
+  it("configures real in-memory relay registry so config and heartbeat answer with enabled printers", () => {
+    const source = readFileSync(path.join(__dirname, "..", "e2e", "harness-server.ts"), "utf8");
+    expect(source).toMatch(/createMemoryRelayRegistryStore/);
+    expect(source).toMatch(/deps\.relays\s*=/);
+  });
 });
 
 describe("runE2eRelaySim live integration", () => {
