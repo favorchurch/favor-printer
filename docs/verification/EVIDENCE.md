@@ -92,7 +92,7 @@ source=no usable signature
 relay.js confirmed present inside app.asar (dist/relay.js) via Electron runtime
 ok   relay.js is present in the packaged app
 == testing --self-test-relay against loopback stub cloud
-loopback stub cloud listening on port 57229
+loopback stub cloud listening on port 57245
 binary output: {"type":"self-test","ok":true,"running":true,"cloud":"ok","stopOutcome":"stopped"}
 ok   binary exited with 0
 ok   self-test emitted json result line
@@ -109,10 +109,10 @@ Packaging produced the following unsigned artifacts in `release/`:
 
 | Artifact | Architecture | Size | SHA-256 Checksum |
 |---|---|---|---|
-| `Favor-Printer-0.1.0-arm64.dmg` | Apple Silicon (`arm64`) | 122 MB | `1d56dda076423b16cc2250bc3d1ffca6bee0389019168d8cc67c24713e680327` |
-| `Favor-Printer-0.1.0-arm64.zip` | Apple Silicon (`arm64`) | 122 MB | `89c8ed90cbd96779bf9acc0b28f46521014b4e47c8384afde3bb501576392628` |
-| `Favor-Printer-0.1.0-x64.dmg` | Intel (`x64`) | 126 MB | `6674df4d8780d77aec345b023634c6994a5623f73bc1a1ac692bdf9a1bf07f05` |
-| `Favor-Printer-0.1.0-x64.zip` | Intel (`x64`) | 126 MB | `91ce36ded1dd718c504ebe0c12335349e288bbce7efaacf696ecf8b7b0e756fb` |
+| `Favor-Printer-0.1.0-arm64.dmg` | Apple Silicon (`arm64`) | 122 MB | `65faa96095c8996e45867475c22faabe483d5a4e489c4aa0d971bec2bfa0926e` |
+| `Favor-Printer-0.1.0-arm64.zip` | Apple Silicon (`arm64`) | 122 MB | `bab3a50b597fe662ae2ebbfdc50e2172d408618dd1f048868c69c2de91641365` |
+| `Favor-Printer-0.1.0-x64.dmg` | Intel (`x64`) | 126 MB | `358c35d8b9f6e4d42f3435adb8ee1289105966f66cdb0920b5f5b41e2f0d2473` |
+| `Favor-Printer-0.1.0-x64.zip` | Intel (`x64`) | 126 MB | `521f3a6046ae59c092dc8cefa1dc4ce569aa8c65fbfacaa01ba40ff398c53a8c` |
 | `Favor Printer.app` | Apple Silicon (`arm64`) | App bundle | Located at `release/mac-arm64/Favor Printer.app` |
 | `Favor Printer.app` | Intel (`x64`) | App bundle | Located at `release/mac/Favor Printer.app` |
 
