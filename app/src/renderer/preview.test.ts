@@ -105,6 +105,90 @@ describe("printer_not_found on the plug-in screen", () => {
   });
 });
 
+describe("status / about screen rendering", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+
+  it.each([
+    [{ kind: "idle" as const }, "Up to date"],
+    [{ kind: "checking" as const }, "Checking for updates..."],
+    [{ kind: "downloading" as const }, "Downloading an update..."],
+    [{ kind: "ready" as const, version: "0.2.0" }, "Update 0.2.0 ready. It installs when you quit."],
+    [{ kind: "ready" as const, version: "" }, "An update is ready. It installs when you quit."],
+    [{ kind: "error" as const }, "Update check failed."],
+  ])("renders update state %o as %s", (update, expected) => {
+    const rendered = renderScreen("status", {
+      snapshot: { ...fixtureFor("status").snapshot, update, channel: "stable", version: "0.1.0" },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(expected);
+    expect(text(rendered)).toContain("Version 0.1.0 (Stable)");
+  });
+
+  it("displays preview channel clearly when on preview", () => {
+    const rendered = renderScreen("status", {
+      snapshot: { ...fixtureFor("status").snapshot, channel: "preview", version: "0.1.0" },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain("Version 0.1.0 (Preview)");
+  });
+
+  it("handles empty detail gracefully", () => {
+    const rendered = renderScreen("status", {
+      snapshot: { ...fixtureFor("status").snapshot, status: { color: "green", headline: "Ready to print", detail: null } },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain("Ready to print");
+  });
+});
+
+describe("edge case rendering in screens", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+
+  it("renders long laptop labels in connected screen", () => {
+    const longLabel = "Very Long Sanctuary Stage Left Check-in MacBook Pro Label That Might Wrap Across Lines";
+    const rendered = renderScreen("connected", {
+      snapshot: { ...fixtureFor("connected").snapshot, label: longLabel },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(`This Mac is now ${longLabel} in Favor RSVP.`);
+  });
+
+  it("renders long printer model strings in printer-ready screen", () => {
+    const longModel = "Zebra Technologies ZTC ZD421-203dpi ZPL Extended Long Name Industrial High Density";
+    const rendered = renderScreen("printer-ready", {
+      snapshot: {
+        ...fixtureFor("default").snapshot,
+        printer: {
+          kind: "found",
+          devices: [{ id: "p1", deviceUri: "p1", usbSerial: "123", model: longModel }],
+          selectedId: "p1",
+          queue: "ready",
+        },
+      },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(`${longModel} is connected and set up.`);
+  });
+
+  it("renders empty warnings list in done screen without breaking", () => {
+    const rendered = renderScreen("done", {
+      snapshot: { ...fixtureFor("done").snapshot, warnings: [] },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    const ul = descendants(rendered).find((n) => n.tagName === "ul");
+    expect(ul).toBeDefined();
+    expect(ul?.children).toHaveLength(0);
+  });
+});
+
 describe("startPreview", () => {
   function setup(requested: string | null) {
     const body = el();

@@ -80,6 +80,27 @@ function deviceRow(device: PrinterDevice, selected: boolean, onSelect: () => voi
   );
 }
 
+export function updateStatusText(update: AppSnapshot["update"]): string {
+  switch (update.kind) {
+    case "idle":
+      return "Up to date";
+    case "checking":
+      return "Checking for updates...";
+    case "downloading":
+      return "Downloading an update...";
+    case "ready":
+      return update.version
+        ? `Update ${update.version} ready. It installs when you quit.`
+        : "An update is ready. It installs when you quit.";
+    case "error":
+      return "Update check failed.";
+  }
+}
+
+export function channelLabel(channel: AppSnapshot["channel"]): string {
+  return channel === "preview" ? "Preview" : "Stable";
+}
+
 export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: ScreenContext): HTMLElement {
   switch (screen) {
     case "welcome":
@@ -288,7 +309,12 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         "Favor Printer",
         statusPill(snapshot),
         snapshot.status.detail ? lead(snapshot.status.detail) : null,
-        h("p", { class: "hint" }, `Version ${snapshot.version}`),
+        h(
+          "div",
+          { class: "status-meta" },
+          h("p", { class: "hint" }, `Version ${snapshot.version} (${channelLabel(snapshot.channel)})`),
+          h("p", { class: "hint" }, updateStatusText(snapshot.update)),
+        ),
         actions(button("Close", a.closeWindow, { primary: true })),
       );
   }
