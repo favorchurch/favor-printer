@@ -97,6 +97,47 @@ describe("deriveStatus copy", () => {
   it("mentions a ready update", () => {
     expect(deriveStatus(inputs({ update: { kind: "ready", version: "0.2.0" } })).detail).toMatch(/quit/i);
   });
+
+  // docs/design/tray-spec.md section 2, row by row, word for word.
+  it.each([
+    ["revoked", { revoked: true }, "red", "This laptop was removed. Ask an admin for a new code.", null],
+    ["revoked by the cloud", { relay: relay({ cloud: "revoked" }) }, "red", REVOKED_HEADLINE, null],
+    ["legacy", { legacyRelayLoaded: true }, "amber", "The old print relay is still running", "Move to Favor Printer to start printing."],
+    ["not enrolled", { enrolled: false, relay: null }, "amber", "Not set up yet", "Enter the six-digit code from an admin."],
+    ["restarting", { relayRestarting: true }, "amber", "Print relay is restarting", "Printing resumes in a moment."],
+    ["no printer", { printerAttached: false }, "amber", "No printer found", "Plug in the Zebra with its USB cable."],
+    ["queue missing", { queue: "missing" }, "amber", "Printer needs setting up", "Choose Set up printer to continue."],
+    [
+      "queue disabled",
+      { queue: "disabled" },
+      "amber",
+      "Printer is turned off",
+      "Turn it back on in System Settings, under Printers & Scanners.",
+    ],
+    ["relay stopped", { relay: null }, "amber", "Starting up", null],
+    ["relay starting", { relay: relay({ state: "starting" }) }, "amber", "Starting up", null],
+    ["unreachable", { relay: relay({ cloud: "unreachable" }) }, "amber", "Cannot reach Favor RSVP", "Printing resumes when the internet is back."],
+    ["paused", { paused: true }, "amber", "Printing is paused", "Choose Resume printing in the menu."],
+    ["relay paused", { relay: relay({ state: "paused" }) }, "amber", "Printing is paused", "Choose Resume printing in the menu."],
+    ["downloading", { update: { kind: "downloading" } }, "amber", "Updating Favor Printer", null],
+    [
+      "ambiguous",
+      { relay: relay({ lastError: "send_ambiguous" }) },
+      "green",
+      "Ready to print",
+      "The last label may not have printed. Check the label stock.",
+    ],
+    ["failed", { relay: relay({ lastError: "send_failed" }) }, "green", "Ready to print", "The last label failed to print."],
+    ["update ready", { update: { kind: "ready", version: "0.2.0" } }, "green", "Ready to print", "An update installs when you quit."],
+    ["healthy", {}, "green", "Ready to print", null],
+  ] as Array<[string, Partial<StatusInputs>, StatusColor, string, string | null]>)(
+    "matches the copy deck when %s",
+    (_name, overrides, color, headline, detail) => {
+      const summary = deriveStatus(inputs(overrides));
+      expect(summary).toEqual({ color, headline, detail });
+      expect(`${summary.headline} ${summary.detail ?? ""}`).not.toMatch(/—/);
+    },
+  );
 });
 
 describe("deriveStatus priority", () => {

@@ -180,7 +180,7 @@ async function runApp(): Promise<void> {
         const { response } = await dialog.showMessageBox({
           type: "question",
           message: "Did a label come out?",
-          detail: "Favor Printer sent the test label to the printer. That does not prove a label printed.",
+          detail: "Favor Printer sent the label to the printer. That does not prove a label printed, so check the printer.",
           buttons: ["Yes, a label came out", "No label came out"],
           defaultId: 0,
           cancelId: 1,

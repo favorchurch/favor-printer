@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppSnapshot } from "../../shared";
 import { buildMenuTemplate, createTrayView, jobCountsLabel, trayTooltip, type MenuItemTemplate, type TrayActions } from "./tray";
 import { snapshotFor } from "./testing/snapshot";
+import { deriveStatus, type StatusInputs } from "../services/statusSummary";
+import type { RelayStatus } from "../../../../vendor/relay/status";
 
 const actions = (): { [K in keyof TrayActions]: ReturnType<typeof vi.fn> } & TrayActions =>
   ({
@@ -175,6 +177,76 @@ describe("buildMenuTemplate", () => {
     const text = JSON.stringify(buildMenuTemplate(snapshotFor({ recentJobs: { sent: 1, failed: 0, ambiguous: 0 } }), actions()));
     expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
   });
+});
+
+// docs/design/tray-spec.md section 2: the menu for every `deriveStatus` outcome.
+describe("menu for each status", () => {
+  const relay = (overrides: Partial<RelayStatus> = {}): RelayStatus => ({
+    state: "running",
+    cloud: "ok",
+    printerIds: ["printer-1"],
+    inFlight: false,
+    counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
+    lastJobAt: null,
+    lastHeartbeatAt: null,
+    lastError: null,
+    ...overrides,
+  });
+  const inputs = (overrides: Partial<StatusInputs>): StatusInputs => ({
+    enrolled: true,
+    revoked: false,
+    legacyRelayLoaded: false,
+    relay: relay(),
+    relayRestarting: false,
+    printerAttached: true,
+    queue: "ready",
+    paused: false,
+    update: { kind: "idle" },
+    ...overrides,
+  });
+
+  it.each([
+    ["revoked", { relay: relay({ cloud: "revoked" }) }, "Enter a new code...", "Pause printing", false],
+    ["legacy", { legacyRelayLoaded: true }, "Move to Favor Printer...", "Pause printing", false],
+    ["not enrolled", { enrolled: false, relay: null }, "Set up Favor Printer...", "Pause printing", false],
+    ["restarting", { relayRestarting: true }, null, "Pause printing", true],
+    ["no printer", { printerAttached: false }, null, "Pause printing", true],
+    ["queue missing", { queue: "missing" }, null, "Pause printing", true],
+    ["queue disabled", { queue: "disabled" }, null, "Pause printing", true],
+    ["starting", { relay: null }, null, "Pause printing", true],
+    ["unreachable", { relay: relay({ cloud: "unreachable" }) }, null, "Pause printing", true],
+    ["paused", { paused: true }, null, "Resume printing", true],
+    ["downloading", { update: { kind: "downloading" } }, null, "Pause printing", true],
+    ["ambiguous", { relay: relay({ lastError: "send_ambiguous" }) }, null, "Pause printing", true],
+    ["failed", { relay: relay({ lastError: "send_failed" }) }, null, "Pause printing", true],
+    ["update ready", { update: { kind: "ready", version: "0.2.0" } }, null, "Pause printing", true],
+    ["healthy", {}, null, "Pause printing", true],
+  ] as Array<[string, Partial<StatusInputs>, string | null, string, boolean]>)(
+    "%s",
+    (_name, overrides, setupAction, printControl, canPrint) => {
+      const state = inputs(overrides);
+      const status = deriveStatus(state);
+      const snapshot = snapshotFor({
+        status,
+        enrolled: state.enrolled,
+        paused: state.paused,
+        legacyRelayLoaded: state.legacyRelayLoaded,
+        update: state.update,
+      });
+      const items = buildMenuTemplate(snapshot, actions());
+      const header = [status.headline, ...(status.detail ? [status.detail] : [])];
+
+      expect(labels(items).slice(0, header.length)).toEqual(header);
+      expect(items.slice(0, header.length).every((item) => item.enabled === false)).toBe(true);
+      expect(trayTooltip(snapshot)).toBe(`Favor Printer: ${status.headline}`);
+
+      const firstAction = items.find((item) => item.click);
+      expect(firstAction?.label).toBe(setupAction ?? printControl);
+      if (setupAction) expect(firstAction?.enabled).not.toBe(false);
+      expect(find(items, printControl)?.enabled).toBe(canPrint);
+      expect(find(items, "Test print...")?.enabled).toBe(canPrint);
+    },
+  );
 });
 
 describe("createTrayView", () => {
