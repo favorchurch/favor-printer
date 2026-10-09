@@ -10,10 +10,10 @@ The verification checks required by the test harness were run against the worktr
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| **Dependencies** | `pnpm install --frozen-lockfile` | **PASS** | Dependencies resolved and up-to-date in 1.9s (pnpm v10.28.0) |
+| **Dependencies** | `pnpm install --frozen-lockfile` | **PASS** | Dependencies resolved and up-to-date in 495ms (pnpm v10.28.0) |
 | **Lint** | `pnpm lint` | **PASS** | ESLint passed cleanly across all app and script files |
 | **Typecheck** | `pnpm typecheck` | **PASS** | `tsc --noEmit` passed with 0 errors |
-| **Test Suite** | `pnpm test` | **PASS** | 39 test files passed, 1003 tests passed, 1 skipped (1004 total) |
+| **Test Suite** | `pnpm test` | **PASS** | 39 test files passed, 1007 tests passed, 1 skipped (1008 total) |
 | **App Bundle** | `pnpm build` | **PASS** | `dist/main.js`, `dist/preload.js`, `dist/relay.js`, `dist/renderer` generated |
 | **Vendor Integrity** | `pnpm verify:vendor` | **PASS** | `vendor/relay` matches `MANIFEST.json` byte-for-byte |
 | **macOS Distribution** | `CSC_IDENTITY_AUTO_DISCOVERY=false pnpm dist` | **PASS** | Packaging succeeded; arm64 & x64 DMG, zip, and app bundles built |
@@ -43,9 +43,9 @@ The verification checks required by the test harness were run against the worktr
  RUN  v5.0.3 /Users/rico/.local/state/auto-office/worktrees/012d8d3b/T4
 
  Test Files  39 passed (39)
-      Tests  1003 passed | 1 skipped (1004)
-   Start at  01:35:45
-   Duration  3.51s (tests 73%, import 13%, transform 12%, worker 2%)
+      Tests  1007 passed | 1 skipped (1008)
+   Start at  02:16:31
+   Duration  3.31s (tests 75%, import 11%, transform 11%, worker 2%)
 ```
 
 ### `pnpm verify:vendor`
@@ -92,7 +92,7 @@ source=no usable signature
 relay.js confirmed present inside app.asar (dist/relay.js) via Electron runtime
 ok   relay.js is present in the packaged app
 == testing --self-test-relay against loopback stub cloud
-loopback stub cloud listening on port 54821
+loopback stub cloud listening on port 57229
 binary output: {"type":"self-test","ok":true,"running":true,"cloud":"ok","stopOutcome":"stopped"}
 ok   binary exited with 0
 ok   self-test emitted json result line
@@ -109,10 +109,10 @@ Packaging produced the following unsigned artifacts in `release/`:
 
 | Artifact | Architecture | Size | SHA-256 Checksum |
 |---|---|---|---|
-| `Favor-Printer-0.1.0-arm64.dmg` | Apple Silicon (`arm64`) | 122 MB | `982e802149b24e1d33a5d6451ad7d18f3b18f7d321d4fef1bc2d339f054f314f` |
-| `Favor-Printer-0.1.0-arm64.zip` | Apple Silicon (`arm64`) | 122 MB | `85341a42a4bf8c894ff3a3fc208908513d9e90cba68320c40a8ce60937576c52` |
-| `Favor-Printer-0.1.0-x64.dmg` | Intel (`x64`) | 126 MB | `ab2afe43575ff744d5bf1af7fa49b0e60a722942d79f7e8adf6f350a7107a3c1` |
-| `Favor-Printer-0.1.0-x64.zip` | Intel (`x64`) | 126 MB | `d5881e7c1359645c58a97c286cfa6726bb543194d58f1996ecf14f7a75d27cc9` |
+| `Favor-Printer-0.1.0-arm64.dmg` | Apple Silicon (`arm64`) | 122 MB | `1d56dda076423b16cc2250bc3d1ffca6bee0389019168d8cc67c24713e680327` |
+| `Favor-Printer-0.1.0-arm64.zip` | Apple Silicon (`arm64`) | 122 MB | `89c8ed90cbd96779bf9acc0b28f46521014b4e47c8384afde3bb501576392628` |
+| `Favor-Printer-0.1.0-x64.dmg` | Intel (`x64`) | 126 MB | `6674df4d8780d77aec345b023634c6994a5623f73bc1a1ac692bdf9a1bf07f05` |
+| `Favor-Printer-0.1.0-x64.zip` | Intel (`x64`) | 126 MB | `91ce36ded1dd718c504ebe0c12335349e288bbce7efaacf696ecf8b7b0e756fb` |
 | `Favor Printer.app` | Apple Silicon (`arm64`) | App bundle | Located at `release/mac-arm64/Favor Printer.app` |
 | `Favor Printer.app` | Intel (`x64`) | App bundle | Located at `release/mac/Favor Printer.app` |
 
@@ -120,7 +120,7 @@ Packaging produced the following unsigned artifacts in `release/`:
 
 ## 4. Visual Evidence Gallery (`FIXTURE_NAMES`)
 
-Screenshots were captured using `scripts/capture-screenshots.mjs` against the exact `520x640` setup window dimensions at 2x Retina resolution (`1040x1280` pixels). All fixture states contain only synthetic test fixtures and zero attendee or personal data.
+Screenshots were captured using `scripts/capture-screenshots.mjs` against the exact `520x640` setup window dimensions at 2x Retina resolution (`1040x1280` pixels). All fixture states contain only synthetic test fixtures and zero attendee or personal data. The list of states is derived dynamically from `app/src/renderer/fixtures.ts` (`FIXTURE_NAMES`).
 
 | Fixture Name | Screen / State | Description | Screenshot |
 |---|---|---|---|
@@ -132,10 +132,14 @@ Screenshots were captured using `scripts/capture-screenshots.mjs` against the ex
 | `invalid-code` | Code Invalid (`code`) | Inline banner: "That code did not work. It may have expired." | [screenshots/invalid-code.png](screenshots/invalid-code.png) |
 | `connected` | Connected (`connected`) | Enrolled confirmation with green status badge | [screenshots/connected.png](screenshots/connected.png) |
 | `test-print-confirm` | Test Print Prompt (`test-print`) | Verification step: "Did a label come out?" | [screenshots/test-print-confirm.png](screenshots/test-print-confirm.png) |
+| `done` | Setup Complete (`done`) | "You are all set" screen with operational advice and "Finish" button | [screenshots/done.png](screenshots/done.png) |
 | `revoked` | Laptop Revoked (`revoked`) | Red status banner and volunteer instructions to contact an admin | [screenshots/revoked.png](screenshots/revoked.png) |
 | `legacy-relay` | Replace Old Relay (`welcome`) | Migration step detecting the old launchd print relay | [screenshots/legacy-relay.png](screenshots/legacy-relay.png) |
 | `legacy-confirm` | Confirm Relay Migration (`welcome`) | Confirmation prompt to turn off the old relay daemon | [screenshots/legacy-confirm.png](screenshots/legacy-confirm.png) |
 | `legacy-failed` | Relay Migration Failed (`welcome`) | Error banner when old relay daemon cannot be unloaded | [screenshots/legacy-failed.png](screenshots/legacy-failed.png) |
+| `status` | Status Normal (`status`) | Main status window showing enrolled ready status and "Up to date" | [screenshots/status.png](screenshots/status.png) |
+| `update-ready` | Update Ready (`status`) | Main status window showing pending update version 0.2.0 | [screenshots/update-ready.png](screenshots/update-ready.png) |
+| `update-error` | Update Error (`status`) | Main status window showing update check failure message | [screenshots/update-error.png](screenshots/update-error.png) |
 
 ---
 

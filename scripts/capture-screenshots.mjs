@@ -12,20 +12,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export const FIXTURE_NAMES = [
-  "default",
-  "no-printer",
-  "several-printers",
-  "queue-fallback",
-  "enter-code",
-  "invalid-code",
-  "connected",
-  "test-print-confirm",
-  "revoked",
-  "legacy-relay",
-  "legacy-confirm",
-  "legacy-failed",
-];
+import { readFileSync } from "node:fs";
+
+function loadFixtureNames() {
+  const fixturesPath = path.resolve(repoRoot, "app", "src", "renderer", "fixtures.ts");
+  const content = readFileSync(fixturesPath, "utf8");
+  const match = content.match(/export const FIXTURE_NAMES\s*=\s*\[([\s\S]*?)\]\s*as const/);
+  if (!match) {
+    throw new Error(`Could not parse FIXTURE_NAMES from ${fixturesPath}`);
+  }
+  return Object.freeze([...match[1].matchAll(/["']([^"']+)["']/g)].map((m) => m[1]));
+}
+
+export const FIXTURE_NAMES = loadFixtureNames();
 
 const CHROME_PATHS = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
