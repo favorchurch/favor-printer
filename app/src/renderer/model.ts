@@ -101,14 +101,14 @@ export const ENROLL_ERROR_COPY: Record<EnrollFailureReason, string> = {
   throttled: "Too many tries. Wait a few minutes, then enter the code again.",
   disabled: "Enrolling is turned off right now. Ask an admin for help.",
   unreachable: "Could not reach Favor RSVP. Check the internet connection and try again.",
-  printer_not_found: "We can't see your Zebra printer. Check it's on and plugged in, then try again.",
+  printer_not_found: "We cannot see your Zebra printer. Check that it is turned on and plugged in, then try again.",
   invalid_request: "The app could not send that request. Update Favor Printer and try again.",
 };
 
 export const TEST_PRINT_ERROR_COPY: Record<Extract<TestPrintResult, { ok: false }>["reason"], string> = {
   no_printer: "No printer is ready. Plug in the Zebra and check the menu bar icon.",
   printer_not_ready:
-    "This printer isn't ready yet. Wait a minute and try again. If it keeps happening, ask an admin to check that this printer is enabled in RSVP printing settings.",
+    "This printer is not ready yet. Wait a minute and try again. If it keeps happening, ask an admin to check that this printer is enabled in RSVP printing settings.",
   paused: "Printing is paused. Choose Resume printing in the menu, then try again.",
   busy: "The printer is busy with a label. Wait a moment, then try again.",
   failed: "The test label could not be sent. Try again.",
