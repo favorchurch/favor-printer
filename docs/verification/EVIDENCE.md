@@ -13,7 +13,7 @@ The verification checks required by the test harness were run against the worktr
 | **Dependencies** | `pnpm install --frozen-lockfile` | **PASS** | Dependencies resolved and up-to-date in 1.9s (pnpm v10.28.0) |
 | **Lint** | `pnpm lint` | **PASS** | ESLint passed cleanly across all app and script files |
 | **Typecheck** | `pnpm typecheck` | **PASS** | `tsc --noEmit` passed with 0 errors |
-| **Test Suite** | `pnpm test` | **PASS** | 39 test files passed, 983 tests passed, 1 skipped (984 total) |
+| **Test Suite** | `pnpm test` | **PASS** | 39 test files passed, 1003 tests passed, 1 skipped (1004 total) |
 | **App Bundle** | `pnpm build` | **PASS** | `dist/main.js`, `dist/preload.js`, `dist/relay.js`, `dist/renderer` generated |
 | **Vendor Integrity** | `pnpm verify:vendor` | **PASS** | `vendor/relay` matches `MANIFEST.json` byte-for-byte |
 | **macOS Distribution** | `CSC_IDENTITY_AUTO_DISCOVERY=false pnpm dist` | **PASS** | Packaging succeeded; arm64 & x64 DMG, zip, and app bundles built |
@@ -43,9 +43,9 @@ The verification checks required by the test harness were run against the worktr
  RUN  v5.0.3 /Users/rico/.local/state/auto-office/worktrees/012d8d3b/T4
 
  Test Files  39 passed (39)
-      Tests  983 passed | 1 skipped (984)
-   Start at  01:31:19
-   Duration  3.54s (tests 73%, import 13%, transform 12%, worker 2%)
+      Tests  1003 passed | 1 skipped (1004)
+   Start at  01:35:45
+   Duration  3.51s (tests 73%, import 13%, transform 12%, worker 2%)
 ```
 
 ### `pnpm verify:vendor`
@@ -92,7 +92,7 @@ source=no usable signature
 relay.js confirmed present inside app.asar (dist/relay.js) via Electron runtime
 ok   relay.js is present in the packaged app
 == testing --self-test-relay against loopback stub cloud
-loopback stub cloud listening on port 52855
+loopback stub cloud listening on port 54821
 binary output: {"type":"self-test","ok":true,"running":true,"cloud":"ok","stopOutcome":"stopped"}
 ok   binary exited with 0
 ok   self-test emitted json result line
@@ -109,10 +109,10 @@ Packaging produced the following unsigned artifacts in `release/`:
 
 | Artifact | Architecture | Size | SHA-256 Checksum |
 |---|---|---|---|
-| `Favor-Printer-0.1.0-arm64.dmg` | Apple Silicon (`arm64`) | 122 MB | `1a167d7a10d74aa8381aeb4c7278e05dc4245ead72d7bc1140576c6e6782c386` |
-| `Favor-Printer-0.1.0-arm64.zip` | Apple Silicon (`arm64`) | 122 MB | `153630cc366f1e396f9992cde969bc538ec4dba02821b4ba8a382c250de16a6d` |
-| `Favor-Printer-0.1.0-x64.dmg` | Intel (`x64`) | 126 MB | `460bf1285068413cae629ac85a094336454b458dd7958a5eccd66475e33927b2` |
-| `Favor-Printer-0.1.0-x64.zip` | Intel (`x64`) | 126 MB | `cdd2e83bd1f07df7cd1fbb751bf3896ce2984d40a15e2b2b6eb52c4c449d1f2c` |
+| `Favor-Printer-0.1.0-arm64.dmg` | Apple Silicon (`arm64`) | 122 MB | `982e802149b24e1d33a5d6451ad7d18f3b18f7d321d4fef1bc2d339f054f314f` |
+| `Favor-Printer-0.1.0-arm64.zip` | Apple Silicon (`arm64`) | 122 MB | `85341a42a4bf8c894ff3a3fc208908513d9e90cba68320c40a8ce60937576c52` |
+| `Favor-Printer-0.1.0-x64.dmg` | Intel (`x64`) | 126 MB | `ab2afe43575ff744d5bf1af7fa49b0e60a722942d79f7e8adf6f350a7107a3c1` |
+| `Favor-Printer-0.1.0-x64.zip` | Intel (`x64`) | 126 MB | `d5881e7c1359645c58a97c286cfa6726bb543194d58f1996ecf14f7a75d27cc9` |
 | `Favor Printer.app` | Apple Silicon (`arm64`) | App bundle | Located at `release/mac-arm64/Favor Printer.app` |
 | `Favor Printer.app` | Intel (`x64`) | App bundle | Located at `release/mac/Favor Printer.app` |
 
