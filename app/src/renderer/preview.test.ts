@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSnapshot, FavorPrinterApi } from "../shared";
 import { boot } from "./boot";
 import { INITIAL_LOCAL, ENROLL_ERROR_COPY } from "./model";
-import { renderScreen } from "./screens";
+import { channelLabel, renderScreen, updateStatusText } from "./screens";
 import { createMockApi, FIXTURE_NAMES, fixtureFor } from "./fixtures";
 import { fixtureButtons, shouldShowFixtureBar, startPreview } from "./preview";
 
@@ -112,9 +112,9 @@ describe("status / about screen rendering", () => {
   it.each([
     [{ kind: "idle" as const }, "Up to date"],
     [{ kind: "checking" as const }, "Checking for updates..."],
-    [{ kind: "downloading" as const }, "Downloading an update..."],
-    [{ kind: "ready" as const, version: "0.2.0" }, "Update 0.2.0 ready. It installs when you quit."],
-    [{ kind: "ready" as const, version: "" }, "An update is ready. It installs when you quit."],
+    [{ kind: "downloading" as const }, "Downloading update..."],
+    [{ kind: "ready" as const, version: "0.2.0" }, "Update ready. Restart to apply."],
+    [{ kind: "ready" as const, version: "" }, "Update ready. Restart to apply."],
     [{ kind: "error" as const }, "Update check failed."],
   ])("renders update state %o as %s", (update, expected) => {
     const rendered = renderScreen("status", {
@@ -133,6 +133,30 @@ describe("status / about screen rendering", () => {
       actions: {} as never,
     }) as unknown as FakeElement;
     expect(text(rendered)).toContain("Version 0.1.0 (Preview)");
+  });
+
+  it("matches the copy deck strings directly from docs/design/copy-deck.md", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const deckPath = new URL("../../../docs/design/copy-deck.md", import.meta.url);
+    const deck = await readFile(deckPath, "utf8");
+
+    // Copy deck specifies exact status window lines:
+    expect(deck).toContain("`idle`: `Up to date`");
+    expect(deck).toContain("`checking`: `Checking for updates...`");
+    expect(deck).toContain("`downloading`: `Downloading update...`");
+    expect(deck).toContain("`ready`: `Update ready. Restart to apply.`");
+    expect(deck).toContain("`error`: `Update check failed.`");
+    expect(deck).toContain("`stable` → `Stable`");
+    expect(deck).toContain("`preview` → `Preview`");
+
+    // Verify all helper outputs match the deck strings
+    expect(updateStatusText({ kind: "idle" })).toBe("Up to date");
+    expect(updateStatusText({ kind: "checking" })).toBe("Checking for updates...");
+    expect(updateStatusText({ kind: "downloading" })).toBe("Downloading update...");
+    expect(updateStatusText({ kind: "ready", version: "1.0.0" })).toBe("Update ready. Restart to apply.");
+    expect(updateStatusText({ kind: "error" })).toBe("Update check failed.");
+    expect(channelLabel("stable")).toBe("Stable");
+    expect(channelLabel("preview")).toBe("Preview");
   });
 
   it("handles empty detail gracefully", () => {

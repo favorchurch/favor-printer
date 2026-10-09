@@ -190,7 +190,16 @@ This flow appears when a MacBook has the previous background launchd relay servi
 - **Window Title (`h1`):** `Favor Printer`
 - **Status Pill:** Current status pill (Color dot + Headline)
 - **Detail Text:** Current status detail line (if any)
-- **Version Subtitle:** `Version [x.y.z]`
+- **Version Subtitle:** `Version [x.y.z] ([Channel])` (e.g., `Version 0.1.0 (Stable)` or `Version 0.1.0 (Preview)`)
+- **Update Channel Values:**
+  - `stable` → `Stable`
+  - `preview` → `Preview`
+- **Update Status Lines (`UpdateState`):**
+  - `idle`: `Up to date`
+  - `checking`: `Checking for updates...`
+  - `downloading`: `Downloading update...`
+  - `ready`: `Update ready. Restart to apply.`
+  - `error`: `Update check failed.`
 - **Primary Action:** `Close`
 
 ---

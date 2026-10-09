@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Favor Printer Design System
-description: Visual design tokens, typography, spacing, component semantics and layout grammar for Favor Printer 2026.
+description: Visual design tokens, typography, spacing, component semantics and layout grammar for Favor Printer 2026 under design-like-favor.
 colors:
   primary: "#121411"
   background: "#fef1e8"
@@ -19,6 +19,21 @@ colors:
   soft-secondary: "#d8f1f5"
   error: "#c62828"
   error-bg: "#fdecec"
+  dark-background: "#1a1714"
+  dark-surface: "#272421"
+  dark-primary: "#f5f2ed"
+  dark-muted: "#a8a49d"
+  dark-rule: "#423d38"
+  dark-accent: "#c23f00"
+  dark-accent-highlight: "#f45500"
+  dark-accent-soft: "#4a2717"
+  dark-secondary: "#3cb0db"
+  dark-secondary-soft: "#193845"
+  dark-focus: "#4da3ff"
+  dark-positive: "#4cc77e"
+  dark-warning: "#f0a73a"
+  dark-error: "#ff6b6b"
+  dark-error-bg: "#3a2020"
 typography:
   display-hero:
     fontFamily: '"Favorvetica", Arial, sans-serif'
@@ -163,24 +178,35 @@ components:
 
 Favor Printer is a mission-critical utility for Favor Church Sunday services and events. It bridges Favor RSVP cloud check-in stations with Zebra thermal label printers connected via USB on volunteer-operated MacBooks.
 
-The operating context is **Operate** (under the `dashboards-like-favor` skill classification):
+The operating context is **Operate** (under the `design-like-favor` / `dashboards-like-favor` skill classification):
 - **Audience:** Sunday service volunteers and venue leads setting up check-in desks before church starts.
 - **Tone:** Warm, calm, dependable, authentic, and unambiguous. We avoid sterile enterprise SaaS grays while rejecting unnecessary visual clutter that distracts from operational readiness.
-- **Foundational Rule:** Every color, type role, spacing, and structural element is directly mapped to canonical sources in `dashboards-like-favor` (`assets/tokens/brand-2026.json`, `references/favor-design-dna.md`, and `references/dashboard-ux.md`) and copy guidelines in `speak-like-favor`.
+- **Foundational Rule & Provenance:** Every color, type role, spacing, and structural element is directly mapped to canonical sources in the `design-like-favor` direction (implemented via the Favor 2026 design system repository and `dashboards-like-favor` asset package: `assets/tokens/brand-2026.json`, `references/favor-design-dna.md`, and `references/dashboard-ux.md`) and copy guidelines in `speak-like-favor`. Note on skill naming: in the Favor tooling environment, the `design-like-favor` design direction and `dashboards-like-favor` reference package denote the same canonical Favor 2026 design system assets (`brand-2026.json` and `favor-design-dna.md`).
 
 ### Brand Silence and No-Invented-Values Policy
 
 Where the design skill is silent on specific desktop-application concerns, this specification explicitly declares the fallback rather than fabricating brand values:
 - **Shadows:** The Favor 2026 design DNA expressly favors 1px clean rules (`#ded8d1`) and high-contrast ink boundaries over drop shadows. Heavy elevation drop shadows are **not part of the design system**. Modest elevation (`0 1px 3px rgba(18, 20, 17, 0.08)`) is used only for raised cards if necessary; otherwise surfaces remain clean flat planes separated by borders.
 - **Motion & Transitions:** The brand skill declares no proprietary easing curves or animation tokens. We deliberately specify native macOS-standard micro-transitions (`opacity 150ms ease`, `border-color 150ms ease`, `transform 150ms cubic-bezier(0.16, 1, 0.3, 1)`) for interactive hover/focus states, and disable motion when `prefers-reduced-motion: reduce` is detected.
-- **Dark Mode:** The brand token snapshot specifies a single canonical light palette (`#fef1e8` cream ground, `#ffffff` card surface, `#121411` ink). For dark appearances on macOS, the design system maintains semantic mapping with darkened ink backgrounds while preserving accessible contrast.
+- **Dark Mode Palette Fallback:** The canonical brand token snapshot in `brand-2026.json` is light-only (`#fef1e8` cream ground, `#ffffff` card surface, `#121411` ink) and does not specify a proprietary dark brand palette. To support macOS system dark mode without inventing non-existent "brand" dark colors, we explicitly declare an accessible, non-brand fallback palette that preserves semantic hierarchy and satisfies WCAG AA contrast requirements:
+  - Canvas background: `#1a1714` (warm dark ground)
+  - Card/surface: `#272421` (elevated dark surface)
+  - Primary text / ink: `#f5f2ed` (15.9:1 on canvas, 13.8:1 on surface)
+  - Muted text: `#a8a49d` (7.2:1 on canvas, 6.2:1 on surface)
+  - Border rules: `#423d38`
+  - Primary interactive button: Ground `#c23f00` (`accent-dark`) with `#f5f2ed` text, delivering **4.7:1** contrast (passes WCAG AA 4.5:1). Undarkened brand orange `#f45500` with white text yields 3.4:1 and MUST NOT be used for primary button ground in dark mode.
+  - Secondary action: `#3cb0db` (7.2:1 contrast against `#1a1714`)
+  - Secondary tint ground: `#193845`
+  - Focus outline: `#4da3ff`
+  - Status indicators: Green `#4cc77e`, Amber `#f0a73a`, Red `#ff6b6b`, Red tint `#3a2020`
 
 ---
 
 ## Colors
 
-All color values derive from `dashboards-like-favor/assets/tokens/brand-2026.json` and `dashboards-like-favor/references/favor-design-dna.md`:
+All canonical light color values derive from `brand-2026.json` and `favor-design-dna.md`. Dark mode tokens are explicitly specified as non-brand accessibility fallbacks:
 
+### Canonical Light Palette
 | Token | Hex Value | Role & Usage | Source Reference |
 |---|---|---|---|
 | `primary` (`ink`) | `#121411` | Primary text, headings, strong borders | `brand-2026.json` (`tokens.ink`) |
@@ -200,9 +226,28 @@ All color values derive from `dashboards-like-favor/assets/tokens/brand-2026.jso
 | `soft-accent` | `#ffe2d2` | Soft orange card ground, badge fill | `brand-2026.json` (`tokens.softAccent`) |
 | `soft-secondary` | `#d8f1f5` | Info banner ground, secondary badge fill | `brand-2026.json` (`tokens.softSecondary`) |
 
+### Non-Brand Dark Mode Fallback Palette
+| Token | Hex Value | Role & Usage | Contrast vs Background/Surface |
+|---|---|---|---|
+| `dark-background` | `#1a1714` | macOS Dark canvas ground | N/A |
+| `dark-surface` | `#272421` | Dark card, modal, and input surface | N/A |
+| `dark-primary` | `#f5f2ed` | High-contrast body text and titles | 15.9:1 on bg, 13.8:1 on surface |
+| `dark-muted` | `#a8a49d` | Secondary hints, captions, step labels | 7.2:1 on bg, 6.2:1 on surface |
+| `dark-rule` | `#423d38` | Dark mode dividers and card borders | N/A |
+| `dark-accent` | `#c23f00` | Primary button ground (`accent-dark`) | 4.7:1 with `#f5f2ed` text (passes WCAG AA) |
+| `dark-accent-highlight` | `#f45500` | Non-text decorative accents & marks | 5.2:1 on bg, 4.5:1 on surface |
+| `dark-accent-soft` | `#4a2717` | Dark mode tinted selection ground | N/A |
+| `dark-secondary` | `#3cb0db` | Secondary text links and interactive cues | 7.2:1 on bg |
+| `dark-secondary-soft` | `#193845` | Dark mode info banner background | N/A |
+| `dark-focus` | `#4da3ff` | Dark mode focus ring outline | High visibility on dark ground |
+| `dark-positive` | `#4cc77e` | Dark mode ready status indicator dot | High visibility on dark surface |
+| `dark-warning` | `#f0a73a` | Dark mode warning status indicator dot | High visibility on dark surface |
+| `dark-error` | `#ff6b6b` | Dark mode error status dot & alert text | High visibility on dark surface |
+| `dark-error-bg` | `#3a2020` | Dark mode error note card background | N/A |
+
 ### Contrast and Accessibility Rules
-- The undarkened brand orange `#f45500` fails WCAG AA 4.5:1 on pure white (`#ffffff`). Per `favor-design-dna.md` Section 1 ("Contrast adaptation"), interactive primary button backgrounds and text elements use `accent-dark` (`#c23f00`), which delivers **4.78:1** contrast on white.
-- Secondary interactive elements use `secondary-dark` (`#00647f`), delivering **5.38:1** contrast on white.
+- The undarkened brand orange `#f45500` fails WCAG AA 4.5:1 on pure white (`#ffffff`) and when paired with white text (3.4:1). Per `favor-design-dna.md` Section 1 ("Contrast adaptation"), interactive primary button backgrounds and text elements use `accent-dark` (`#c23f00`), which delivers **4.78:1** contrast on white in light mode, and **4.70:1** with `#f5f2ed` text in dark mode.
+- Secondary interactive elements use `secondary-dark` (`#00647f`) in light mode (delivering **5.38:1** on white), and `#3cb0db` in dark mode (delivering **7.16:1** on dark background).
 - Status indications NEVER rely solely on color. Every pill, state card, and tray item combines an icon/shape indicator with explicit plain text words (`Ready`, `Attention needed`, `Removed`).
 
 ---
