@@ -87,11 +87,9 @@ export function updateStatusText(update: AppSnapshot["update"]): string {
     case "checking":
       return "Checking for updates...";
     case "downloading":
-      return "Downloading an update...";
+      return "Downloading update...";
     case "ready":
-      return update.version
-        ? `Update ${update.version} ready. It installs when you quit.`
-        : "An update is ready. It installs when you quit.";
+      return "Update ready. Restart to apply.";
     case "error":
       return "Update check failed.";
   }
