@@ -87,6 +87,42 @@ describe("tray icons", () => {
     expect(alphaAtCentreOffset("amber")).toBe(0);
   });
 
+  // Points from tray-spec.md section 6.3 (normalised x, y): filled or empty.
+  const SPEC_POINTS: Record<StatusColor, [number, number, boolean][]> = {
+    green: [
+      [0.5, 0.08, true], // ring
+      [0.08, 0.5, true],
+      [0.44, 0.67, true], // check vertex
+      [0.6, 0.49, true], // check up-stroke
+      [0.5, 0.3, false], // hollow interior
+      [0.3, 0.7, false],
+    ],
+    amber: [
+      [0.5, 0.92, true], // ring
+      [0.5, 0.4, true], // bar
+      [0.5, 0.69, true], // dot
+      [0.5, 0.6, false], // gap between bar and dot
+      [0.3, 0.5, false], // hollow interior
+    ],
+    red: [
+      [0.5, 0.2, true], // solid disc
+      [0.3, 0.5, true],
+      [0.5, 0.5, false], // X cut-out centre
+      [0.4, 0.4, false],
+      [0.6, 0.4, false],
+    ],
+  };
+
+  it.each(COLORS)("%s follows the tray-spec geometry", (color) => {
+    const size = 36;
+    const pixels = renderIconPixels(color, size);
+    for (const [x, y, filled] of SPEC_POINTS[color]) {
+      const alpha = pixels[(Math.floor(y * size) * size + Math.floor(x * size)) * 4 + 3];
+      if (filled) expect(alpha, `${color} at ${x},${y}`).toBeGreaterThan(200);
+      else expect(alpha, `${color} at ${x},${y}`).toBe(0);
+    }
+  });
+
   it("encodes any pixel buffer to a PNG that decodes back to it", () => {
     const pixels = Uint8Array.from({ length: 2 * 2 * 4 }, (_, i) => (i * 37) % 256);
     expect(decode(encodePng(pixels, 2)).pixels).toEqual(Buffer.from(pixels));
