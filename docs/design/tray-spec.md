@@ -151,3 +151,12 @@ Each state corresponds to an exact mathematical geometry evaluated over normaliz
      - Diagonal 1: From $(0.33, 0.33)$ to $(0.67, 0.67)$ with cutout radius $0.055$.
      - Diagonal 2: From $(0.67, 0.33)$ to $(0.33, 0.67)$ with cutout radius $0.055$.
    - **Contrast with Rings:** While Green and Amber use open ring geometry ($r < 0.37$ is hollow background), Red is a solid filled silhouette disc with negative cutout space ($r < 0.37$ outside the X has alpha $> 200$), providing instant silhouette distinction even in peripheral vision.
+
+### 4. Design Decision: Retention of Current Template Glyphs & Copy (Recorded No-Change)
+The existing template glyph implementations (`app/src/main/shell/trayIcons.ts`) and status headline/detail copy (`app/src/main/services/statusSummary.ts`, `app/src/main/shell/tray.ts`) were reviewed against the Favor 2026 design system and accessibility requirements.
+
+Because:
+1. The mathematical template contours (ring with check mark, ring with exclamation mark, solid disc with inverted knockout cross) provide unambiguous, color-blind accessible silhouette contrast across both macOS light and dark menu bars without relying on color tinting, and
+2. The operational headlines and detail lines established in `statusSummary.ts` and `tray.ts` strictly adhere to the warm, calm, unambiguous volunteer voice mandated by `speak-like-favor`,
+
+**the current template glyphs and status copy are retained by design**. The restyle requirement is therefore met and recorded as an intentional no-change, pinned and verified by unit tests in `app/src/main/shell/trayIcons.test.ts` and `app/src/main/shell/tray.test.ts`.

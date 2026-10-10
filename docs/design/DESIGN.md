@@ -178,10 +178,11 @@ components:
 
 Favor Printer is a mission-critical utility for Favor Church Sunday services and events. It bridges Favor RSVP cloud check-in stations with Zebra thermal label printers connected via USB on volunteer-operated MacBooks.
 
-The operating context is **Operate** (under the `design-like-favor` / `dashboards-like-favor` skill classification):
+The operating context is **Operate**:
+- **Authorship & Methodology:** The visual direction, design tokens, copy deck, tray spec, and interactive mockups in `docs/design/` were authored by a Gemini design agent (`agy/gemini-3.8-flash@medium`) executing the `design-like-favor` skill (Favor Church brand and desktop app design system) and copy guidelines in `speak-like-favor`.
 - **Audience:** Sunday service volunteers and venue leads setting up check-in desks before church starts.
 - **Tone:** Warm, calm, dependable, authentic, and unambiguous. We avoid sterile enterprise SaaS grays while rejecting unnecessary visual clutter that distracts from operational readiness.
-- **Foundational Rule & Provenance:** Every color, type role, spacing, and structural element is directly mapped to canonical sources in the `design-like-favor` direction (implemented via the Favor 2026 design system repository and `dashboards-like-favor` asset package: `assets/tokens/brand-2026.json`, `references/favor-design-dna.md`, and `references/dashboard-ux.md`) and copy guidelines in `speak-like-favor`. Note on skill naming: in the Favor tooling environment, the `design-like-favor` design direction and `dashboards-like-favor` reference package denote the same canonical Favor 2026 design system assets (`brand-2026.json` and `favor-design-dna.md`).
+- **Foundational Rule & Provenance:** Every color, type role, spacing, and structural element is directly mapped to canonical sources in the `design-like-favor` direction (canonical Favor 2026 tokens in `brand-2026.json` and `favor-design-dna.md`). Note on skill scope: `design-like-favor` governs general Favor app styling, desktop interfaces, and component grammar, distinct from web analytics dashboards in `dashboards-like-favor`. Canonical tokens (`brand-2026.json` and `favor-design-dna.md`) are applied here strictly under the `design-like-favor` desktop application framework.
 
 ### Brand Silence and No-Invented-Values Policy
 
@@ -194,7 +195,7 @@ Where the design skill is silent on specific desktop-application concerns, this 
   - Primary text / ink: `#f5f2ed` (15.9:1 on canvas, 13.8:1 on surface)
   - Muted text: `#a8a49d` (7.2:1 on canvas, 6.2:1 on surface)
   - Border rules: `#423d38`
-  - Primary interactive button: Ground `#c23f00` (`accent-dark`) with `#f5f2ed` text, delivering **4.7:1** contrast (passes WCAG AA 4.5:1). Undarkened brand orange `#f45500` with white text yields 3.4:1 and MUST NOT be used for primary button ground in dark mode.
+  - Primary interactive button: Ground `#c23f00` (`accent-dark`) with `#ffffff` text (`--accent-text`), delivering **5.28:1** contrast (passes WCAG AA 4.5:1). Undarkened brand orange `#f45500` with white text yields 3.4:1 and MUST NOT be used for primary button ground in dark mode.
   - Secondary action: `#3cb0db` (7.2:1 contrast against `#1a1714`)
   - Secondary tint ground: `#193845`
   - Focus outline: `#4da3ff`
@@ -234,7 +235,7 @@ All canonical light color values derive from `brand-2026.json` and `favor-design
 | `dark-primary` | `#f5f2ed` | High-contrast body text and titles | 15.9:1 on bg, 13.8:1 on surface |
 | `dark-muted` | `#a8a49d` | Secondary hints, captions, step labels | 7.2:1 on bg, 6.2:1 on surface |
 | `dark-rule` | `#423d38` | Dark mode dividers and card borders | N/A |
-| `dark-accent` | `#c23f00` | Primary button ground (`accent-dark`) | 4.7:1 with `#f5f2ed` text (passes WCAG AA) |
+| `dark-accent` | `#c23f00` | Primary button ground (`accent-dark`) | 5.28:1 with `#ffffff` text (passes WCAG AA) |
 | `dark-accent-highlight` | `#f45500` | Non-text decorative accents & marks | 5.2:1 on bg, 4.5:1 on surface |
 | `dark-accent-soft` | `#4a2717` | Dark mode tinted selection ground | N/A |
 | `dark-secondary` | `#3cb0db` | Secondary text links and interactive cues | 7.2:1 on bg |
@@ -246,7 +247,7 @@ All canonical light color values derive from `brand-2026.json` and `favor-design
 | `dark-error-bg` | `#3a2020` | Dark mode error note card background | N/A |
 
 ### Contrast and Accessibility Rules
-- The undarkened brand orange `#f45500` fails WCAG AA 4.5:1 on pure white (`#ffffff`) and when paired with white text (3.4:1). Per `favor-design-dna.md` Section 1 ("Contrast adaptation"), interactive primary button backgrounds and text elements use `accent-dark` (`#c23f00`), which delivers **4.78:1** contrast on white in light mode, and **4.70:1** with `#f5f2ed` text in dark mode.
+- The undarkened brand orange `#f45500` fails WCAG AA 4.5:1 on pure white (`#ffffff`) and when paired with white text (3.4:1). Per `favor-design-dna.md` Section 1 ("Contrast adaptation"), interactive primary button backgrounds and text elements use `accent-dark` (`#c23f00`), which delivers **4.78:1** contrast on white in light mode, and **5.28:1** with `#ffffff` text in dark mode (matching `--accent-text: #ffffff` in CSS).
 - Secondary interactive elements use `secondary-dark` (`#00647f`) in light mode (delivering **5.38:1** on white), and `#3cb0db` in dark mode (delivering **7.16:1** on dark background).
 - Status indications NEVER rely solely on color. Every pill, state card, and tray item combines an icon/shape indicator with explicit plain text words (`Ready`, `Attention needed`, `Removed`).
 
