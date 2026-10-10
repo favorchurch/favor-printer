@@ -151,7 +151,12 @@ ul.plain:empty {
   border-radius: var(--radius);
   cursor: pointer;
   min-height: 44px;
-  transition: all 150ms ease;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease,
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .button:hover:not(:disabled) {
@@ -294,7 +299,12 @@ ul.plain:empty {
   background: var(--surface);
   cursor: pointer;
   min-height: 44px;
-  transition: all 150ms ease;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease,
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .choice.selected {
@@ -358,7 +368,12 @@ body[data-preview] .screen {
   color: var(--muted);
   cursor: pointer;
   min-height: 24px;
-  transition: all 150ms ease;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease,
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .fixture-bar button:hover {
@@ -371,3 +386,15 @@ body[data-preview] .screen {
   border-color: var(--accent);
   color: var(--accent-text);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

@@ -381,4 +381,23 @@ describe("boot", () => {
     // No other route to the bar: nothing in index.ts reads the query, or builds a fixture itself.
     expect(source).not.toMatch(/startPreview|fixtureButtons|createMockApi|data-fixture/);
   });
+
+  it("defines specific motion transitions and disables motion under prefers-reduced-motion: reduce", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+
+    // Must not use unconstrained 'transition: all'
+    expect(css).not.toMatch(/transition:\s*all/);
+
+    // Transitions must specify explicit properties
+    expect(css).toMatch(/transition:\s*[\s\S]*?background\s+150ms/);
+    expect(css).toMatch(/border-color\s+150ms/);
+    expect(css).toMatch(/opacity\s+150ms/);
+    expect(css).toMatch(/transform\s+150ms/);
+
+    // Must include prefers-reduced-motion: reduce media query
+    expect(css).toMatch(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)/);
+    expect(css).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
+  });
 });
+
