@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Favor Printer — Mockups Gallery</title>
+    <link rel="stylesheet" href="mockup-styles.css" />
+  </head>
+  <body>
+    <header class="gallery-header">
+      <div class="gallery-title-row">
+        <div class="brand-badge">FAVOR CHURCH 2026</div>
+        <h1>Favor Printer — Standalone Mockups</h1>
+      </div>
+      <p class="gallery-sub">Interactive, standalone visual mockups for every key flow and state in Favor Printer.</p>
+      
+      <nav class="mockup-nav" aria-label="Mockup navigation">
+        <a href="#welcome" class="nav-chip active" data-target="welcome">1. Welcome</a>
+        <a href="#printer-none" class="nav-chip" data-target="printer-none">2A. Printer (None)</a>
+        <a href="#printer-several" class="nav-chip" data-target="printer-several">2B. Printer (Multiple)</a>
+        <a href="#printer-fallback" class="nav-chip" data-target="printer-fallback">2C. Printer (Settings Guide)</a>
+        <a href="#printer-ready" class="nav-chip" data-target="printer-ready">2D. Printer (Ready)</a>
+        <a href="#code" class="nav-chip" data-target="code">3. Enter Code</a>
+        <a href="#code-invalid" class="nav-chip" data-target="code-invalid">3B. Code Invalid</a>
+        <a href="#connected" class="nav-chip" data-target="connected">4. Connected</a>
+        <a href="#test-print-initial" class="nav-chip" data-target="test-print-initial">5A. Test Print (Initial)</a>
+        <a href="#test-print-sent" class="nav-chip" data-target="test-print-sent">5B. Test Print (Verification)</a>
+        <a href="#done" class="nav-chip" data-target="done">6. You Are All Set</a>
+        <a href="#legacy" class="nav-chip" data-target="legacy">Replace Old Relay</a>
+        <a href="#legacy-confirm" class="nav-chip" data-target="legacy-confirm">Turn Off Old Relay?</a>
+        <a href="#revoked" class="nav-chip" data-target="revoked">Laptop Removed</a>
+      </nav>
+    </header>
+
+    <main class="gallery-viewport">
+      <!-- 1. WELCOME -->
+      <section id="welcome" class="mockup-stage active">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="welcome">
+            <header class="header">
+              <h1 id="title">Set up Favor Printer</h1>
+            </header>
+            <p class="lead">This app lets your Zebra label printer print check-in labels from Favor RSVP. Setup takes about two minutes.</p>
+            <ol class="plain">
+              <li>Pick your printer</li>
+              <li>Enter the code from an admin</li>
+              <li>Print a test label</li>
+            </ol>
+            <div class="actions">
+              <button type="button" class="button primary">Get started</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2A. PRINTER NONE -->
+      <section id="printer-none" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="printer-none">
+            <header class="header">
+              <p class="step">Step 1 of 5</p>
+              <h1>Plug in your Zebra printer</h1>
+            </header>
+            <p class="lead">Connect the printer to this Mac with its USB cable and turn it on. It can take a few seconds to show up.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Look again</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2B. PRINTER SEVERAL -->
+      <section id="printer-several" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="printer-several">
+            <header class="header">
+              <p class="step">Step 1 of 5</p>
+              <h1>Which printer is this?</h1>
+            </header>
+            <p class="lead">More than one Zebra is connected. Choose the one you want to print check-in labels on.</p>
+            <ul class="choices">
+              <li>
+                <label class="choice selected">
+                  <input type="radio" name="printer" value="p1" checked />
+                  <span class="choice-title">ZD421-203dpi ZPL</span>
+                  <span class="choice-detail">Serial D2J190800123</span>
+                </label>
+              </li>
+              <li>
+                <label class="choice">
+                  <input type="radio" name="printer" value="p2" />
+                  <span class="choice-title">GK420d</span>
+                  <span class="choice-detail">Serial 50J123456789</span>
+                </label>
+              </li>
+            </ul>
+            <div class="actions">
+              <button type="button" class="button primary">Continue</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2C. PRINTER FALLBACK -->
+      <section id="printer-fallback" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="printer-fallback">
+            <header class="header">
+              <p class="step">Step 1 of 5</p>
+              <h1>Add the printer in System Settings</h1>
+            </header>
+            <p class="lead">macOS did not let Favor Printer set this up. You can add it yourself:</p>
+            <ol class="plain">
+              <li>Open System Settings, then Printers & Scanners.</li>
+              <li>Click Add Printer, and choose the Zebra from the list.</li>
+              <li>Come back here and choose Check again.</li>
+            </ol>
+            <div class="actions">
+              <button type="button" class="button primary">Open Printers & Scanners</button>
+              <button type="button" class="button">Check again</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2D. PRINTER READY -->
+      <section id="printer-ready" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="printer-ready">
+            <header class="header">
+              <p class="step">Step 1 of 5</p>
+              <h1>Printer ready</h1>
+            </header>
+            <p class="lead">ZD421-203dpi ZPL is connected and set up.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Continue</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. CODE -->
+      <section id="code" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="code">
+            <header class="header">
+              <p class="step">Step 2 of 5</p>
+              <h1>Enter your code</h1>
+            </header>
+            <p class="lead">Ask an admin for a six-digit code from Favor RSVP. It only works for a short time.</p>
+            <form class="code-form" onsubmit="return false;">
+              <label for="code-input-mock" class="field-label">Six-digit code</label>
+              <input id="code-input-mock" class="code-input" type="text" value="849201" placeholder="000000" />
+              <p class="hint">Numbers only.</p>
+              <div class="actions">
+                <button type="submit" class="button primary">Connect</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3B. CODE INVALID -->
+      <section id="code-invalid" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="code">
+            <header class="header">
+              <p class="step">Step 2 of 5</p>
+              <h1>Enter your code</h1>
+            </header>
+            <p class="lead">Ask an admin for a six-digit code from Favor RSVP. It only works for a short time.</p>
+            <form class="code-form" onsubmit="return false;">
+              <label for="code-input-err" class="field-label">Six-digit code</label>
+              <input id="code-input-err" class="code-input" type="text" value="000000" aria-invalid="true" />
+              <p class="note error" role="alert">That code did not work. It may have expired. Ask an admin for a new one.</p>
+              <div class="actions">
+                <button type="submit" class="button primary">Connect</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. CONNECTED -->
+      <section id="connected" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="connected">
+            <header class="header">
+              <p class="step">Step 3 of 5</p>
+              <h1>Connected</h1>
+            </header>
+            <p class="lead">This Mac is now Front Desk Laptop in Favor RSVP.</p>
+            <p class="pill green">
+              <span class="dot" aria-hidden="true"></span>
+              <span>Ready to print</span>
+            </p>
+            <div class="actions">
+              <button type="button" class="button primary">Print a test label</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5A. TEST PRINT INITIAL -->
+      <section id="test-print-initial" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="test-print">
+            <header class="header">
+              <p class="step">Step 4 of 5</p>
+              <h1>Print a test label</h1>
+            </header>
+            <p class="lead">Favor Printer will send one test label to your Zebra.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Print test label</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5B. TEST PRINT SENT (VERIFICATION) -->
+      <section id="test-print-sent" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="test-print">
+            <header class="header">
+              <p class="step">Step 4 of 5</p>
+              <h1>Did a label come out?</h1>
+            </header>
+            <p class="lead">Favor Printer sent the label to the printer. That does not prove a label printed, so check the printer.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Yes, a label came out</button>
+              <button type="button" class="button">No label came out</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. DONE -->
+      <section id="done" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="done">
+            <header class="header">
+              <p class="step">Step 5 of 5</p>
+              <h1>You are all set</h1>
+            </header>
+            <p class="lead">Favor Printer runs from the menu bar. Keep the lid open and the Mac plugged in during events.</p>
+            <ul class="plain">
+              <li>Keep the lid open while printing. Closing the lid can stop labels from printing.</li>
+            </ul>
+            <div class="actions">
+              <button type="button" class="button primary">Finish</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LEGACY -->
+      <section id="legacy" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="legacy">
+            <header class="header">
+              <h1>Replace the old print relay</h1>
+            </header>
+            <p class="lead">An older print relay is still running on this Mac. If both ran, they could claim the same labels, so Favor Printer stays off until the old one is turned off.</p>
+            <p class="hint">Nothing is deleted, and no password or code is copied from the old relay.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Move to Favor Printer</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LEGACY CONFIRM -->
+      <section id="legacy-confirm" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="legacy-confirm">
+            <header class="header">
+              <h1>Turn off the old print relay?</h1>
+            </header>
+            <p class="lead">Favor Printer will stop the old relay now and keep it from starting when you log in. Labels printed by the old relay stop until you finish setting up here.</p>
+            <p class="hint">Favor Printer checks that the old relay is gone before it starts printing.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Turn off old relay</button>
+              <button type="button" class="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REVOKED -->
+      <section id="revoked" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="revoked">
+            <header class="header">
+              <h1>This laptop was removed</h1>
+            </header>
+            <p class="pill red">
+              <span class="dot" aria-hidden="true"></span>
+              <span>This laptop was removed. Ask an admin for a new code.</span>
+            </p>
+            <p class="lead">Ask an admin for a new code. Printing is off until you enter it.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Enter a new code</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const chips = document.querySelectorAll('.nav-chip');
+      const stages = document.querySelectorAll('.mockup-stage');
+
+      function showStage(targetId) {
+        stages.forEach(s => s.classList.remove('active'));
+        chips.forEach(c => c.classList.remove('active'));
+
+        const targetEl = document.getElementById(targetId);
+        if (targetEl) {
+          targetEl.classList.add('active');
+          const chip = document.querySelector(`.nav-chip[data-target="${targetId}"]`);
+          if (chip) chip.classList.add('active');
+          window.location.hash = targetId;
+        }
+      }
+
+      chips.forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.preventDefault();
+          const target = chip.getAttribute('data-target');
+          showStage(target);
+        });
+      });
+
+      window.addEventListener('load', () => {
+        const hash = window.location.hash.replace('#', '');
+        if (hash && document.getElementById(hash)) {
+          showStage(hash);
+        }
+      });
+    </script>
+  </body>
+</html>

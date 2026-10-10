@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSnapshot, FavorPrinterApi } from "../shared";
 import { boot } from "./boot";
 import { INITIAL_LOCAL, ENROLL_ERROR_COPY } from "./model";
-import { renderScreen } from "./screens";
+import { channelLabel, renderScreen, updateStatusText } from "./screens";
 import { createMockApi, FIXTURE_NAMES, fixtureFor } from "./fixtures";
 import { fixtureButtons, shouldShowFixtureBar, startPreview } from "./preview";
 
@@ -102,6 +102,114 @@ describe("printer_not_found on the plug-in screen", () => {
 
   it("shows no error otherwise", () => {
     expect(text(render(null))).not.toContain(ENROLL_ERROR_COPY.printer_not_found);
+  });
+});
+
+describe("status / about screen rendering", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+
+  it.each([
+    [{ kind: "idle" as const }, "Up to date"],
+    [{ kind: "checking" as const }, "Checking for updates..."],
+    [{ kind: "downloading" as const }, "Downloading update..."],
+    [{ kind: "ready" as const, version: "0.2.0" }, "Update ready. Restart to apply."],
+    [{ kind: "ready" as const, version: "" }, "Update ready. Restart to apply."],
+    [{ kind: "error" as const }, "Update check failed."],
+  ])("renders update state %o as %s", (update, expected) => {
+    const rendered = renderScreen("status", {
+      snapshot: { ...fixtureFor("status").snapshot, update, channel: "stable", version: "0.1.0" },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(expected);
+    expect(text(rendered)).toContain("Version 0.1.0 (Stable)");
+  });
+
+  it("displays preview channel clearly when on preview", () => {
+    const rendered = renderScreen("status", {
+      snapshot: { ...fixtureFor("status").snapshot, channel: "preview", version: "0.1.0" },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain("Version 0.1.0 (Preview)");
+  });
+
+  it("matches the copy deck strings directly from docs/design/copy-deck.md", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const deckPath = new URL("../../../docs/design/copy-deck.md", import.meta.url);
+    const deck = await readFile(deckPath, "utf8");
+
+    // Copy deck specifies exact status window lines:
+    expect(deck).toContain("`idle`: `Up to date`");
+    expect(deck).toContain("`checking`: `Checking for updates...`");
+    expect(deck).toContain("`downloading`: `Downloading update...`");
+    expect(deck).toContain("`ready`: `Update ready. Restart to apply.`");
+    expect(deck).toContain("`error`: `Update check failed.`");
+    expect(deck).toContain("`stable` → `Stable`");
+    expect(deck).toContain("`preview` → `Preview`");
+
+    // Verify all helper outputs match the deck strings
+    expect(updateStatusText({ kind: "idle" })).toBe("Up to date");
+    expect(updateStatusText({ kind: "checking" })).toBe("Checking for updates...");
+    expect(updateStatusText({ kind: "downloading" })).toBe("Downloading update...");
+    expect(updateStatusText({ kind: "ready", version: "1.0.0" })).toBe("Update ready. Restart to apply.");
+    expect(updateStatusText({ kind: "error" })).toBe("Update check failed.");
+    expect(channelLabel("stable")).toBe("Stable");
+    expect(channelLabel("preview")).toBe("Preview");
+  });
+
+  it("handles empty detail gracefully", () => {
+    const rendered = renderScreen("status", {
+      snapshot: { ...fixtureFor("status").snapshot, status: { color: "green", headline: "Ready to print", detail: null } },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain("Ready to print");
+  });
+});
+
+describe("edge case rendering in screens", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+
+  it("renders long laptop labels in connected screen", () => {
+    const longLabel = "Very Long Sanctuary Stage Left Check-in MacBook Pro Label That Might Wrap Across Lines";
+    const rendered = renderScreen("connected", {
+      snapshot: { ...fixtureFor("connected").snapshot, label: longLabel },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(`This Mac is now ${longLabel} in Favor RSVP.`);
+  });
+
+  it("renders long printer model strings in printer-ready screen", () => {
+    const longModel = "Zebra Technologies ZTC ZD421-203dpi ZPL Extended Long Name Industrial High Density";
+    const rendered = renderScreen("printer-ready", {
+      snapshot: {
+        ...fixtureFor("default").snapshot,
+        printer: {
+          kind: "found",
+          devices: [{ id: "p1", deviceUri: "p1", usbSerial: "123", model: longModel }],
+          selectedId: "p1",
+          queue: "ready",
+        },
+      },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(`${longModel} is connected and set up.`);
+  });
+
+  it("renders empty warnings list in done screen without breaking", () => {
+    const rendered = renderScreen("done", {
+      snapshot: { ...fixtureFor("done").snapshot, warnings: [] },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    const ul = descendants(rendered).find((n) => n.tagName === "ul");
+    expect(ul).toBeDefined();
+    expect(ul?.children).toHaveLength(0);
   });
 });
 
@@ -273,4 +381,23 @@ describe("boot", () => {
     // No other route to the bar: nothing in index.ts reads the query, or builds a fixture itself.
     expect(source).not.toMatch(/startPreview|fixtureButtons|createMockApi|data-fixture/);
   });
+
+  it("defines specific motion transitions and disables motion under prefers-reduced-motion: reduce", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+
+    // Must not use unconstrained 'transition: all'
+    expect(css).not.toMatch(/transition:\s*all/);
+
+    // Transitions must specify explicit properties
+    expect(css).toMatch(/transition:\s*[\s\S]*?background\s+150ms/);
+    expect(css).toMatch(/border-color\s+150ms/);
+    expect(css).toMatch(/opacity\s+150ms/);
+    expect(css).toMatch(/transform\s+150ms/);
+
+    // Must include prefers-reduced-motion: reduce media query
+    expect(css).toMatch(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)/);
+    expect(css).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
+  });
 });
+

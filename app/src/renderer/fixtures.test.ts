@@ -12,10 +12,14 @@ const EXPECTED: Record<(typeof FIXTURE_NAMES)[number], ScreenId> = {
   "invalid-code": "code",
   connected: "connected",
   "test-print-confirm": "test-print",
+  done: "done",
   revoked: "revoked",
   "legacy-relay": "legacy",
   "legacy-confirm": "legacy-confirm",
   "legacy-failed": "legacy",
+  status: "status",
+  "update-ready": "status",
+  "update-error": "status",
 };
 
 describe("fixture states used by the visual check", () => {
@@ -39,6 +43,13 @@ describe("fixture states used by the visual check", () => {
       color: "red",
       headline: "This laptop was removed. Ask an admin for a new code.",
     });
+  });
+
+  it("provides done, status, update-ready, and update-error fixtures with expected properties", () => {
+    expect(fixtureFor("done").snapshot.setupStep).toBe("done");
+    expect(fixtureFor("status").snapshot.update).toEqual({ kind: "idle" });
+    expect(fixtureFor("update-ready").snapshot.update).toEqual({ kind: "ready", version: "0.2.0" });
+    expect(fixtureFor("update-error").snapshot.update).toEqual({ kind: "error" });
   });
 
   it("carries no real names, codes or tokens", () => {

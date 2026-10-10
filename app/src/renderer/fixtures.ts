@@ -55,10 +55,14 @@ export const FIXTURE_NAMES = [
   "invalid-code",
   "connected",
   "test-print-confirm",
+  "done",
   "revoked",
   "legacy-relay",
   "legacy-confirm",
   "legacy-failed",
+  "status",
+  "update-ready",
+  "update-error",
 ] as const;
 export type FixtureName = (typeof FIXTURE_NAMES)[number];
 
@@ -120,6 +124,8 @@ export function fixtureFor(requested: string | null): Fixture {
       return { snapshot: withStep("connected", enrolled) };
     case "test-print-confirm":
       return { snapshot: withStep("test-print", enrolled), local: { testPrint: { kind: "sent" } } };
+    case "done":
+      return { snapshot: withStep("done", enrolled) };
     case "revoked":
       return {
         snapshot: withStep(null, {
@@ -139,6 +145,27 @@ export function fixtureFor(requested: string | null): Fixture {
         snapshot: withStep("welcome", { legacyRelayLoaded: true, status: LEGACY_STATUS }),
         local: { migrateError: true },
         failMigration: true,
+      };
+    case "status":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          update: { kind: "idle" },
+        }),
+      };
+    case "update-ready":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          update: { kind: "ready", version: "0.2.0" },
+        }),
+      };
+    case "update-error":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          update: { kind: "error" },
+        }),
       };
     default:
       return { snapshot: base };
