@@ -149,7 +149,7 @@ describe("copy", () => {
     expect(Object.keys(ENROLL_ERROR_COPY).sort()).toEqual(["disabled", "invalid_code", "invalid_request", "printer_not_found", "throttled", "unreachable"]);
     expect(ENROLL_ERROR_COPY.invalid_code).toMatch(/expired/i);
     expect(ENROLL_ERROR_COPY.throttled).toMatch(/wait/i);
-    expect(ENROLL_ERROR_COPY.printer_not_found).toBe("We can't see your Zebra printer. Check it's on and plugged in, then try again.");
+    expect(ENROLL_ERROR_COPY.printer_not_found).toBe("We cannot see your Zebra printer. Check that it is turned on and plugged in, then try again.");
   });
 
   it("has clear text for every test print failure", () => {
@@ -158,7 +158,7 @@ describe("copy", () => {
 
   it("is neutral when the printer is not ready: retry first, ask an admin only if it persists, never plug it in", () => {
     const copy = TEST_PRINT_ERROR_COPY.printer_not_ready;
-    expect(copy).toMatch(/isn.t ready yet/i);
+    expect(copy).toMatch(/is not ready yet/i);
     expect(copy).toMatch(/wait a minute and try again/i);
     expect(copy).toMatch(/if it keeps happening, ask an admin/i);
     expect(copy).not.toMatch(/turned (on|off)/i);
