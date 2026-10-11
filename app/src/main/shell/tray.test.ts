@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppSnapshot } from "../../shared";
-import { buildMenuTemplate, createTrayView, jobCountsLabel, trayTooltip, type MenuItemTemplate, type TrayActions } from "./tray";
+import { buildMenuTemplate, CLOUD_TEST_HINT, createTrayView, LOCAL_TEST_MENU_LABEL, jobCountsLabel, trayTooltip, type MenuItemTemplate, type TrayActions } from "./tray";
 import { snapshotFor } from "./testing/snapshot";
 import { deriveStatus, type StatusInputs } from "../services/statusSummary";
 import type { RelayStatus } from "../../../../vendor/relay/status";
@@ -35,7 +35,8 @@ describe("buildMenuTemplate", () => {
       "Ready to print",
       "Labels this session: 4 sent, 1 failed",
       "Pause printing",
-      "Test print...",
+      "Local hardware test print...",
+      "Check-in test: RSVP, Set up printing",
       "Keep printing",
       "Open at login",
       "Check for updates",
@@ -43,6 +44,15 @@ describe("buildMenuTemplate", () => {
       "Favor Printer 0.1.0",
       "Quit Favor Printer",
     ]);
+  });
+
+  it("calls the test print a local hardware test and points to RSVP for the check-in test", () => {
+    expect(LOCAL_TEST_MENU_LABEL).toBe("Local hardware test print...");
+    expect(CLOUD_TEST_HINT).toBe("Check-in test: RSVP, Set up printing");
+    const items = buildMenuTemplate(snapshotFor(), actions());
+    const index = items.findIndex((item) => item.label === LOCAL_TEST_MENU_LABEL);
+    expect(index).toBeGreaterThan(-1);
+    expect(items[index + 1]).toMatchObject({ label: CLOUD_TEST_HINT, enabled: false });
   });
 
   it("shows the headline and the help line", () => {
@@ -75,7 +85,7 @@ describe("buildMenuTemplate", () => {
     const a = actions();
     const items = buildMenuTemplate(snapshotFor(), a);
     find(items, "Pause printing")?.click?.();
-    find(items, "Test print...")?.click?.();
+    find(items, LOCAL_TEST_MENU_LABEL)?.click?.();
     find(items, "Quit Favor Printer")?.click?.();
     expect([a.pause, a.testPrint, a.quit].map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1]);
   });
@@ -142,7 +152,7 @@ describe("buildMenuTemplate", () => {
       find(items, "Set up Favor Printer...")?.click?.();
       expect(a.openSetup).toHaveBeenCalled();
       expect(find(items, "Pause printing")?.enabled).toBe(false);
-      expect(find(items, "Test print...")?.enabled).toBe(false);
+      expect(find(items, LOCAL_TEST_MENU_LABEL)?.enabled).toBe(false);
     });
 
     it("offers to finish an unfinished setup", () => {
@@ -156,7 +166,7 @@ describe("buildMenuTemplate", () => {
       expect(a.reenroll).toHaveBeenCalled();
       expect(find(items, "Set up Favor Printer...")).toBeUndefined();
       expect(find(items, "Pause printing")?.enabled).toBe(false);
-      expect(find(items, "Test print...")?.enabled).toBe(false);
+      expect(find(items, LOCAL_TEST_MENU_LABEL)?.enabled).toBe(false);
     });
 
     it("offers the move while the old relay runs and turns printing controls off", () => {
@@ -164,12 +174,12 @@ describe("buildMenuTemplate", () => {
       const items = buildMenuTemplate(snapshotFor({ legacyRelayLoaded: true }), a);
       find(items, "Move to Favor Printer...")?.click?.();
       expect(a.migrateLegacy).toHaveBeenCalled();
-      expect(find(items, "Test print...")?.enabled).toBe(false);
+      expect(find(items, LOCAL_TEST_MENU_LABEL)?.enabled).toBe(false);
     });
 
     it("shows no setup entry for a finished setup", () => {
       const items = buildMenuTemplate(snapshotFor(), actions());
-      expect(labels(items).some((label) => /set up|finish setup|new code|move to/i.test(label ?? ""))).toBe(false);
+      expect(labels(items).some((label) => /set up favor|finish setup|new code|move to/i.test(label ?? ""))).toBe(false);
     });
   });
 
@@ -244,7 +254,7 @@ describe("menu for each status", () => {
       expect(firstAction?.label).toBe(setupAction ?? printControl);
       if (setupAction) expect(firstAction?.enabled).not.toBe(false);
       expect(find(items, printControl)?.enabled).toBe(canPrint);
-      expect(find(items, "Test print...")?.enabled).toBe(canPrint);
+      expect(find(items, LOCAL_TEST_MENU_LABEL)?.enabled).toBe(canPrint);
     },
   );
 });

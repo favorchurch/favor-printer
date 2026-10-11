@@ -220,6 +220,8 @@ export function createAppController(deps: ControllerDeps): AppController {
       status,
       enrolled,
       label: current.label,
+      printerName: enrolled ? current.printerName : null,
+      campusId: enrolled ? current.campusId : null,
       paused,
       openAtLogin: current.openAtLogin ?? true,
       channel: current.channel,
@@ -429,8 +431,11 @@ export function createAppController(deps: ControllerDeps): AppController {
         if (!outcome.ok) {
           // Never the code, the token or the serial: only whether a serial was there.
           const status = outcome.status === undefined ? "" : ` (HTTP ${outcome.status})`;
-          log("warn", "enroll", `enrollment failed: ${outcome.reason}${status}, printer serial ${usbSerial ? "present" : "missing"}`);
-          return { ok: false, reason: outcome.reason };
+          const detail = outcome.reason === "printer_conflict" ? ` (${outcome.conflict})` : "";
+          log("warn", "enroll", `enrollment failed: ${outcome.reason}${detail}${status}, printer serial ${usbSerial ? "present" : "missing"}`);
+          return outcome.reason === "printer_conflict"
+            ? { ok: false, reason: outcome.reason, conflict: outcome.conflict }
+            : { ok: false, reason: outcome.reason };
         }
         try {
           await secrets.save({ relayId: outcome.credentials.relayId, token: outcome.credentials.token });
@@ -439,7 +444,8 @@ export function createAppController(deps: ControllerDeps): AppController {
           log("error", "enroll", `could not save credentials: ${error instanceof Error ? error.name : "error"}`);
           return { ok: false, reason: "disabled" };
         }
-        await prefs.update({ label: outcome.credentials.label, revoked: false }).catch(() => undefined);
+        const { label, printer } = outcome.credentials;
+        await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false }).catch(() => undefined);
         log("info", "enroll", "enrolled this laptop");
         enrolled = true;
         testPrintConfirmed = false;

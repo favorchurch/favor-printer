@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppSnapshot, FavorPrinterApi } from "../shared";
 import { boot } from "./boot";
-import { INITIAL_LOCAL, ENROLL_ERROR_COPY } from "./model";
+import { ENROLL_CONFLICT_COPY, ENROLL_CONFLICT_REASONS, type EnrollConflictReason } from "../shared";
+import { startApp } from "./app";
+import { INITIAL_LOCAL, ENROLL_ERROR_COPY, LOCAL_TEST_COPY } from "./model";
 import { channelLabel, renderScreen, updateStatusText } from "./screens";
 import { createMockApi, FIXTURE_NAMES, fixtureFor } from "./fixtures";
 import { fixtureButtons, shouldShowFixtureBar, startPreview } from "./preview";
@@ -22,6 +24,9 @@ class FakeElement {
   }
   addEventListener(event: string, listener: (event: unknown) => void) {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
+  }
+  querySelector() {
+    return null;
   }
   append(...nodes: (FakeElement | { text: string })[]) {
     this.children.push(...nodes);
@@ -401,3 +406,95 @@ describe("boot", () => {
   });
 });
 
+
+describe("bound printer on the connected and status screens", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+  const render = (screen: "connected" | "status", patch: Partial<AppSnapshot>) =>
+    text(
+      renderScreen(screen, {
+        snapshot: { ...fixtureFor("connected").snapshot, ...patch },
+        local: INITIAL_LOCAL,
+        actions: {} as never,
+      }) as unknown as FakeElement,
+    );
+
+  it.each(["connected", "status"] as const)("%s shows the printer name and campus id", (screen) => {
+    expect(render(screen, { printerName: "Lobby Zebra", campusId: 7 })).toContain("Printer: Lobby Zebra · Campus ID 7");
+  });
+
+  it.each(["connected", "status"] as const)("%s shows just the name when there is no campus", (screen) => {
+    const lines = render(screen, { printerName: "Lobby Zebra", campusId: null });
+    expect(lines).toContain("Printer: Lobby Zebra");
+    expect(lines.join(" ")).not.toMatch(/campus/i);
+  });
+
+  it.each(["connected", "status"] as const)("%s shows no printer line when the cloud did not name one", (screen) => {
+    expect(render(screen, { printerName: null, campusId: null }).join(" ")).not.toContain("Printer:");
+  });
+});
+
+describe("local hardware test copy", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+  const render = (testPrint: (typeof INITIAL_LOCAL)["testPrint"]) =>
+    text(
+      renderScreen("test-print", {
+        snapshot: fixtureFor("test-print-confirm").snapshot,
+        local: { ...INITIAL_LOCAL, testPrint },
+        actions: {} as never,
+      }) as unknown as FakeElement,
+    );
+
+  it("says it is a local hardware test and points to RSVP Set up printing", () => {
+    const lines = render({ kind: "idle" });
+    expect(lines).toContain("Local hardware test");
+    expect(lines.join(" ")).toMatch(/does not test check-in/);
+    expect(lines).toContain("To test check-in printing from Favor RSVP, use Set up printing in RSVP.");
+    expect(lines).toContain(LOCAL_TEST_COPY.start);
+  });
+
+  it("keeps the pointer while asking whether a label came out", () => {
+    const lines = render({ kind: "sent" });
+    expect(lines).toContain("Did a label come out?");
+    expect(lines.join(" ")).toContain("Set up printing in RSVP");
+  });
+});
+
+describe("a refused enrollment on the code screen", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+
+  it.each([...ENROLL_CONFLICT_REASONS, "unknown"] as EnrollConflictReason[])("shows the copy for conflict %s", (codeConflict) => {
+    const rendered = renderScreen("code", {
+      snapshot: fixtureFor("enter-code").snapshot,
+      local: { ...INITIAL_LOCAL, codeConflict },
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(ENROLL_CONFLICT_COPY[codeConflict]);
+    expect(withAttr(rendered, "aria-invalid").some((node) => node.getAttribute("aria-invalid") === "true")).toBe(true);
+  });
+
+  const submit = async (enrollResult: Awaited<ReturnType<FavorPrinterApi["enroll"]>>) => {
+    const api = { ...createMockApi(fixtureFor("enter-code").snapshot), enroll: vi.fn(async () => enrollResult) } as unknown as FavorPrinterApi;
+    const root = new FakeElement("div");
+    startApp(root as unknown as HTMLElement, api, fixtureFor("enter-code").snapshot);
+    const input = descendants(root).find((node) => node.tagName === "input") as unknown as { value: string };
+    input.value = "123456";
+    const form = descendants(root).find((node) => node.tagName === "form") as FakeElement;
+    form.listeners.get("submit")?.[0]({ preventDefault: () => undefined });
+    await vi.waitFor(() => expect(api.enroll).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return text(root);
+  };
+
+  it("turns a conflict from main into its own copy, not a generic error", async () => {
+    const lines = await submit({ ok: false, reason: "printer_conflict", conflict: "serial_in_use" });
+    expect(lines).toContain(ENROLL_CONFLICT_COPY.serial_in_use);
+  });
+
+  it("still shows the plain copy for other failures", async () => {
+    const lines = await submit({ ok: false, reason: "throttled" });
+    expect(lines).toContain(ENROLL_ERROR_COPY.throttled);
+  });
+});

@@ -5,7 +5,16 @@
  * print progress. Kept free of the DOM so it is tested as plain functions.
  */
 
-import { isUsableUsbSerial, type AppSnapshot, type EnrollResult, type SetupStep, type TestPrintResult } from "../shared";
+import {
+  ENROLL_CONFLICT_COPY,
+  ENROLL_FAILURE_COPY,
+  isUsableUsbSerial,
+  type AppSnapshot,
+  type EnrollConflictReason,
+  type EnrollPlainFailure,
+  type SetupStep,
+  type TestPrintResult,
+} from "../shared";
 
 export type ScreenId =
   | "welcome"
@@ -25,7 +34,7 @@ export type ScreenId =
   | "revoked"
   | "status";
 
-export type EnrollFailureReason = Extract<EnrollResult, { ok: false }>["reason"];
+export type EnrollFailureReason = EnrollPlainFailure;
 
 export type TestPrintProgress =
   | { kind: "idle" }
@@ -39,6 +48,8 @@ export type LocalState = {
   /** "Set up printer" was refused by macOS: show the System Settings guide. */
   setUpRefused: boolean;
   codeError: EnrollFailureReason | null;
+  /** The cloud refused to bind the printer: why. Set instead of `codeError`, never with it. */
+  codeConflict: EnrollConflictReason | null;
   testPrint: TestPrintProgress;
   /** An action is running: its button is disabled. */
   busy: boolean;
@@ -51,6 +62,7 @@ export type LocalState = {
 export const INITIAL_LOCAL: LocalState = {
   setUpRefused: false,
   codeError: null,
+  codeConflict: null,
   testPrint: { kind: "idle" },
   busy: false,
   confirmingMigration: false,
@@ -96,14 +108,22 @@ export function stepLabel(step: SetupStep | null): string | null {
   return `Step ${STEP_ORDER.indexOf(step)} of ${STEP_ORDER.length - 1}`;
 }
 
-export const ENROLL_ERROR_COPY: Record<EnrollFailureReason, string> = {
-  invalid_code: "That code did not work. It may have expired. Ask an admin for a new one.",
-  throttled: "Too many tries. Wait a few minutes, then enter the code again.",
-  disabled: "Enrolling is turned off right now. Ask an admin for help.",
-  unreachable: "Could not reach Favor RSVP. Check the internet connection and try again.",
-  printer_not_found: "We cannot see your Zebra printer. Check that it is turned on and plugged in, then try again.",
-  invalid_request: "The app could not send that request. Update Favor Printer and try again.",
-};
+export const ENROLL_ERROR_COPY = ENROLL_FAILURE_COPY;
+
+/** What the code screen says about the last failed enrollment, or null when there was none. */
+export function codeErrorCopy(local: Pick<LocalState, "codeError" | "codeConflict">): string | null {
+  if (local.codeConflict) return ENROLL_CONFLICT_COPY[local.codeConflict];
+  return local.codeError ? ENROLL_ERROR_COPY[local.codeError] : null;
+}
+
+/** The test print here goes to the local printer only. The cloud check-in path is tested from RSVP. */
+export const LOCAL_TEST_COPY = {
+  title: "Local hardware test",
+  lead: "This sends one test label straight to your Zebra to check the hardware. It does not test check-in.",
+  cloudHint: "To test check-in printing from Favor RSVP, use Set up printing in RSVP.",
+  confirmLead: "Favor Printer sent the label to the printer. That does not prove a label printed, so check the printer.",
+  start: "Print local test label",
+} as const;
 
 export const TEST_PRINT_ERROR_COPY: Record<Extract<TestPrintResult, { ok: false }>["reason"], string> = {
   no_printer: "No printer is ready. Plug in the Zebra and check the menu bar icon.",
@@ -113,6 +133,12 @@ export const TEST_PRINT_ERROR_COPY: Record<Extract<TestPrintResult, { ok: false 
   busy: "The printer is busy with a label. Wait a moment, then try again.",
   failed: "The test label could not be sent. Try again.",
 };
+
+/** "Lobby Zebra · Campus ID 7", or null when the cloud did not say which printer this laptop is bound to. */
+export function boundPrinterText(snapshot: Pick<AppSnapshot, "printerName" | "campusId">): string | null {
+  if (!snapshot.printerName) return null;
+  return snapshot.campusId === null ? snapshot.printerName : `${snapshot.printerName} · Campus ID ${snapshot.campusId}`;
+}
 
 /** Digits only, at most six: what the code box keeps as the volunteer types or pastes. */
 export function cleanCodeInput(raw: string): string {

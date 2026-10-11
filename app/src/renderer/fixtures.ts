@@ -25,6 +25,8 @@ const base: AppSnapshot = {
   status: { color: "amber", headline: "Not set up yet", detail: "Enter the six-digit code from an admin." },
   enrolled: false,
   label: null,
+  printerName: null,
+  campusId: null,
   paused: false,
   openAtLogin: true,
   channel: "stable",
@@ -105,7 +107,7 @@ export function normalizeFixtureName(name: string | null): FixtureName {
 export function fixtureFor(requested: string | null): Fixture {
   const name = normalizeFixtureName(requested);
   const oneReady: AppSnapshot["printer"] = { kind: "found", devices: [ZD421], selectedId: ZD421.id, queue: "ready" };
-  const enrolled = { enrolled: true, label: "Front desk laptop", status: ready, printer: oneReady };
+  const enrolled = { enrolled: true, label: "Front desk laptop", printerName: "Lobby Zebra", campusId: 7, status: ready, printer: oneReady };
   switch (name) {
     case "no-printer":
       return { snapshot: withStep("printer") };
@@ -204,7 +206,7 @@ export function createMockApi(start: AppSnapshot, options: { failMigration?: boo
     openPrinterSettings: async () => undefined,
     enroll: async (code) => {
       if (code === "000000") return { ok: false, reason: "invalid_code" };
-      set({ enrolled: true, label: "Front desk laptop", status: ready });
+      set({ enrolled: true, label: "Front desk laptop", printerName: "Lobby Zebra", campusId: 7, status: ready });
       return { ok: true };
     },
     requestTestPrint: async () => ({ ok: true }),

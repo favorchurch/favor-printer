@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { RelayApiClient, RelayAuthError, RelayNetworkError } from "../../../../vendor/relay/apiClient";
+import type { RelayEnrollConflictReason } from "../../../../vendor/relay/protocol";
+import { ENROLL_CONFLICT_COPY, ENROLL_CONFLICT_REASONS, enrollFailureCopy, type EnrollConflictReason } from "../../shared";
 import {
   cloudStateForError,
   cloudStateForStatus,
@@ -28,7 +30,7 @@ describe("enroll", () => {
     const fetchMock = vi.fn(async () => json(200, { relayId: "relay-1", token: "tok-abc", label: "Lobby laptop" }));
     const outcome = await enroll(request(fetchMock as unknown as typeof fetch, { apiUrl: "https://rsvp.favor.church/" }));
 
-    expect(outcome).toEqual({ ok: true, credentials: { relayId: "relay-1", token: "tok-abc", label: "Lobby laptop" } });
+    expect(outcome).toEqual({ ok: true, credentials: { relayId: "relay-1", token: "tok-abc", label: "Lobby laptop", printer: null } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://rsvp.favor.church/api/printing/relay/enroll");
@@ -45,6 +47,34 @@ describe("enroll", () => {
     const fetchMock = vi.fn(async () => json(200, { relayId: "relay-1", token: "tok-abc" }));
     const outcome = await enroll(request(fetchMock as unknown as typeof fetch));
     expect(outcome).toMatchObject({ ok: true, credentials: { label: null } });
+  });
+
+  it("returns the bound printer name and campus id, ignoring fields it does not know", async () => {
+    const fetchMock = vi.fn(async () =>
+      json(200, {
+        apiVersion: 1,
+        relayId: "relay-1",
+        token: "tok-abc",
+        label: null,
+        printer: { id: "p1", name: "Lobby Zebra", usbSerial: "D2J1", campusId: 7, future: true },
+        somethingNew: 1,
+      }),
+    );
+    const outcome = await enroll(request(fetchMock as unknown as typeof fetch));
+    expect(outcome).toMatchObject({ ok: true, credentials: { printer: { name: "Lobby Zebra", campusId: 7 } } });
+  });
+
+  it.each([
+    ["no campus", { id: "p1", name: "Lobby Zebra", usbSerial: null }, { name: "Lobby Zebra", campusId: null }],
+    ["a null campus", { name: "Lobby Zebra", campusId: null }, { name: "Lobby Zebra", campusId: null }],
+    ["a campus that is not a number", { name: "Lobby Zebra", campusId: "7" }, { name: "Lobby Zebra", campusId: null }],
+    ["no name", { id: "p1", campusId: 7 }, null],
+    ["a blank name", { name: "  ", campusId: 7 }, null],
+    ["a printer that is not an object", "Lobby Zebra", null],
+  ])("keeps the enrollment when the printer has %s", async (_title, printer, expected) => {
+    const fetchMock = vi.fn(async () => json(200, { relayId: "relay-1", token: "tok-abc", printer }));
+    const outcome = await enroll(request(fetchMock as unknown as typeof fetch));
+    expect(outcome).toMatchObject({ ok: true, credentials: { printer: expected } });
   });
 
   it.each<[number, EnrollFailure]>([
@@ -125,6 +155,61 @@ describe("enroll without a usable printer serial", () => {
   });
 });
 
+describe("enroll printer conflicts", () => {
+  const conflict = (body: unknown, status = 409) => enroll(request(vi.fn(async () => json(status, body)) as unknown as typeof fetch));
+
+  it.each(ENROLL_CONFLICT_REASONS)("returns %s as a typed failure and saves nothing to hand back", async (reason) => {
+    const outcome = await conflict({ error: "printer_conflict", reason });
+    expect(outcome).toEqual({ ok: false, reason: "printer_conflict", conflict: reason, status: 409 });
+  });
+
+  it("treats a reason this app does not know as an unknown conflict", async () => {
+    expect(await conflict({ error: "printer_conflict", reason: "brand_new_reason" })).toEqual({
+      ok: false,
+      reason: "printer_conflict",
+      conflict: "unknown",
+      status: 409,
+    });
+  });
+
+  it.each([
+    ["no reason", { error: "printer_conflict" }],
+    ["a reason that is not text", { error: "printer_conflict", reason: 5 }],
+    ["another error code", { error: "something_else", reason: "serial_in_use" }],
+    ["no body", null],
+    ["a body that is not JSON", "not json"],
+  ])("treats a 409 with %s as an unknown conflict", async (_title, body) => {
+    const fetchMock = vi.fn(async () => (typeof body === "string" ? new Response(body, { status: 409 }) : json(409, body)));
+    const outcome = await enroll(request(fetchMock as unknown as typeof fetch));
+    expect(outcome).toMatchObject({ ok: false, reason: "printer_conflict", conflict: "unknown" });
+  });
+
+  it("does not read a reason from a non-409 answer", async () => {
+    expect(await conflict({ error: "printer_conflict", reason: "serial_in_use" }, 422)).toEqual({ ok: false, reason: "invalid_request", status: 422 });
+    expect(await conflict({ error: "printer_conflict", reason: "serial_in_use" }, 500)).toEqual({ ok: false, reason: "unreachable", status: 500 });
+  });
+
+  it("covers exactly the reasons the relay protocol defines", () => {
+    // Each side is a compile-time check: a reason added or dropped on either side fails typecheck.
+    const fromProtocol: Record<RelayEnrollConflictReason, true> = Object.fromEntries(ENROLL_CONFLICT_REASONS.map((reason) => [reason, true])) as Record<
+      Exclude<EnrollConflictReason, "unknown">,
+      true
+    >;
+    const toProtocol: Record<Exclude<EnrollConflictReason, "unknown">, true> = fromProtocol;
+    expect(Object.keys(toProtocol).sort()).toEqual([...ENROLL_CONFLICT_REASONS].sort());
+  });
+
+  it("has operator copy per reason that says what to do and names no printer or serial", () => {
+    for (const reason of [...ENROLL_CONFLICT_REASONS, "unknown"] as const) {
+      const copy = ENROLL_CONFLICT_COPY[reason];
+      expect(copy).toMatch(/ask an admin|plug in/i);
+      expect(copy).not.toMatch(/\d|serial number/i);
+      expect(enrollFailureCopy({ ok: false, reason: "printer_conflict", conflict: reason })).toBe(copy);
+    }
+    expect(new Set(Object.values(ENROLL_CONFLICT_COPY)).size).toBe(Object.keys(ENROLL_CONFLICT_COPY).length);
+  });
+});
+
 describe("mapEnrollStatus and copy", () => {
   it("has plain copy for every failure reason", () => {
     const reasons: EnrollFailure[] = ["invalid_code", "throttled", "disabled", "unreachable", "invalid_request", "printer_not_found"];
@@ -136,6 +221,12 @@ describe("mapEnrollStatus and copy", () => {
     expect(ENROLL_FAILURE_COPY.invalid_code).toMatch(/expired/i);
     expect(ENROLL_FAILURE_COPY.throttled).toMatch(/wait/i);
     expect(mapEnrollStatus(429)).toBe("throttled");
+  });
+
+  it("keeps the status mapping for other statuses", () => {
+    expect(mapEnrollStatus(409)).toBe("unreachable");
+    expect(mapEnrollStatus(418)).toBe("unreachable");
+    expect(mapEnrollStatus(200, "enrollment_disabled")).toBe("disabled");
   });
 });
 

@@ -52,6 +52,10 @@ export type AppSnapshot = {
   enrolled: boolean;
   /** Admin-chosen label of this laptop, shown in the menu. */
   label: string | null;
+  /** The printer the cloud bound this laptop to at enrollment. Null until enrolled, or when an older cloud did not say. */
+  printerName: string | null;
+  /** Campus of that printer. Null when it has none or the cloud did not say. */
+  campusId: number | null;
   paused: boolean;
   openAtLogin: boolean;
   channel: UpdateChannel;

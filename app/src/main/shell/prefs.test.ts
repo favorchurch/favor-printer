@@ -27,6 +27,8 @@ describe("parsePrefs", () => {
       selectedPrinterId: "usb://z/1",
       queue: "Favor_S1",
       label: "Front desk",
+      printerName: "Lobby Zebra",
+      campusId: 7,
       revoked: true,
       setupComplete: true,
     };
@@ -35,8 +37,12 @@ describe("parsePrefs", () => {
 
   it("drops each invalid field on its own", () => {
     expect(
-      parsePrefs({ openAtLogin: "yes", channel: "nightly", selectedPrinterId: 5, queue: "", label: "x".repeat(500), revoked: "true", setupComplete: 1 }),
+      parsePrefs({ openAtLogin: "yes", channel: "nightly", selectedPrinterId: 5, queue: "", label: "x".repeat(500), printerName: "x".repeat(500), campusId: "7", revoked: "true", setupComplete: 1 }),
     ).toEqual(DEFAULT_PREFS);
+  });
+
+  it.each([["a fraction", 7.5], ["a string", "7"], ["not finite", Infinity], ["null", null]])("drops a campus id that is %s", (_title, campusId) => {
+    expect(parsePrefs({ campusId }).campusId).toBeNull();
   });
 
   it("ignores fields it does not know, so a token can never be carried through", () => {

@@ -5,6 +5,7 @@
  */
 
 import type { UpdateChannel } from "./constants";
+import type { EnrollFailure } from "./enrollment";
 import type { AppSnapshot } from "./status";
 
 export const IPC_CHANNELS = {
@@ -27,9 +28,7 @@ export const IPC_CHANNELS = {
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
-export type EnrollResult =
-  | { ok: true }
-  | { ok: false; reason: "invalid_code" | "throttled" | "disabled" | "unreachable" | "invalid_request" | "printer_not_found" };
+export type EnrollResult = { ok: true } | EnrollFailure;
 
 export type SetUpPrinterResult =
   | { ok: true }

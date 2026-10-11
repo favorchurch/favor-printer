@@ -6,6 +6,8 @@ export function snapshotFor(patch: Partial<AppSnapshot> = {}): AppSnapshot {
     status: { color: "green", headline: "Ready to print", detail: null },
     enrolled: true,
     label: null,
+    printerName: null,
+    campusId: null,
     paused: false,
     openAtLogin: true,
     channel: "stable",

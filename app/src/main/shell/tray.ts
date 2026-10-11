@@ -30,6 +30,9 @@ export type TrayActions = {
 };
 
 const separator: MenuItemTemplate = { type: "separator" };
+export const LOCAL_TEST_MENU_LABEL = "Local hardware test print...";
+export const CLOUD_TEST_HINT = "Check-in test: RSVP, Set up printing";
+
 const info = (label: string): MenuItemTemplate => ({ label, enabled: false });
 
 export function jobCountsLabel(jobs: AppSnapshot["recentJobs"]): string {
@@ -78,7 +81,8 @@ export function buildMenuTemplate(snapshot: AppSnapshot, actions: TrayActions): 
     snapshot.paused
       ? { label: "Resume printing", enabled: canPrint, click: actions.resume }
       : { label: "Pause printing", enabled: canPrint, click: actions.pause },
-    { label: "Test print...", enabled: canPrint, click: actions.testPrint },
+    { label: LOCAL_TEST_MENU_LABEL, enabled: canPrint, click: actions.testPrint },
+    info(CLOUD_TEST_HINT),
     { label: "Keep printing", submenu: snapshot.warnings.map(info) },
     separator,
     {

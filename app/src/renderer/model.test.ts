@@ -5,8 +5,12 @@ import type { AppSnapshot, PrinterScan } from "../shared";
 import { LEGACY_FAILED_DETAIL } from "../main/shell/controller";
 import { LEGACY_FAILED_COPY } from "./screens";
 import { snapshotFor } from "../main/shell/testing/snapshot";
+import { ENROLL_CONFLICT_COPY, enrollFailureCopy } from "../shared";
+import { ENROLL_FAILURE_COPY } from "../main/services/cloud";
 import {
+  boundPrinterText,
   cleanCodeInput,
+  codeErrorCopy,
   ENROLL_ERROR_COPY,
   INITIAL_LOCAL,
   pickScreen,
@@ -164,6 +168,31 @@ describe("copy", () => {
     expect(copy).not.toMatch(/turned (on|off)/i);
     expect(copy).not.toMatch(/plug/i);
     expect(copy).not.toBe(TEST_PRINT_ERROR_COPY.no_printer);
+  });
+});
+
+describe("enrollment copy", () => {
+  it("is one source for the window and the cloud module", () => {
+    expect(ENROLL_ERROR_COPY).toBe(ENROLL_FAILURE_COPY);
+    expect(codeErrorCopy({ ...INITIAL_LOCAL, codeConflict: "serial_in_use" })).toBe(
+      enrollFailureCopy({ ok: false, reason: "printer_conflict", conflict: "serial_in_use" }),
+    );
+    expect(codeErrorCopy({ ...INITIAL_LOCAL, codeConflict: "unknown" })).toBe(ENROLL_CONFLICT_COPY.unknown);
+  });
+
+  it("shows nothing without an error, the plain copy for a plain failure, and the conflict first", () => {
+    expect(codeErrorCopy(INITIAL_LOCAL)).toBeNull();
+    expect(codeErrorCopy({ ...INITIAL_LOCAL, codeError: "throttled" })).toBe(ENROLL_ERROR_COPY.throttled);
+    expect(codeErrorCopy({ codeError: "throttled", codeConflict: "target_disabled" })).toBe(ENROLL_CONFLICT_COPY.target_disabled);
+  });
+});
+
+describe("boundPrinterText", () => {
+  it("joins the name and the campus id, and copes with either missing", () => {
+    expect(boundPrinterText({ printerName: "Lobby Zebra", campusId: 7 })).toBe("Lobby Zebra · Campus ID 7");
+    expect(boundPrinterText({ printerName: "Lobby Zebra", campusId: 0 })).toBe("Lobby Zebra · Campus ID 0");
+    expect(boundPrinterText({ printerName: "Lobby Zebra", campusId: null })).toBe("Lobby Zebra");
+    expect(boundPrinterText({ printerName: null, campusId: 7 })).toBeNull();
   });
 });
 
