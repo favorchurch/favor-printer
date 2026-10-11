@@ -7,7 +7,7 @@ This dossier prepares the store listing, user privacy review, demo instructions 
 
 ## Current architecture
 
-The shipped Favor Printer is a macOS Electron menu-bar app that prints Zebra labels via CUPS and talks to Favor RSVP. It is deliberately unsandboxed and distributed through signed/notarized GitHub DMGs; the existing build is not proven to meet Mac App Store sandbox requirements. The iPad app is not implemented and its job remains undecided.
+The shipped Favor Printer is a macOS Electron menu-bar app that prints Zebra labels via CUPS and talks to Favor RSVP. It is deliberately unsandboxed and distributed through signed/notarized GitHub DMGs; the existing build is not proven to meet Mac App Store sandbox requirements. The iPad app is not implemented. Its **product role is locked** as one native iPadOS app providing **both RSVP check-in and compatible Zebra printer hosting**; verified transport, runtime behavior, and first-release sequencing are still open.
 
 ## Draft package
 
@@ -21,9 +21,9 @@ The shipped Favor Printer is a macOS Electron menu-bar app that prints Zebra lab
 
 ## Important blockers
 
-1. [Decide iPad app's role](https://github.com/favorchurch/rsvp.favor.church/issues/627): iPad check-in client to Mac relay, iPad printer relay, or both.
-2. [Research hardware and sandbox feasibility](https://github.com/favorchurch/rsvp.favor.church/issues/625).
-3. [Choose Apple distribution](https://github.com/favorchurch/rsvp.favor.church/issues/628): public/unlisted/custom iPad and whether Mac stays direct-download.
+1. **Product direction decided:** [Option C — both native iPad check-in and printer hosting in one app](https://github.com/favorchurch/rsvp.favor.church/issues/627#issuecomment-6106334709).
+2. [Research hardware, iPadOS foreground/background printing and Mac sandbox feasibility](https://github.com/favorchurch/rsvp.favor.church/issues/625).
+3. [Choose first iPad App Store release scope](https://github.com/favorchurch/rsvp.favor.church/issues/630): both capabilities at debut versus staged within the same app. [Choose Apple distribution](https://github.com/favorchurch/rsvp.favor.church/issues/628): public/unlisted/custom iPad and whether Mac stays direct-download.
 4. Deliver [atomic cloud pairing](https://github.com/favorchurch/rsvp.favor.church/issues/623), [name editing](https://github.com/favorchurch/rsvp.favor.church/issues/629), and [Mac app-guided setup](https://github.com/favorchurch/favor-printer/issues/16).
 
 ## Controls
