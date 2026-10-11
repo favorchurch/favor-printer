@@ -4,7 +4,8 @@
 
 ## Gate A — decide the product and distribution
 
-- [ ] Approve [iPad role](https://github.com/favorchurch/rsvp.favor.church/issues/627): check-in client, printer relay or both.
+- [x] Product role [Option C](https://github.com/favorchurch/rsvp.favor.church/issues/627): **one native iPad app with RSVP check-in and printer-hosting** (decision locked; implementation not delivered).
+- [ ] Approve [first App Store release gate](https://github.com/favorchurch/rsvp.favor.church/issues/630): dual-role at debut or staged delivery of both capabilities in the same app.
 - [ ] Record results of [hardware and Mac sandbox research](https://github.com/favorchurch/rsvp.favor.church/issues/625).
 - [ ] Approve [Apple distribution](https://github.com/favorchurch/rsvp.favor.church/issues/628): public, unlisted, Apple Business Custom App, MAS, or continuing Mac direct download.
 - [ ] Confirm who owns Apple Developer organization, App Store Connect permissions and release approval.
@@ -32,10 +33,11 @@
 - [ ] Use appropriate MAS signing, entitlements/provisioning, Mac App Store update channel and sandbox/container paths.
 - [ ] Test the sandboxed build on a clean Mac with the actual USB Zebra; DMG notarization is not sufficient.
 
-**iPadOS (only once role selected)**
+**iPadOS — dual-role target locked; implementation pending**
 - [ ] Native iPadOS binary exists with correct bundle ID/deployment minimum and responsive orientation.
-- [ ] Prove hardware/network printing method only if hosting is in scope; no assumption that macOS Electron/CUPS runs on iPad.
-- [ ] Actual iPad hardware, network recovery, auth, printer assignment, offline behavior and cloud printing tests pass.
+- [ ] Prove hardware/network printing method **because hosting is in scope**; no assumption that macOS Electron/CUPS runs on iPad. Use only transport supported by actual Zebra and iPadOS.
+- [ ] Native RSVP check-in and printer-host enroll/print on actual iPad hardware, network recovery, auth, printer assignment, offline behavior and cloud printing tests pass.
+- [ ] Other iPad check-in clients can submit real cloud jobs to an enrolled host iPad. Verify foreground, screen lock, app switching and reboot availability, and whether a single iPad can check in while hosting.
 - [ ] TestFlight acceptance, relevant local-network permissions and accessibility verified.
 
 ## Gate D — App Store account and compliance
