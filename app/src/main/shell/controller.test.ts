@@ -608,7 +608,7 @@ describe("enroll", () => {
     expect(h.enroll).not.toHaveBeenCalled();
   });
 
-  it.each(["invalid_code", "throttled", "disabled", "unreachable", "invalid_request"] as const)(
+  it.each(["invalid_code", "code_used", "throttled", "disabled", "unreachable", "invalid_request"] as const)(
     "reports %s and saves nothing",
     async (reason) => {
       const h = createControllerHarness({ scan: foundPrinter(), enroll: async () => ({ ok: false, reason }) });

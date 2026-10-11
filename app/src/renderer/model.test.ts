@@ -150,9 +150,10 @@ describe("cleanCodeInput", () => {
 
 describe("copy", () => {
   it("has clear text for every enrollment failure, matching the cloud's contract", () => {
-    expect(Object.keys(ENROLL_ERROR_COPY).sort()).toEqual(["disabled", "invalid_code", "invalid_request", "printer_not_found", "throttled", "unreachable"]);
+    expect(Object.keys(ENROLL_ERROR_COPY).sort()).toEqual(["code_used", "disabled", "invalid_code", "invalid_request", "printer_not_found", "throttled", "unreachable"]);
     expect(ENROLL_ERROR_COPY.invalid_code).toMatch(/expired/i);
     expect(ENROLL_ERROR_COPY.throttled).toMatch(/wait/i);
+    expect(ENROLL_ERROR_COPY.code_used).toMatch(/used up.*ask an admin for a new code/i);
     expect(ENROLL_ERROR_COPY.printer_not_found).toBe("We cannot see your Zebra printer. Check that it is turned on and plugged in, then try again.");
   });
 

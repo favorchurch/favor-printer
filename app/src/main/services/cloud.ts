@@ -7,7 +7,8 @@
  *   body    { code, usbSerial, appVersion, osVersion }
  *   200     { relayId, token, label?, printer?: { name, campusId? } }
  *   409     { error: "printer_conflict", reason } -> printer_conflict with that reason
- *           (any other 409, or an unknown reason, is a conflict with reason "unknown")
+ *           (an unknown or missing reason, or any other 409, is a conflict with reason "unknown")
+ *   409     { error: "conflict" }, no reason   -> code_used (RSVP spent the code after losing a race)
  *   400/422 malformed request          -> invalid_request
  *   401/403/404/410 unknown or expired -> invalid_code (the cloud does not say which)
  *   429     too many attempts          -> throttled
@@ -125,6 +126,7 @@ export async function enroll(request: EnrollRequest): Promise<EnrollOutcome> {
     return credentials ? { ok: true, credentials } : { ok: false, reason: "unreachable", status: response.status };
   }
   if (response.status === 409) {
+    if (isRecord(body) && body.error === "conflict" && body.reason === undefined) return { ok: false, reason: "code_used", status: response.status };
     const conflict = isRecord(body) && body.error === "printer_conflict" ? toConflictReason(body.reason) : "unknown";
     return { ok: false, reason: "printer_conflict", conflict, status: response.status };
   }

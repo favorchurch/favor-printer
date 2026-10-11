@@ -184,6 +184,24 @@ describe("enroll printer conflicts", () => {
     expect(outcome).toMatchObject({ ok: false, reason: "printer_conflict", conflict: "unknown" });
   });
 
+  it("maps a reasonless { error: conflict } 409 to code_used, not to an unknown printer conflict", async () => {
+    expect(await conflict({ error: "conflict" })).toEqual({ ok: false, reason: "code_used", status: 409 });
+  });
+
+  it("keeps { error: conflict } with a reason, and the same body on other statuses, out of code_used", async () => {
+    expect(await conflict({ error: "conflict", reason: "serial_in_use" })).toMatchObject({ reason: "printer_conflict", conflict: "unknown" });
+    expect(await conflict({ error: "conflict" }, 422)).toEqual({ ok: false, reason: "invalid_request", status: 422 });
+    expect(await conflict({ error: "conflict" }, 500)).toEqual({ ok: false, reason: "unreachable", status: 500 });
+  });
+
+  it("says the code is used up and to ask an admin, without the unknown-conflict copy", () => {
+    const copy = enrollFailureCopy({ ok: false, reason: "code_used" });
+    expect(copy).toMatch(/used up/i);
+    expect(copy).toMatch(/ask an admin for a new code/i);
+    expect(copy).not.toBe(ENROLL_CONFLICT_COPY.unknown);
+    expect(copy).not.toMatch(/nothing was changed/i);
+  });
+
   it("does not read a reason from a non-409 answer", async () => {
     expect(await conflict({ error: "printer_conflict", reason: "serial_in_use" }, 422)).toEqual({ ok: false, reason: "invalid_request", status: 422 });
     expect(await conflict({ error: "printer_conflict", reason: "serial_in_use" }, 500)).toEqual({ ok: false, reason: "unreachable", status: 500 });
@@ -212,7 +230,7 @@ describe("enroll printer conflicts", () => {
 
 describe("mapEnrollStatus and copy", () => {
   it("has plain copy for every failure reason", () => {
-    const reasons: EnrollFailure[] = ["invalid_code", "throttled", "disabled", "unreachable", "invalid_request", "printer_not_found"];
+    const reasons: EnrollFailure[] = ["invalid_code", "code_used", "throttled", "disabled", "unreachable", "invalid_request", "printer_not_found"];
     for (const reason of reasons) expect(ENROLL_FAILURE_COPY[reason].length).toBeGreaterThan(10);
     expect(Object.keys(ENROLL_FAILURE_COPY).sort()).toEqual([...reasons].sort());
   });

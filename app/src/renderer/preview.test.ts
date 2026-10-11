@@ -493,6 +493,12 @@ describe("a refused enrollment on the code screen", () => {
     expect(lines).toContain(ENROLL_CONFLICT_COPY.serial_in_use);
   });
 
+  it("shows the used-up code copy when main reports code_used", async () => {
+    const lines = await submit({ ok: false, reason: "code_used" });
+    expect(lines).toContain(ENROLL_ERROR_COPY.code_used);
+    expect(lines).not.toContain(ENROLL_CONFLICT_COPY.unknown);
+  });
+
   it("still shows the plain copy for other failures", async () => {
     const lines = await submit({ ok: false, reason: "throttled" });
     expect(lines).toContain(ENROLL_ERROR_COPY.throttled);
