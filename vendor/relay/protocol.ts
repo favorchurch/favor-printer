@@ -66,3 +66,38 @@ export type RelayConfigResponse = {
   printerIds: string[];
   printers: Array<{ id: string; name: string; usbSerial?: string }>;
 };
+
+/** Answer of POST /api/printing/relay/enroll (no credentials: the one-time code is the credential). */
+export type RelayEnrollResponse = {
+  apiVersion: 1;
+  relayId: string;
+  token: string;
+  label: string | null;
+  /**
+   * The printer this laptop was bound to. `id`, `name` and `usbSerial` are what
+   * every build has always received; `campusId` is additive and may be absent
+   * from an older cloud. Null when the printer has no campus.
+   */
+  printer: { id: string; name: string; usbSerial: string | null; campusId?: number | null };
+};
+
+/**
+ * Why the cloud refused to bind this laptop to the printer the code was issued
+ * for. Nothing was changed and the code is still valid: fix the cause (or issue
+ * a new code) and enroll again. A reason never names another printer or serial.
+ */
+export type RelayEnrollConflictReason =
+  | "target_not_found"
+  | "target_disabled"
+  | "campus_mismatch"
+  | "target_serial_mismatch"
+  | "serial_other_campus"
+  | "serial_duplicate_has_jobs"
+  | "serial_in_use"
+  | "printer_name_taken";
+
+/** Answer of POST /api/printing/relay/enroll with status 409 and `error: "printer_conflict"`. */
+export type RelayEnrollConflictResponse = {
+  error: "printer_conflict";
+  reason: RelayEnrollConflictReason;
+};
