@@ -37,7 +37,7 @@ Avoid automatic repeat printing. A label could have physically printed before th
 
 ## Can the iPad replace the Mac printer host?
 
-Not currently guaranteed. That requires a new native iPad printing strategy, compatible actual hardware and iPadOS capability testing. [Decision in progress](https://github.com/favorchurch/rsvp.favor.church/issues/627).
+**Planned, not released:** The [approved product target](https://github.com/favorchurch/rsvp.favor.church/issues/627) is **one native iPad app for both RSVP check-in and printer hosting**. Only specifically compatible Zebra models/connections will be supported after actual hardware, network and iPadOS lifecycle tests. Until then the proven Mac/CUPS relay remains the printer host. [Initial App Store release sequencing is undecided](https://github.com/favorchurch/rsvp.favor.church/issues/630); do not promise this feature in v1 until its release is approved.
 
 ## Who should I contact?
 
