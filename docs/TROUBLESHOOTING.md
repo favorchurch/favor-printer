@@ -22,11 +22,18 @@ Try these in order. Stop when the icon turns green.
    allow it in **System Settings > Printers & Scanners**. Follow them, then run the printer setup
    again.
 5. **Run a test print.** In setup request a test label and answer **Did a label come out?**
-   honestly. "Sent" only means the Mac handed the label to the printer.
+   honestly. "Sent" only means the Mac handed the label to the printer. This is a local hardware
+   test. It does not prove check-in labels can reach this printer: an RSVP admin runs the cloud test
+   from **Set up printing** on `/admin/printing`, which ends on **End-to-end ready**.
 6. **Quit and reopen.** Menu > Quit, then open Favor Printer from Applications. Unsent labels are
    kept and are not printed twice.
-7. **Enroll again.** If the app says it is not enrolled, ask a Favor RSVP admin for a new six-digit
-   code and enter it in setup. If the app says you are being throttled, wait a minute before trying again.
+7. **Enroll again.** If the app says it is not enrolled, ask a Favor RSVP admin to run **Set up printing**
+   for this printer and enter the new six-digit code in setup. If the app says you are being throttled,
+   wait a minute before trying again. If it says the code and printer do not match (another campus,
+   a different Zebra, already connected to another laptop, listed twice), nothing was changed and the
+   code still works: tell the admin the exact message so they can fix it in Set up printing. If it says
+   the code was used up, ask for a new one. After enrolling, setup shows the printer and campus this Mac
+   now serves; check it is the one you expect.
 8. **Still stuck.** Send the tech team the app version (menu footer), the menu text and what you tried.
    Do not send photos of labels.
 
