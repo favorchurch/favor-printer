@@ -21,11 +21,15 @@ Current Apple screenshot guide: https://developer.apple.com/help/app-store-conne
 
 The menu-bar utility may need its actual setup window opened for screen capture; no invented UI or composited “working” state.
 
-## Native iPad screenshots depend on approved product role
+## Native iPad shotlist — both capabilities locked, shipping claims gated
 
-**If native check-in client:** service/campus selection, check-in UI with fictional family data, selected cloud printer/status, print queue, and graceful offline/reconnect state.
+**Native Check-in:** service/campus selection, synthetic family check-in, selected cloud printer/status, print queue and graceful offline/reconnect.
 
-**If iPad-native printer host:** physically validated printer connection (AirPrint/network/vendor SDK as supported), onboarding, readiness and actual print confirmation. Never depict Mac USB printing on an iPad as a working feature without evidence.
+**iPad Printer Host:** physically validated printer connection (supported Wi-Fi/TCP/IP/Bluetooth/AirPrint where appropriate), automatic cloud enrollment with readable device/printer names, readiness, physical cloud-routed test and recovery states.
+
+**Combined journey:** show the same native app can expose both roles and one host iPad receives a job from another check-in iPad. Show one-device check-in+host only where supported by genuine iPadOS runtime tests.
+
+**Release-accuracy gate:** If [first release is staged](https://github.com/favorchurch/rsvp.favor.church/issues/630), submit only screenshots of capabilities actually present and usable in that binary. Never imply iPad USB printing, always-on hosting or hardware support without evidence.
 
 ## Production QA
 
