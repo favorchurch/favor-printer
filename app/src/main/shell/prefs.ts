@@ -19,6 +19,10 @@ export type Prefs = {
   queue: string | null;
   /** Admin-chosen name of this laptop. */
   label: string | null;
+  /** Name of the printer the cloud bound this laptop to, as of the last enrollment. */
+  printerName: string | null;
+  /** Campus of that printer. Null when it has none or the cloud did not say. */
+  campusId: number | null;
   /** The cloud rejected the saved token. Stays until the volunteer enrolls again. */
   revoked: boolean;
   setupComplete: boolean;
@@ -30,6 +34,8 @@ export const DEFAULT_PREFS: Prefs = {
   selectedPrinterId: null,
   queue: null,
   label: null,
+  printerName: null,
+  campusId: null,
   revoked: false,
   setupComplete: false,
 };
@@ -68,6 +74,8 @@ export function parsePrefs(raw: unknown): Prefs {
     selectedPrinterId: text(source.selectedPrinterId),
     queue: text(source.queue, 127),
     label: text(source.label, 200),
+    printerName: text(source.printerName, 200),
+    campusId: typeof source.campusId === "number" && Number.isInteger(source.campusId) ? source.campusId : null,
     revoked: source.revoked === true,
     setupComplete: source.setupComplete === true,
   };

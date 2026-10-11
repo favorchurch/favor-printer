@@ -1,15 +1,18 @@
 /**
  * One function per screen, each returning the page's `<main>`. Screens hold no
  * state: they read the snapshot and local state they are given and call the
- * actions. Nothing here shows a name, ZPL or a security code.
+ * actions. Nothing here shows ZPL or a security code.
  */
 
 import type { AppSnapshot, PrinterDevice } from "../shared";
 import { isEnrollmentCode } from "../shared";
 import { h } from "./dom";
 import {
+  boundPrinterText,
   cleanCodeInput,
+  codeErrorCopy,
   ENROLL_ERROR_COPY,
+  LOCAL_TEST_COPY,
   stepLabel,
   TEST_PRINT_ERROR_COPY,
   type LocalState,
@@ -65,6 +68,11 @@ const statusPill = (snapshot: AppSnapshot) =>
     h("span", { class: "dot", "aria-hidden": "true" }),
     h("span", null, snapshot.status.headline),
   );
+
+const printerLine = (snapshot: AppSnapshot) => {
+  const text = boundPrinterText(snapshot);
+  return text ? h("p", { class: "hint", id: "bound-printer" }, `Printer: ${text}`) : null;
+};
 
 function deviceRow(device: PrinterDevice, selected: boolean, onSelect: () => void) {
   return h(
@@ -198,7 +206,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
     }
 
     case "code": {
-      const error = local.codeError;
+      const error = codeErrorCopy(local);
       const input = h("input", {
         id: "code",
         class: "code-input",
@@ -234,7 +242,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
           },
           h("label", { for: "code", class: "field-label" }, "Six-digit code"),
           input,
-          error ? h("p", { id: "code-error", class: "note error", role: "alert" }, ENROLL_ERROR_COPY[error]) : h("p", { id: "code-help", class: "hint" }, "Numbers only."),
+          error ? h("p", { id: "code-error", class: "note error", role: "alert" }, error) : h("p", { id: "code-help", class: "hint" }, "Numbers only."),
           actions(submit),
         ),
       );
@@ -251,7 +259,8 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
             : "This Mac is now connected to Favor RSVP.",
         ),
         statusPill(snapshot),
-        actions(button("Print a test label", a.advance, { primary: true })),
+        printerLine(snapshot),
+        actions(button("Run local hardware test", a.advance, { primary: true })),
       );
 
     case "test-print": {
@@ -259,12 +268,9 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
       return frame(
         screen,
         snapshot,
-        progress.kind === "sent" || progress.kind === "no-label" ? "Did a label come out?" : "Print a test label",
-        progress.kind === "sent" || progress.kind === "no-label"
-          ? lead(
-              "Favor Printer sent the label to the printer. That does not prove a label printed, so check the printer.",
-            )
-          : lead("Favor Printer will send one test label to your Zebra."),
+        progress.kind === "sent" || progress.kind === "no-label" ? "Did a label come out?" : LOCAL_TEST_COPY.title,
+        progress.kind === "sent" || progress.kind === "no-label" ? lead(LOCAL_TEST_COPY.confirmLead) : lead(LOCAL_TEST_COPY.lead),
+        note(LOCAL_TEST_COPY.cloudHint),
         progress.kind === "failed" ? note(TEST_PRINT_ERROR_COPY[progress.reason], "error") : null,
         progress.kind === "no-label"
           ? note("Check that the label stock is loaded and the printer light is steady, then try again.", "error")
@@ -272,7 +278,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         progress.kind === "sent"
           ? actions(button("Yes, a label came out", () => a.answerLabel(true), { primary: true }), button("No label came out", () => a.answerLabel(false)))
           : actions(
-              button(progress.kind === "sending" ? "Sending..." : progress.kind === "idle" ? "Print test label" : "Try again", a.requestTestPrint, {
+              button(progress.kind === "sending" ? "Sending..." : progress.kind === "idle" ? LOCAL_TEST_COPY.start : "Try again", a.requestTestPrint, {
                 primary: true,
                 disabled: progress.kind === "sending",
               }),
@@ -307,6 +313,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         "Favor Printer",
         statusPill(snapshot),
         snapshot.status.detail ? lead(snapshot.status.detail) : null,
+        printerLine(snapshot),
         h(
           "div",
           { class: "status-meta" },

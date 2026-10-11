@@ -116,7 +116,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
   };
 
   const enroll = vi.fn(
-    options.enroll ?? (async () => ({ ok: true, credentials: { ...CREDENTIALS, label: "Front desk" } }) as EnrollOutcome),
+    options.enroll ?? (async () => ({ ok: true, credentials: { ...CREDENTIALS, label: "Front desk", printer: { name: "Lobby Zebra", campusId: 7 } } }) as EnrollOutcome),
   );
 
   const forks = createForkHarness();

@@ -5,7 +5,10 @@
  * Enrollment contract (RSVP side, rsvp.favor.church#486):
  *   POST {apiUrl}/api/printing/relay/enroll
  *   body    { code, usbSerial, appVersion, osVersion }
- *   200     { relayId, token, label? }
+ *   200     { relayId, token, label?, printer?: { name, campusId? } }
+ *   409     { error: "printer_conflict", reason } -> printer_conflict with that reason
+ *           (an unknown or missing reason, or any other 409, is a conflict with reason "unknown")
+ *   409     { error: "conflict" }, no reason   -> code_used (RSVP spent the code after losing a race)
  *   400/422 malformed request          -> invalid_request
  *   401/403/404/410 unknown or expired -> invalid_code (the cloud does not say which)
  *   429     too many attempts          -> throttled
@@ -14,21 +17,33 @@
  * The status mapping is kept in `mapEnrollStatus` so a contract change is one edit.
  */
 
-import { isEnrollmentCode, isUsableUsbSerial, type EnrollResult } from "../../shared";
+import {
+  ENROLL_FAILURE_COPY,
+  isEnrollmentCode,
+  isUsableUsbSerial,
+  toConflictReason,
+  type EnrollFailure as EnrollFailureResult,
+  type EnrollPlainFailure,
+} from "../../shared";
 import { RelayAuthError } from "../../../../vendor/relay/apiClient";
 import { secureApiUrl } from "../../../../vendor/relay/config";
 import type { CloudState } from "../../../../vendor/relay/status";
 
-export type EnrollFailure = Extract<EnrollResult, { ok: false }>["reason"];
+/** The failures that map from an HTTP status alone. A conflict also carries the cloud's reason. */
+export type EnrollFailure = EnrollPlainFailure;
 
 export type EnrolledCredentials = {
   relayId: string;
   token: string;
   /** Admin-chosen name of this laptop. */
   label: string | null;
+  /** The printer the cloud bound this laptop to. Null when the cloud did not say. */
+  printer: { name: string; campusId: number | null } | null;
 };
 
-export type EnrollOutcome = { ok: true; credentials: EnrolledCredentials } | { ok: false; reason: EnrollFailure; /** HTTP status, when the cloud answered. */ status?: number };
+export type EnrollOutcome =
+  | { ok: true; credentials: EnrolledCredentials }
+  | (EnrollFailureResult & { /** HTTP status, when the cloud answered. */ status?: number });
 
 export type EnrollRequest = {
   apiUrl: string;
@@ -40,14 +55,7 @@ export type EnrollRequest = {
   timeoutMs?: number;
 };
 
-export const ENROLL_FAILURE_COPY: Record<EnrollFailure, string> = {
-  invalid_code: "That code did not work. It may have expired. Ask an admin for a new one.",
-  throttled: "Too many tries. Wait a few minutes, then enter the code again.",
-  disabled: "Enrolling is turned off right now. Ask an admin for help.",
-  unreachable: "Could not reach Favor RSVP. Check the internet connection and try again.",
-  printer_not_found: "We can't see your Zebra printer. Check it's on and plugged in, then try again.",
-  invalid_request: "The app could not send that request. Update Favor Printer and try again.",
-};
+export { ENROLL_FAILURE_COPY };
 
 export function mapEnrollStatus(status: number, errorCode?: string): EnrollFailure {
   if (status === 501 || errorCode === "enrollment_disabled") return "disabled";
@@ -64,7 +72,14 @@ function parseCredentials(body: unknown): EnrolledCredentials | null {
   const { relayId, token, label } = body;
   if (typeof relayId !== "string" || !relayId.trim()) return null;
   if (typeof token !== "string" || !token.trim()) return null;
-  return { relayId, token, label: typeof label === "string" && label.trim() ? label : null };
+  return { relayId, token, label: typeof label === "string" && label.trim() ? label : null, printer: parsePrinter(body.printer) };
+}
+
+/** Lenient: a missing or odd printer never fails an enrollment that otherwise worked. */
+function parsePrinter(value: unknown): EnrolledCredentials["printer"] {
+  if (!isRecord(value) || typeof value.name !== "string" || !value.name.trim()) return null;
+  const { campusId } = value;
+  return { name: value.name, campusId: typeof campusId === "number" && Number.isInteger(campusId) ? campusId : null };
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -109,6 +124,11 @@ export async function enroll(request: EnrollRequest): Promise<EnrollOutcome> {
   if (response.ok) {
     const credentials = parseCredentials(body);
     return credentials ? { ok: true, credentials } : { ok: false, reason: "unreachable", status: response.status };
+  }
+  if (response.status === 409) {
+    if (isRecord(body) && body.error === "conflict" && body.reason === undefined) return { ok: false, reason: "code_used", status: response.status };
+    const conflict = isRecord(body) && body.error === "printer_conflict" ? toConflictReason(body.reason) : "unknown";
+    return { ok: false, reason: "printer_conflict", conflict, status: response.status };
   }
   const errorCode = isRecord(body) && typeof body.error === "string" ? body.error : undefined;
   return { ok: false, reason: mapEnrollStatus(response.status, errorCode), status: response.status };

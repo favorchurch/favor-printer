@@ -46,7 +46,7 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   const applySnapshot = (next: AppSnapshot) => {
     // A new step starts clean: an old error does not follow the volunteer forward.
     if (next.setupStep !== current.setupStep) {
-      local = { ...local, codeError: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false };
+      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false };
     }
     current = next;
     render();
@@ -65,10 +65,10 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
     openPrinterSettings: () => void api.openPrinterSettings().catch(() => undefined),
     submitCode: (code) =>
       void busy(async () => {
-        local = { ...local, codeError: null };
+        local = { ...local, codeError: null, codeConflict: null };
         const result = await api.enroll(code);
         if (!result.ok) {
-          patch({ codeError: result.reason });
+          patch(result.reason === "printer_conflict" ? { codeConflict: result.conflict } : { codeError: result.reason });
           return;
         }
         applySnapshot(await api.getSnapshot());

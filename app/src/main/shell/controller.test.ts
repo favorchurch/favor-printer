@@ -555,6 +555,46 @@ describe("enroll", () => {
     expect(h.controller.snapshot()).toMatchObject({ enrolled: true, setupStep: "connected", label: "Front desk" });
   });
 
+  it("remembers the bound printer name and campus id and shows them", async () => {
+    const h = await setup();
+    await h.controller.enroll("123456");
+    expect(h.prefsFs.saved()).toMatchObject({ printerName: "Lobby Zebra", campusId: 7 });
+    expect(h.controller.snapshot()).toMatchObject({ printerName: "Lobby Zebra", campusId: 7 });
+  });
+
+  it.each([
+    ["a printer with no campus", { name: "Cafe Zebra", campusId: null }, { printerName: "Cafe Zebra", campusId: null }],
+    ["no printer from an older cloud", null, { printerName: null, campusId: null }],
+  ])("remembers %s", async (_title, printer, expected) => {
+    const h = createControllerHarness({
+      scan: foundPrinter(),
+      prefs: { openAtLogin: true, printerName: "Old printer", campusId: 3 },
+      enroll: async () => ({ ok: true, credentials: { ...CREDENTIALS, label: null, printer } }),
+    });
+    await h.controller.initialize();
+    await h.controller.enroll("123456");
+    expect(h.prefsFs.saved()).toMatchObject(expected);
+    expect(h.controller.snapshot()).toMatchObject({ enrolled: true, ...expected });
+  });
+
+  it("shows no bound printer before enrolling, even if one is in the saved prefs", async () => {
+    const h = await started({ scan: foundPrinter(), prefs: { openAtLogin: true, printerName: "Old printer", campusId: 3 } });
+    expect(h.controller.snapshot()).toMatchObject({ enrolled: false, printerName: null, campusId: null });
+  });
+
+  it("passes a printer conflict through with its reason, logs the reason, and saves nothing", async () => {
+    const h = createControllerHarness({
+      scan: foundPrinter(),
+      enroll: async () => ({ ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 }),
+    });
+    await h.controller.initialize();
+    await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: false, reason: "printer_conflict", conflict: "serial_in_use" });
+    expect(h.secrets.save).not.toHaveBeenCalled();
+    expect(h.prefsFs.saved()?.printerName ?? null).toBeNull();
+    expect(h.controller.snapshot()).toMatchObject({ enrolled: false, printerName: null });
+    expect(h.logLines.join("\n")).toContain("printer_conflict (serial_in_use) (HTTP 409)");
+  });
+
   it("starts the relay once enrolled", async () => {
     const h = await setup();
     await h.controller.enroll("123456");
@@ -568,7 +608,7 @@ describe("enroll", () => {
     expect(h.enroll).not.toHaveBeenCalled();
   });
 
-  it.each(["invalid_code", "throttled", "disabled", "unreachable", "invalid_request"] as const)(
+  it.each(["invalid_code", "code_used", "throttled", "disabled", "unreachable", "invalid_request"] as const)(
     "reports %s and saves nothing",
     async (reason) => {
       const h = createControllerHarness({ scan: foundPrinter(), enroll: async () => ({ ok: false, reason }) });
@@ -633,7 +673,7 @@ describe("enroll", () => {
       { ok: false, reason: "invalid_code", status: 404 },
       { ok: false, reason: "throttled", status: 429 },
       { ok: false, reason: "unreachable" },
-      { ok: true, credentials: { ...CREDENTIALS, label: null } },
+      { ok: true, credentials: { ...CREDENTIALS, label: null, printer: null } },
     ] as const;
     for (const outcome of outcomes) {
       const device = { ...DEVICE, usbSerial: "ZSERIAL9876" };
@@ -666,7 +706,7 @@ describe("enroll", () => {
       scan: foundPrinter(),
       enroll: () =>
         new Promise((resolve) => {
-          finish = () => resolve({ ok: true, credentials: { ...CREDENTIALS, label: null } });
+          finish = () => resolve({ ok: true, credentials: { ...CREDENTIALS, label: null, printer: null } });
         }),
     });
     await h.controller.initialize();
