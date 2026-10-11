@@ -14,7 +14,7 @@
 | Operator authorization / check-in device identity | RSVP permissions and device pairing | Whether app collects identifiers linked to a church account |
 | Update downloads | GitHub Releases and electron-updater | Provider IP/logs, disclosure, separate data collection |
 | Crash reporting / metrics / SDKs | No proof of complete inventory yet | Trace every dependency and network request |
-| Native iPad platform and printing data | Native app not implemented | Re-audit after target and functionality selected |
+| Native iPad RSVP check-in + printer hosting | **Both capabilities now in committed product scope**, but native app not implemented | Re-audit identity, children's check-in content, native host printer serial/network identifiers, permissions, location/network access, status, SDKs, crash logs and host data retention after implementation |
 
 ## Apple response worksheet
 
