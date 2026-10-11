@@ -4,7 +4,7 @@ These notes must be matched to the exact signed build, distribution type and har
 
 ## Intended audience
 
-Favor Printer is an operational utility for authorized Favor Church staff and volunteers who use Favor RSVP check-in printers. The current Mac app runs a local CUPS-based Zebra print relay; a proposed iPad app has a separate, as-yet undecided role.
+Favor Printer is an operational utility for authorized Favor Church staff and volunteers who use Favor RSVP check-in printers. The current Mac app runs a local CUPS-based Zebra print relay; a planned native iPad app has a **locked dual role**: RSVP check-in and hosting compatible Zebra print jobs. Its hardware implementation is still unverified.
 
 ## App/build identity
 
@@ -36,11 +36,17 @@ Provide through Apple's secure review credential fields, **never GitHub**:
 
 For Apple reviewers lacking the hardware, provide a safe usable demonstration and explain which physical output functions need the printer; do not fake successful printing. If the demo is not viable, the review gate is blocked.
 
-## iPad review notes — blocked pending role
+## iPad review notes — dual role decided, actual demo blocked on implementation
 
-[WRITE AFTER decision: https://github.com/favorchurch/rsvp.favor.church/issues/627 and real native app implementation.]
+**Product decision:** [one native iPadOS app for both check-in and printer hosting](https://github.com/favorchurch/rsvp.favor.church/issues/627#issuecomment-6106334709). The following walkthrough is a **plan**, not a shipped feature:
 
-If the iPad is a check-in client, explicitly explain that the check-in app sends a cloud print request to a separate venue-connected relay; it does not turn the iPad into a USB printer host. If the iPad hosts a printer, prove supported hardware and OS permissions first.
+1. Reviewer installs the native iPad app with safe, least-privileged demo credentials.
+2. Reviewer performs an authorized synthetic check-in, which uses existing RSVP attendance and print-job semantics.
+3. Reviewer opens **Printer Host**, enrolling an explicitly supported printer and seeing the canonical cloud printer identity, name and campus without entering a relay ID.
+4. A second test device routes a cloud print job to this host; the test must have a meaningful no-hardware demo only if such simulation has been built and accurately labeled.
+5. Reviewer sees host connected/disconnected status and safe failure/recovery states. Demonstrate one-iPad combined check-in + host only where proven under actual iPadOS lifecycle constraints.
+
+**Pending:** [First-release completeness versus staged hosting](https://github.com/favorchurch/rsvp.favor.church/issues/630), exact Zebra compatibility, foreground/lock behavior, genuine hardware tests, reviewer-accessible sandbox and approved App Store wording. Never advertise hosting in a staged check-in-only binary.
 
 ## Submission checks
 
