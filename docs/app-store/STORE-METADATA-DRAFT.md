@@ -44,7 +44,17 @@ Favor Printer is intended for authorized ministry and event teams. A compatible 
 
 ## Native iPad listing
 
-**Not drafted as a feature claim yet.** If iPad is merely a check-in station, do not call it a direct USB Zebra printer relay. If it is an approved iPad printer host, document exact supported network/accessory devices and foreground/background limitations. Decide name, subtitle, descriptions, URL, bundle ID and screenshots after [the iPad role decision](https://github.com/favorchurch/rsvp.favor.church/issues/627).
+**Product direction locked:** [Option C](https://github.com/favorchurch/rsvp.favor.church/issues/627#issuecomment-6106334709) — one native iPadOS app provides **both RSVP check-in and printer hosting**. The first App Store release may enable both at debut or stage hosting; [release sequencing remains an open decision](https://github.com/favorchurch/rsvp.favor.church/issues/630).
+
+**Proposed app name:** Favor Check-in & Print (working name; verify Apple name availability and brand approval). Do not claim that direct USB Zebra printing works on iPad without specific hardware tests.
+
+**Candidate iPad description — for use ONLY after both capabilities ship and pass physical testing:**
+
+Use Favor Check-in & Print for native check-in at authorized Favor Church events and for setting up a compatible Zebra label printer as an on-site print host. Choose your service and check in through Favor RSVP, select your assigned cloud printer, or connect a supported printer to let other check-in devices route label jobs through your iPad.
+
+Requires an approved Favor Church account, network access and supported printer connectivity. Available printer-host functions depend on the specific printer model and iPadOS conditions.
+
+**If initial release is staged, revise this description to advertise check-in only** until printer-host functionality is actually enabled and validated. Device compatibility, first-release features, subtitle, bundle ID and screenshots remain gated.
 
 ## Remaining App Store Connect inputs
 
