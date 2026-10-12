@@ -14,6 +14,10 @@ Download and setup steps for volunteers: https://rsvp.favor.church/printer
   land in the RSVP repository and arrive through the sync pull request. `MANIFEST.json` records the source
   repository, path and commit, plus the sha256 and size of each file and a tree hash over them, and
   `pnpm verify:vendor` fails when anything drifts or when `embedded.ts` is missing.
+- `ios/` — the Favor Printer iPad app (SwiftUI, iPadOS, check-in only, online only), built against the
+  RSVP native API (`docs/native-api/v1.md` in the RSVP repository). Build and simulator test commands
+  are in `ios/README.md`. Tracked in favorchurch/favor-printer#22.
+- `docs/app-store/` — the App Store readiness dossier for the iPad app.
 - `build/` — packaging resources (`entitlements.mac.plist`).
 - `scripts/` — build, preview and vendor verification scripts.
 
