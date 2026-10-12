@@ -1,18 +1,27 @@
-# Apple App Review notes — DRAFT ONLY
+# Apple App Review notes: DRAFT ONLY
 
 These notes must be matched to the exact signed build, distribution type and hardware tested before being entered in App Store Connect. **Do not paste or submit unchanged.** A real, functional reviewer demo is required; this document does not create one.
 
+## Locked decisions these notes reflect
+
+- **Name:** **Favor Printer** on Mac and iPad, with no retired working titles anywhere in the notes.
+- **iPad v1:** native Rock event and Kids **check-in only**, **online-only**; printing uses the existing cloud to Mac relay.
+- **Printer Host:** a **later update** of the same iPad app, not demonstrated or claimed in this build.
+- **Distribution:** **unlisted**, shared by **direct link** only; state that intent in the review notes.
+- **Pilots:** controlled pilots run concurrently at **MNL, BNE and SEL**, each with its own go/no-go.
+- **Devices:** personally owned iPads need an **approved check-in device grant**; reviewer access must not rely on an unmanaged device.
+
 ## Intended audience
 
-Favor Printer is an operational utility for authorized Favor Church staff and volunteers who use Favor RSVP check-in printers. The current Mac app runs a local CUPS-based Zebra print relay; a planned native iPad app has a **locked dual role**: RSVP check-in and hosting compatible Zebra print jobs. Its hardware implementation is still unverified.
+Favor Printer is an operational utility for authorized Favor Church staff and volunteers who run RSVP check-in printers. The current Mac app runs a local CUPS-based Zebra print relay. The native iPad app for the first release is check-in only: volunteers check in families at Rock events and Kids check-in, online only, and labels print through the existing cloud to Mac relay.
 
 ## App/build identity
 
-- Platform: [Mac App Store / native iPadOS / both — pending decision]
+- Platform: native iPadOS for the unlisted first release; Mac App Store remains pending a sandbox printing feasibility result
 - App version and build number: [FILL FROM ACTUAL UPLOADED BUILD]
 - Bundle ID, minimum OS, locales and orientation: [VERIFY]
-- Required server: Favor RSVP; account and campus permission required.
-- Relevant printer: compatible Zebra label printer attached to a supported Mac in the present deployment; iPad printer hosting is NOT yet verified.
+- Required server: Favor RSVP; account, campus permission and an approved check-in device grant required.
+- Relevant printer: compatible Zebra label printer attached to a supported Mac in the present deployment; iPad printer hosting is a later update that is NOT in this build.
 
 ## Reviewer-safe access plan
 
@@ -36,24 +45,29 @@ Provide through Apple's secure review credential fields, **never GitHub**:
 
 For Apple reviewers lacking the hardware, provide a safe usable demonstration and explain which physical output functions need the printer; do not fake successful printing. If the demo is not viable, the review gate is blocked.
 
-## iPad review notes — dual role decided, actual demo blocked on implementation
+## iPad review notes: v1 check-in only, demo blocked on implementation
 
-**Product decision:** [one native iPadOS app for both check-in and printer hosting](https://github.com/favorchurch/rsvp.favor.church/issues/627#issuecomment-6106334709). The following walkthrough is a **plan**, not a shipped feature:
+**Product decision:** [Favor Printer on iPad and Mac](https://github.com/favorchurch/rsvp.favor.church/issues/651#issuecomment-6111669883), with [first-release surface locked to event and Kids check-in](https://github.com/favorchurch/rsvp.favor.church/issues/650#issuecomment-6111650756) and [online-only v1](https://github.com/favorchurch/rsvp.favor.church/issues/649#issuecomment-6111615014). The following walkthrough is a **plan**, not a shipped feature:
 
-1. Reviewer installs the native iPad app with safe, least-privileged demo credentials.
-2. Reviewer performs an authorized synthetic check-in, which uses existing RSVP attendance and print-job semantics.
-3. Reviewer opens **Printer Host**, enrolling an explicitly supported printer and seeing the canonical cloud printer identity, name and campus without entering a relay ID.
-4. A second test device routes a cloud print job to this host; the test must have a meaningful no-hardware demo only if such simulation has been built and accurately labeled.
-5. Reviewer sees host connected/disconnected status and safe failure/recovery states. Demonstrate one-iPad combined check-in + host only where proven under actual iPadOS lifecycle constraints.
+1. Reviewer installs the native iPad app with safe, least-privileged demo credentials on a registered device.
+2. Reviewer selects a service and performs one authorized synthetic check-in, which uses existing RSVP attendance and print-job semantics.
+3. Labels route to the campus Mac printer relay; show the printer assignment and status the volunteer sees.
+4. Turn off the network and show the connection-required state: check-in actions are disabled and nothing queues for later.
+5. Show the revoked or off-campus state, and the clearly labelled hand-off to the existing web routes for volunteer roster, ticketing and registration.
 
-**Pending:** [First-release completeness versus staged hosting](https://github.com/favorchurch/rsvp.favor.church/issues/630), exact Zebra compatibility, foreground/lock behavior, genuine hardware tests, reviewer-accessible sandbox and approved App Store wording. Never advertise hosting in a staged check-in-only binary.
+**Printer Host is out of v1:** [iPad printer hosting](https://github.com/favorchurch/rsvp.favor.church/issues/627#issuecomment-6106334709) is a committed later update of this same app. Do not demo, describe or screenshot it for this build, and do not imply the iPad prints directly over USB.
+
+**Distribution and audience:** the release is [unlisted, shared by direct link](https://github.com/favorchurch/rsvp.favor.church/issues/628#issuecomment-6110595534); say so in the notes. The first rollout is a controlled pilot wave at **MNL, BNE and SEL** with per-campus go/no-go. Personally owned iPads participate only with an [approved check-in device grant](https://github.com/favorchurch/rsvp.favor.church/issues/636#issuecomment-6111575395).
+
+**Pending:** hardware and iPadOS lifecycle results, reviewer-accessible demo data, approved App Store wording, and the exact native API data inventory ([rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/main/docs/native-api/v1.md)). Never advertise hosting in a check-in-only binary.
 
 ## Submission checks
 
 - [ ] Reviewer credentials tested from a fresh device
 - [ ] Demo environment contains only synthetic records and is accessible during review
 - [ ] App isn't hidden behind an unavailable private network without explanation and a legitimate demo
-- [ ] Mac and iPad platform notes match actual features
+- [ ] Mac and iPad platform notes match actual features: check-in only, online only, no printer hosting
+- [ ] Unlisted-by-direct-link intent stated in the review notes
 - [ ] Support contact monitored, account accessible, hardware constraints clear
 - [ ] No unverified sandbox, background, Bluetooth, AirPrint or USB claims
 

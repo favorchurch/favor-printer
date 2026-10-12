@@ -1,6 +1,15 @@
-# Favor Printer — volunteer support FAQ (working draft)
+# Favor Printer: volunteer support FAQ (working draft)
 
 **Do not publish features that have not shipped.** Names, cloud-ready tests and one-step onboarding below include planned improvements tracked in GitHub.
+
+## Locked decisions this FAQ reflects
+
+- **Name:** **Favor Printer** on Mac and iPad, with no retired working titles in any answer.
+- **iPad v1:** native Rock event and Kids **check-in only**, **online-only**.
+- **Printer Host:** a **later update** of the same iPad app, not claimed now.
+- **Distribution:** **unlisted**, shared by **direct link** only.
+- **Pilots:** controlled pilots run concurrently at **MNL, BNE and SEL**.
+- **Devices:** personally owned iPads need an **approved check-in device grant**.
 
 ## What is Favor Printer?
 
@@ -9,6 +18,18 @@ Favor Printer is a Mac menu-bar application that allows a connected, compatible 
 ## What do I need to set up?
 
 A supported Mac with the app, physical Zebra with labels/power/USB connected, reliable Internet and an authorized Favor RSVP setup code for the intended printer/campus. A check-in device needs its own correct cloud printer selection/pairing.
+
+## How do volunteers get the iPad app?
+
+The iPad app is **unlisted**: your church shares the approved **direct link** with you. It will not appear in App Store search. The first release is a controlled pilot at **MNL, BNE and SEL**, so expect the link from your campus team rather than a general announcement.
+
+## Can I use my own iPad?
+
+Yes, if an administrator **approves your device and grants it check-in access**. The download link and your RSVP login are not permission by themselves. An unapproved or lost iPad loses check-in access as soon as an administrator revokes its grant.
+
+## Does check-in work without internet?
+
+No. iPad v1 is **online-only**: while disconnected, the app shows a connection-required state and check-in is disabled. Nothing is queued to send later. If a check-in acknowledgement goes missing, the app checks the server's attendance before trying again so nobody is counted twice. Your campus fallback (the existing RSVP web flow) is rehearsed for outages.
 
 ## Why does a printer say “USB Printer” or my Mac say “Unnamed laptop”?
 
@@ -37,12 +58,12 @@ Avoid automatic repeat printing. A label could have physically printed before th
 
 ## Can the iPad replace the Mac printer host?
 
-**Planned, not released:** The [approved product target](https://github.com/favorchurch/rsvp.favor.church/issues/627) is **one native iPad app for both RSVP check-in and printer hosting**. Only specifically compatible Zebra models/connections will be supported after actual hardware, network and iPadOS lifecycle tests. Until then the proven Mac/CUPS relay remains the printer host. [Initial App Store release sequencing is undecided](https://github.com/favorchurch/rsvp.favor.church/issues/630); do not promise this feature in v1 until its release is approved.
+**Not in v1.** The iPad app launches as **check-in only, online only**, printing through the proven Mac/CUPS relay. **Printer Host** is a **later update** of this same app, released only after the printer hardware and iPadOS lifecycle tests pass. Only specifically compatible Zebra models and connections will be supported then. Do not promise hosting in v1, and do not describe direct iPad USB printing as available.
 
 ## Who should I contact?
 
 **Proposed setup/support page:** https://rsvp.favor.church/printer  
-**Proposed contact:** techteam@favor.church — [CONFIRM monitored inbox / Sunday escalation owner].
+**Proposed contact:** techteam@favor.church: [CONFIRM monitored inbox / Sunday escalation owner].
 
 For a support request provide campus/service time, app version, friendly device names, printer model and status, and relevant print job ID. **Do not** send child attendee label content, security QR codes, relay tokens or live enrollment codes in a public ticket.
 

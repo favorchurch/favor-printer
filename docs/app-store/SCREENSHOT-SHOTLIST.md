@@ -2,6 +2,15 @@
 
 **Assets are not yet captured.** All screenshots must come from a tested build and show **synthetic** volunteers, family and attendee details. Never include real children, phone numbers, tokens, working OTPs, security QR codes or private cloud identifiers in public imagery.
 
+## Locked decisions this shotlist reflects
+
+- **Name:** **Favor Printer** on Mac and iPad, with no retired working titles in any caption or frame.
+- **iPad v1:** native Rock event and Kids **check-in only**, **online-only**; show the connection-required state rather than any offline queue.
+- **Printer Host:** a **later update** of the same iPad app, so no hosting frames are captured now.
+- **Distribution:** **unlisted**, shared by **direct link** only.
+- **Pilots:** controlled pilots run concurrently at **MNL, BNE and SEL**.
+- **Devices:** personally owned iPads appear only when they carry an **approved check-in device grant**.
+
 ## Apple requirements to recheck before upload
 
 Current Apple screenshot guide: https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications
@@ -16,20 +25,24 @@ Current Apple screenshot guide: https://developer.apple.com/help/app-store-conne
 1. **Choose your printer:** Favor Printer setup with real Zebra detected by the Mac.
 2. **Connect to Favor RSVP:** guided enrollment destination and campus (no redeemable code displayed).
 3. **Ready for check-in:** named laptop/printer, accurate cloud readiness and last test status.
-4. **Manage connected printer:** edit friendly labels and reconnect affordances — only when implemented.
+4. **Manage connected printer:** edit friendly labels and reconnect affordances, only when implemented.
 5. **Recover from a problem:** useful unplugged/paused/conflicting-printer guidance.
 
 The menu-bar utility may need its actual setup window opened for screen capture; no invented UI or composited “working” state.
 
-## Native iPad shotlist — both capabilities locked, shipping claims gated
+## Native iPad shotlist: v1 is check-in only and online only
 
-**Native Check-in:** service/campus selection, synthetic family check-in, selected cloud printer/status, print queue and graceful offline/reconnect.
+**Event and Kids check-in:** service and campus selection, synthetic family check-in, the assigned cloud printer and its status, and the printed parent/child label confirmation.
 
-**iPad Printer Host:** physically validated printer connection (supported Wi-Fi/TCP/IP/Bluetooth/AirPrint where appropriate), automatic cloud enrollment with readable device/printer names, readiness, physical cloud-routed test and recovery states.
+**Online-only states:** the connection-required state with check-in actions disabled, and the honest reconciliation message after a lost acknowledgement. Never show a queued or optimistic offline check-in.
 
-**Combined journey:** show the same native app can expose both roles and one host iPad receives a job from another check-in iPad. Show one-device check-in+host only where supported by genuine iPadOS runtime tests.
+**Device grant:** the approved-device state a personally owned iPad shows once its check-in device grant is active, and the revoked state afterwards. The direct link and login alone must never look like authorization.
 
-**Release-accuracy gate:** If [first release is staged](https://github.com/favorchurch/rsvp.favor.church/issues/630), submit only screenshots of capabilities actually present and usable in that binary. Never imply iPad USB printing, always-on hosting or hardware support without evidence.
+**Web hand-off:** the clearly labelled hand-off to the existing web routes for volunteer roster, ticketing, registration and admin configuration.
+
+**Printer Host:** a later update of this same app. Capture no hosting frames now, and never imply iPad USB printing or always-on hosting.
+
+**Release-accuracy gate:** submit only screenshots of capabilities present and usable in the uploaded binary. The release is unlisted by direct link, and the first rollout is a controlled pilot at **MNL, BNE and SEL**; do not imply public availability in the imagery or captions.
 
 ## Production QA
 
