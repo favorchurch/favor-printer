@@ -6,6 +6,7 @@ export * from "./lpinfo";
 export * from "./power";
 export * from "./printerService";
 export * from "./queue";
+export * from "./rename";
 export * from "./relayConfig";
 export * from "./secretStore";
 export * from "./statusSummary";

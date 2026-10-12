@@ -5,7 +5,7 @@
  * promise; nothing from it reaches the controller.
  */
 
-import { IPC_CHANNELS, isUpdateChannel, type FavorPrinterApi, type IpcChannel } from "../../shared";
+import { IPC_CHANNELS, RENAME_MAX_LENGTH, isUpdateChannel, type FavorPrinterApi, type IpcChannel } from "../../shared";
 import type { AppController } from "./controller";
 
 export class InvalidPayloadError extends Error {
@@ -32,6 +32,8 @@ const isDeviceId = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= MAX_DEVICE_ID_LENGTH;
 /** Any short string: the controller decides whether it is a valid code, and says so in its reply. */
 const isCodeInput = (value: unknown): value is string => typeof value === "string" && value.length <= MAX_CODE_INPUT_LENGTH;
+/** Any short text: the controller trims it and refuses an empty name. */
+const isRenameInput = (value: unknown): value is string => typeof value === "string" && value.length <= RENAME_MAX_LENGTH;
 
 /** Channels the renderer invokes, each with the method it maps to on the API. */
 type InvokeChannels = Exclude<IpcChannel, typeof IPC_CHANNELS.snapshot>;
@@ -49,6 +51,8 @@ export const VALIDATORS: Record<InvokeChannels, Validator<never[]> | Validator<[
   [IPC_CHANNELS.setOpenAtLogin]: one(isBoolean),
   [IPC_CHANNELS.setChannel]: one((value): value is string => isUpdateChannel(value)),
   [IPC_CHANNELS.migrateLegacyRelay]: none,
+  [IPC_CHANNELS.renameLaptop]: one(isRenameInput),
+  [IPC_CHANNELS.renamePrinter]: one(isRenameInput),
   [IPC_CHANNELS.advance]: none,
   [IPC_CHANNELS.quit]: none,
 };
@@ -73,6 +77,8 @@ export function handlersFor(api: Omit<FavorPrinterApi, "onSnapshot">): IpcHandle
     [IPC_CHANNELS.setOpenAtLogin]: (enabled: boolean) => api.setOpenAtLogin(enabled),
     [IPC_CHANNELS.setChannel]: (channel: string) => api.setChannel(channel as Parameters<FavorPrinterApi["setChannel"]>[0]),
     [IPC_CHANNELS.migrateLegacyRelay]: () => api.migrateLegacyRelay(),
+    [IPC_CHANNELS.renameLaptop]: (label: string) => api.renameLaptop(label),
+    [IPC_CHANNELS.renamePrinter]: (name: string) => api.renamePrinter(name),
     [IPC_CHANNELS.advance]: () => api.advance(),
     [IPC_CHANNELS.quit]: () => api.quit(),
   };
@@ -93,6 +99,8 @@ export function apiFromController(controller: AppController, quit: () => Promise
     setOpenAtLogin: (enabled) => controller.setOpenAtLogin(enabled),
     setChannel: (channel) => controller.setChannel(channel),
     migrateLegacyRelay: () => controller.migrateLegacyRelay(),
+    renameLaptop: (label) => controller.renameLaptop(label),
+    renamePrinter: (name) => controller.renamePrinter(name),
     advance: () => controller.advance(),
     quit,
   };

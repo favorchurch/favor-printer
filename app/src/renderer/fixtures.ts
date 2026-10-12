@@ -214,6 +214,14 @@ export function createMockApi(start: AppSnapshot, options: { failMigration?: boo
     setPaused: async () => undefined,
     setOpenAtLogin: async () => undefined,
     setChannel: async () => undefined,
+    renameLaptop: async (label) => {
+      set({ label });
+      return { ok: true };
+    },
+    renamePrinter: async (name) => {
+      set({ printerName: name });
+      return { ok: true };
+    },
     migrateLegacyRelay: async () => {
       if (options.failMigration) return { ok: false, reason: "bootout_failed" };
       set({ legacyRelayLoaded: false, status: { color: "amber", headline: "Not set up yet", detail: "Enter the six-digit code from an admin." } });

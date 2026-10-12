@@ -4,8 +4,7 @@
  * actions. Nothing here shows ZPL or a security code.
  */
 
-import type { AppSnapshot, PrinterDevice } from "../shared";
-import { isEnrollmentCode } from "../shared";
+import { isEnrollmentCode, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
 import { h } from "./dom";
 import {
   boundPrinterText,
@@ -13,9 +12,11 @@ import {
   codeErrorCopy,
   ENROLL_ERROR_COPY,
   LOCAL_TEST_COPY,
+  RENAME_ERROR_COPY,
   stepLabel,
   TEST_PRINT_ERROR_COPY,
   type LocalState,
+  type RenameTarget,
   type ScreenId,
 } from "./model";
 
@@ -33,6 +34,9 @@ export type Actions = {
   cancelMigrateLegacy(): void;
   /** Confirmed: turns the old relay off. */
   migrateLegacy(): void;
+  /** Saves the typed name. The screen reads the input itself: it is not kept in local state. */
+  renameLaptop(name: string): void;
+  renamePrinter(name: string): void;
   closeWindow(): void;
 };
 
@@ -73,6 +77,41 @@ const printerLine = (snapshot: AppSnapshot) => {
   const text = boundPrinterText(snapshot);
   return text ? h("p", { class: "hint", id: "bound-printer" }, `Printer: ${text}`) : null;
 };
+
+/** One name to edit in RSVP. The typed text stays in the input, so a re-render does not drop it. */
+function renameForm(
+  id: string,
+  label: string,
+  current: string | null,
+  local: LocalState,
+  target: RenameTarget,
+  onSave: (name: string) => void,
+) {
+  const failed = local.renameError?.target === target ? local.renameError : null;
+  const input = h("input", {
+    id,
+    class: "text-input",
+    type: "text",
+    maxlength: RENAME_MAX_LENGTH,
+    value: failed ? failed.name : (current ?? ""),
+    "aria-describedby": failed ? `${id}-error` : undefined,
+    "aria-invalid": failed ? "true" : "false",
+    spellcheck: "false",
+  });
+  return h(
+    "form",
+    {
+      class: "rename-form",
+      onsubmit: (event: SubmitEvent) => {
+        event.preventDefault();
+        if (!local.busy) onSave(input.value);
+      },
+    },
+    h("label", { for: id, class: "field-label" }, label),
+    h("div", { class: "rename-row" }, input, h("button", { type: "submit", class: "button", disabled: local.busy }, "Save")),
+    failed ? h("p", { id: `${id}-error`, class: "note error", role: "alert" }, RENAME_ERROR_COPY[failed.reason]) : null,
+  );
+}
 
 function deviceRow(device: PrinterDevice, selected: boolean, onSelect: () => void) {
   return h(
@@ -260,6 +299,8 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         ),
         statusPill(snapshot),
         printerLine(snapshot),
+        renameForm("laptop-name", "Laptop name in RSVP", snapshot.label, local, "laptop", a.renameLaptop),
+        snapshot.printerName ? renameForm("printer-name", "Printer name in RSVP", snapshot.printerName, local, "printer", a.renamePrinter) : null,
         actions(button("Run local hardware test", a.advance, { primary: true })),
       );
 

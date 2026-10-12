@@ -22,6 +22,8 @@ export const IPC_CHANNELS = {
   setOpenAtLogin: "favor-printer:set-open-at-login",
   setChannel: "favor-printer:set-channel",
   migrateLegacyRelay: "favor-printer:migrate-legacy-relay",
+  renameLaptop: "favor-printer:rename-laptop",
+  renamePrinter: "favor-printer:rename-printer",
   advance: "favor-printer:advance",
   quit: "favor-printer:quit",
 } as const;
@@ -48,6 +50,14 @@ export type MigrateLegacyResult =
   | { ok: true }
   | { ok: false; reason: "bootout_failed" | "disable_failed" };
 
+/** The longest name a volunteer can type for the laptop or the printer. */
+export const RENAME_MAX_LENGTH = 200;
+
+/** `not_enrolled`: no saved pairing. `printer_not_ready`: the relay has not heard from the cloud about its printer yet. */
+export type RenameResult =
+  | { ok: true }
+  | { ok: false; reason: "name_taken" | "invalid_name" | "not_found" | "not_enrolled" | "printer_not_ready" | "revoked" | "unreachable" };
+
 export type FavorPrinterApi = {
   getSnapshot(): Promise<AppSnapshot>;
   /** Returns an unsubscribe function. */
@@ -64,6 +74,10 @@ export type FavorPrinterApi = {
   setOpenAtLogin(enabled: boolean): Promise<void>;
   setChannel(channel: UpdateChannel): Promise<void>;
   migrateLegacyRelay(): Promise<MigrateLegacyResult>;
+  /** Renames this laptop in RSVP. Pairing is unchanged. */
+  renameLaptop(label: string): Promise<RenameResult>;
+  /** Renames the printer bound to this laptop in RSVP. Pairing is unchanged. */
+  renamePrinter(name: string): Promise<RenameResult>;
   /** Moves the setup window to its next step. Main decides whether the step is reachable. */
   advance(): Promise<AppSnapshot>;
   quit(): Promise<void>;

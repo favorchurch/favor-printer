@@ -1060,3 +1060,75 @@ describe("shutdown", () => {
   });
 });
 
+
+describe("rename", () => {
+  async function withRelay(options: HarnessOptions = ENROLLED) {
+    const h = await started(options);
+    h.forks.last().emitMessage({ type: "event", event: relayStatus() });
+    return h;
+  }
+
+  it("renames the laptop in the cloud and keeps the pairing", async () => {
+    const h = await started();
+    const before = h.secrets.save.mock.calls.length;
+    await expect(h.controller.renameLaptop("  Lobby desk  ")).resolves.toEqual({ ok: true });
+    expect(h.rename).toHaveBeenCalledWith({ label: "Lobby desk" }, { apiUrl: "https://rsvp.favor.church", credentials: CREDENTIALS });
+    expect(h.controller.snapshot().label).toBe("Lobby desk");
+    expect(h.prefs.get().label).toBe("Lobby desk");
+    expect(h.enroll).not.toHaveBeenCalled();
+    expect(h.secrets.save.mock.calls.length).toBe(before);
+    expect(h.secrets.clear).not.toHaveBeenCalled();
+    expect(h.prefs.get().revoked).toBe(false);
+  });
+
+  it("renames the bound printer by the cloud id the relay heard from", async () => {
+    const h = await withRelay();
+    await expect(h.controller.renamePrinter("Front Zebra")).resolves.toEqual({ ok: true });
+    expect(h.rename).toHaveBeenCalledWith({ printerId: "printer-1", name: "Front Zebra" }, expect.anything());
+    expect(h.prefs.get().printerName).toBe("Front Zebra");
+    expect(h.enroll).not.toHaveBeenCalled();
+  });
+
+  it("does not ask the cloud for the printer before the relay knows its id", async () => {
+    const h = await started();
+    await expect(h.controller.renamePrinter("Front Zebra")).resolves.toEqual({ ok: false, reason: "printer_not_ready" });
+    expect(h.rename).not.toHaveBeenCalled();
+  });
+
+  it("refuses an empty name without calling the cloud", async () => {
+    const h = await started();
+    await expect(h.controller.renameLaptop("   ")).resolves.toEqual({ ok: false, reason: "invalid_name" });
+    expect(h.rename).not.toHaveBeenCalled();
+  });
+
+  it("refuses when there is no pairing", async () => {
+    const h = await started({ credentials: null, scan: foundPrinter(), prefs: { setupComplete: false } });
+    await expect(h.controller.renameLaptop("Desk")).resolves.toEqual({ ok: false, reason: "not_enrolled" });
+    expect(h.rename).not.toHaveBeenCalled();
+  });
+
+  it("keeps the old name when the cloud refuses it, and says why", async () => {
+    const h = await withRelay({ ...ENROLLED, prefs: { ...ENROLLED.prefs, printerName: "Lobby Zebra" }, rename: async () => ({ ok: false, reason: "name_taken" }) });
+    await expect(h.controller.renamePrinter("Lobby Zebra")).resolves.toEqual({ ok: false, reason: "name_taken" });
+    expect(h.prefs.get().printerName).toBe("Lobby Zebra");
+    expect(h.secrets.clear).not.toHaveBeenCalled();
+  });
+
+  it("keeps the pairing when the cloud cannot be reached", async () => {
+    const h = await started({ ...ENROLLED, prefs: { ...ENROLLED.prefs, label: "Front desk" }, rename: async () => ({ ok: false, reason: "unreachable" }) });
+    await expect(h.controller.renameLaptop("Desk")).resolves.toEqual({ ok: false, reason: "unreachable" });
+    expect(h.prefs.get().label).toBe("Front desk");
+    expect(h.secrets.clear).not.toHaveBeenCalled();
+    expect(h.prefs.get().revoked).toBe(false);
+  });
+
+  it("revokes the laptop when the cloud rejects its token, and does not re-enroll", async () => {
+    const h = await withRelay({ ...ENROLLED, rename: async () => ({ ok: false, reason: "revoked" }) });
+    const pending = h.controller.renamePrinter("Front Zebra");
+    await finishStop(h);
+    await expect(pending).resolves.toEqual({ ok: false, reason: "revoked" });
+    expect(h.prefs.get().revoked).toBe(true);
+    expect(h.secrets.clear).toHaveBeenCalled();
+    expect(h.enroll).not.toHaveBeenCalled();
+  });
+});

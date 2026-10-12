@@ -32,6 +32,8 @@ export function createApi(ipc: IpcRendererLike): FavorPrinterApi {
     setOpenAtLogin: (enabled) => call(IPC_CHANNELS.setOpenAtLogin, enabled),
     setChannel: (channel) => call(IPC_CHANNELS.setChannel, channel),
     migrateLegacyRelay: () => call(IPC_CHANNELS.migrateLegacyRelay),
+    renameLaptop: (label) => call(IPC_CHANNELS.renameLaptop, label),
+    renamePrinter: (name) => call(IPC_CHANNELS.renamePrinter, name),
     advance: () => call(IPC_CHANNELS.advance),
     quit: () => call(IPC_CHANNELS.quit),
   };

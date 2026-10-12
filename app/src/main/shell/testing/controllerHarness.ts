@@ -3,10 +3,12 @@
 import { vi } from "vitest";
 
 import type { PrinterDevice, QueueState } from "../../../shared";
+import type { RelayRenameRequest } from "../../../../../vendor/relay/protocol";
 import {
   createPowerController,
   type EnrollOutcome,
   type PrinterService,
+  type RenameCloudOutcome,
   type ScanOutcome,
   type SetUpOutcome,
   type StoredCredentials,
@@ -61,6 +63,8 @@ export type HarnessOptions = {
   migrate?: "ok" | "bootout_failed" | "disable_failed" | "still_loaded" | "throws";
   enroll?: () => Promise<EnrollOutcome>;
   setUp?: () => Promise<SetUpOutcome>;
+  /** Answers a rename. The default echoes the name the cloud was sent, as RSVP does. */
+  rename?: (request: RelayRenameRequest) => Promise<RenameCloudOutcome>;
 };
 
 export function createControllerHarness(options: HarnessOptions = {}) {
@@ -119,6 +123,12 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     options.enroll ?? (async () => ({ ok: true, credentials: { ...CREDENTIALS, label: "Front desk", printer: { name: "Lobby Zebra", campusId: 7 } } }) as EnrollOutcome),
   );
 
+  const rename = vi.fn(
+    options.rename ??
+      (async (request: RelayRenameRequest): Promise<RenameCloudOutcome> =>
+        "label" in request ? { ok: true, label: request.label, printerName: null } : { ok: true, label: null, printerName: request.name }),
+  );
+
   const forks = createForkHarness();
   const origFork = forks.fork;
   forks.fork = () => {
@@ -158,6 +168,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     printers,
     legacy,
     enroll,
+    rename,
     createSupervisor: (hooks) =>
       createRelaySupervisor({
         fork: forks.fork,
@@ -192,7 +203,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     migrateMode,
     setLegacyLoaded,
     events,
-    supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, forks, timers, power: spyPower, updates, ui, applyOpenAtLogin, logLines };
+    supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, rename, forks, timers, power: spyPower, updates, ui, applyOpenAtLogin, logLines };
 }
 
 export type ControllerHarness = ReturnType<typeof createControllerHarness>;
