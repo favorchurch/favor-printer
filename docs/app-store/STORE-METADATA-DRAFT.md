@@ -46,7 +46,7 @@ Using a Mac at the venue, your team can choose a connected printer, enroll the d
 
 Favor Printer is intended for authorized ministry and event teams. A compatible printer, a Mac, and approved Favor RSVP access are required.
 
-**Ship-only claims:** automatic cloud relay mapping, editable printer/laptop names, guided reconnection and remote-routed readiness testing must be included in the description only when their features are tested in the shipping build. Current app may not have them.
+**Ship-only claims:** editable printer and laptop names and the per-state guided recovery in the status window ship in this release. Automatic cloud relay mapping ([RSVP #623](https://github.com/favorchurch/rsvp.favor.church/issues/623)) and remote-routed readiness testing do not, so keep them out of the description until they are tested in the shipping build.
 
 **Candidate keywords:** check-in,Zebra,labels,printer,church,event,volunteers. Validate Apple's character and keyword rules.
 

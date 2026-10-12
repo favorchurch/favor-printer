@@ -39,15 +39,15 @@ Provide through Apple's secure review credential fields, **never GitHub**:
 2. Select a detected USB Zebra in the real device test environment.
 3. Enroll with a reviewer-safe one-time code for the intended cloud printer record.
 4. Verify the matching campus/host/printer identity and connection status.
-5. Run a server-routed **synthetic** sample print and check actual physical output during hardware QA.
+5. Run a server-routed **synthetic** sample print (triggered from RSVP check-in, not the app's local test) and check actual physical output during hardware QA.
 6. Show recoverable unplugged/offline or revoked-enrollment state.
-7. Show laptop/printer renaming **only when** the feature has shipped and works in the submitted build.
+7. Show laptop/printer renaming, which the submitted build ships.
 
 For Apple reviewers lacking the hardware, provide a safe usable demonstration and explain which physical output functions need the printer; do not fake successful printing. If the demo is not viable, the review gate is blocked.
 
-## iPad review notes: v1 check-in only, demo blocked on implementation
+## iPad review notes: v1 check-in only, online only
 
-**Product decision:** [Favor Printer on iPad and Mac](https://github.com/favorchurch/rsvp.favor.church/issues/651#issuecomment-6111669883), with [first-release surface locked to event and Kids check-in](https://github.com/favorchurch/rsvp.favor.church/issues/650#issuecomment-6111650756) and [online-only v1](https://github.com/favorchurch/rsvp.favor.church/issues/649#issuecomment-6111615014). The following walkthrough is a **plan**, not a shipped feature:
+**Product decision:** [Favor Printer on iPad and Mac](https://github.com/favorchurch/rsvp.favor.church/issues/651#issuecomment-6111669883), with [first-release surface locked to event and Kids check-in](https://github.com/favorchurch/rsvp.favor.church/issues/650#issuecomment-6111650756) and [online-only v1](https://github.com/favorchurch/rsvp.favor.church/issues/649#issuecomment-6111615014). The native iPad app is implemented in `ios/`; the walkthrough below describes it and still needs reviewer-accessible demo data:
 
 1. Reviewer installs the native iPad app with safe, least-privileged demo credentials on a registered device.
 2. Reviewer selects a service and performs one authorized synthetic check-in, which uses existing RSVP attendance and print-job semantics.

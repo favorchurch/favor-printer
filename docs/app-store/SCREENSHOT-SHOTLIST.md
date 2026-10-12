@@ -25,7 +25,7 @@ Current Apple screenshot guide: https://developer.apple.com/help/app-store-conne
 1. **Choose your printer:** Favor Printer setup with real Zebra detected by the Mac.
 2. **Connect to Favor RSVP:** guided enrollment destination and campus (no redeemable code displayed).
 3. **Ready for check-in:** named laptop/printer, accurate cloud readiness and last test status.
-4. **Manage connected printer:** edit friendly labels and reconnect affordances, only when implemented.
+4. **Manage connected printer:** edit friendly labels for the printer and its laptop, then reconnect.
 5. **Recover from a problem:** useful unplugged/paused/conflicting-printer guidance.
 
 The menu-bar utility may need its actual setup window opened for screen capture; no invented UI or composited “working” state.
