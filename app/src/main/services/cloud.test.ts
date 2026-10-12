@@ -184,8 +184,9 @@ describe("enroll printer conflicts", () => {
     expect(outcome).toMatchObject({ ok: false, reason: "printer_conflict", conflict: "unknown" });
   });
 
-  it("maps a reasonless { error: conflict } 409 to code_used, not to an unknown printer conflict", async () => {
+  it("maps a reasonless { error: conflict } or { error: code_used } 409 to code_used, not to an unknown printer conflict", async () => {
     expect(await conflict({ error: "conflict" })).toEqual({ ok: false, reason: "code_used", status: 409 });
+    expect(await conflict({ error: "code_used" })).toEqual({ ok: false, reason: "code_used", status: 409 });
   });
 
   it("keeps { error: conflict } with a reason, and the same body on other statuses, out of code_used", async () => {
@@ -241,9 +242,12 @@ describe("mapEnrollStatus and copy", () => {
     expect(ENROLL_FAILURE_COPY.code_used).toBe("That code was already used up. Ask an admin for a new code.");
     expect(ENROLL_FAILURE_COPY.invalid_code).not.toBe(ENROLL_FAILURE_COPY.code_expired);
     expect(ENROLL_FAILURE_COPY.code_expired).not.toBe(ENROLL_FAILURE_COPY.code_used);
+    expect(ENROLL_FAILURE_COPY.invalid_code).not.toBe(ENROLL_FAILURE_COPY.code_used);
     expect(mapEnrollStatus(410)).toBe("code_expired");
     expect(mapEnrollStatus(404)).toBe("invalid_code");
     expect(mapEnrollStatus(200, "code_expired")).toBe("code_expired");
+    expect(mapEnrollStatus(200, "expired")).toBe("code_expired");
+    expect(mapEnrollStatus(200, "invalid_code")).toBe("invalid_code");
     expect(mapEnrollStatus(429)).toBe("throttled");
   });
 

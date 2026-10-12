@@ -57,15 +57,14 @@ export class BacklogMonitor {
 
   update(counts: BacklogCounts | null): string | null {
     if (!counts) {
-      this.lastWarning = null;
-      return null;
+      return this.lastWarning;
     }
 
     const drained = counts.sent + counts.failed + counts.ambiguous;
     const queued = Math.max(0, counts.claimed - drained);
     const currentTime = this.now();
 
-    if (this.lastDrainedAt === null) {
+    if (this.lastDrainedAt === null || drained < this.lastDrainedCount || currentTime < (this.lastDrainedAt ?? currentTime)) {
       this.lastDrainedAt = currentTime;
       this.lastDrainedCount = drained;
     } else if (drained > this.lastDrainedCount) {
@@ -73,7 +72,8 @@ export class BacklogMonitor {
       this.lastDrainedAt = currentTime;
     }
 
-    const isStuck = queued > 0 && currentTime - (this.lastDrainedAt ?? currentTime) >= this.stuckTimeoutMs;
+    const elapsed = Math.max(0, currentTime - (this.lastDrainedAt ?? currentTime));
+    const isStuck = queued > 0 && elapsed >= this.stuckTimeoutMs;
 
     this.lastWarning = evaluateBacklog({
       queued,

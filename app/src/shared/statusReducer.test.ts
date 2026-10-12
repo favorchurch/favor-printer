@@ -126,7 +126,9 @@ describe("statusReducer: table-driven state transitions", () => {
     { from: "Connected", signal: { type: "printer_unplugged" }, expected: "Unplugged", description: "Connected -> Unplugged when cable pulled" },
     { from: "Connected", signal: { type: "cloud_unreachable" }, expected: "Waiting", description: "Connected -> Waiting when cloud drops" },
     { from: "Connected", signal: { type: "relay_restarting" }, expected: "Waiting", description: "Connected -> Waiting when relay restarts" },
+    { from: "Connected", signal: { type: "relay_stopped" }, expected: "Waiting", description: "Connected -> Waiting when relay stops" },
     { from: "Connected", signal: { type: "queue_missing" }, expected: "Waiting", description: "Connected -> Waiting when CUPS queue missing" },
+    { from: "Connected", signal: { type: "queue_disabled" }, expected: "Waiting", description: "Connected -> Waiting when CUPS queue disabled" },
     { from: "Connected", signal: { type: "cloud_revoked" }, expected: "Needs re-enrollment", description: "Connected -> Needs re-enrollment when token revoked" },
     { from: "Connected", signal: { type: "not_enrolled" }, expected: "Needs re-enrollment", description: "Connected -> Needs re-enrollment when unenrolled" },
     { from: "Connected", signal: { type: "printer_conflict", conflict: "serial_in_use" }, expected: "In use elsewhere", description: "Connected -> In use elsewhere when claimed by other Mac" },
@@ -161,6 +163,8 @@ describe("statusReducer: table-driven state transitions", () => {
     { from: "Connected", signal: { type: "relay_running" }, expected: "Connected", description: "Connected -> Connected (running signal)" },
     { from: "Unplugged", signal: { type: "printer_unplugged" }, expected: "Unplugged", description: "Unplugged -> Unplugged (duplicate unplug)" },
     { from: "Waiting", signal: { type: "relay_starting" }, expected: "Waiting", description: "Waiting -> Waiting (still starting)" },
+    { from: "Waiting", signal: { type: "relay_stopped" }, expected: "Waiting", description: "Waiting -> Waiting (relay stopped)" },
+    { from: "Waiting", signal: { type: "queue_disabled" }, expected: "Waiting", description: "Waiting -> Waiting (queue disabled)" },
     { from: "Needs re-enrollment", signal: { type: "not_enrolled" }, expected: "Needs re-enrollment", description: "Needs re-enrollment -> Needs re-enrollment (not enrolled)" },
     { from: "In use elsewhere", signal: { type: "printer_conflict", conflict: "serial_in_use" }, expected: "In use elsewhere", description: "In use elsewhere -> In use elsewhere (duplicate conflict)" },
   ];

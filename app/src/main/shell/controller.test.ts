@@ -1017,6 +1017,21 @@ describe("shutdown", () => {
     const snap = h.controller.snapshot();
     expect(snap.fiveState).toBe("Connected");
     expect(snap.recoveryAction).toBe("Run a local test print in Favor Printer to verify labels.");
+
+    // Revocation triggers Needs re-enrollment
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ state: "running", cloud: "revoked" }),
+    });
+    const revokedSnap = h.controller.snapshot();
+    expect(revokedSnap.fiveState).toBe("Needs re-enrollment");
+    expect(revokedSnap.recoveryAction).toBe("Ask an admin for a new six-digit code in Favor RSVP.");
+  });
+
+  it("exposes Unplugged when no printer is attached", async () => {
+    const h = await started({ ...ENROLLED, scan: NO_PRINTER });
+    expect(h.controller.snapshot().fiveState).toBe("Unplugged");
+    expect(h.controller.snapshot().recoveryAction).toBe("Plug in the Zebra with its USB cable.");
   });
 
   it("adds backlog warning when queued jobs exceed threshold, and clears on recovery", async () => {

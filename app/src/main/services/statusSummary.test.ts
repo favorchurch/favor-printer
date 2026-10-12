@@ -251,9 +251,19 @@ describe("deriveFiveState", () => {
   it("maps to Needs re-enrollment when revoked or unenrolled", () => {
     expect(deriveFiveState(inputs({ revoked: true })).state).toBe("Needs re-enrollment");
     expect(deriveFiveState(inputs({ enrolled: false })).state).toBe("Needs re-enrollment");
+    expect(deriveFiveState(inputs({ relay: relay({ cloud: "revoked" }) })).state).toBe("Needs re-enrollment");
     expect(deriveFiveState(inputs({ revoked: true })).recoveryAction).toBe(
       "Ask an admin for a new six-digit code in Favor RSVP.",
     );
+  });
+
+  it("maps to Waiting when relay is restarting, queue missing/disabled, or relay stopped/null", () => {
+    expect(deriveFiveState(inputs({ relayRestarting: true })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ queue: "missing" })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ queue: "disabled" })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ relay: null })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ relay: relay({ state: "starting" }) })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ relay: relay({ state: "stopped" }) })).state).toBe("Waiting");
   });
 
   it("maps to In use elsewhere when printer is in use elsewhere", () => {

@@ -50,8 +50,8 @@ describe("BacklogMonitor lifecycle and recovery", () => {
     // Still 4 jobs: warning persists
     expect(monitor.currentWarning()).toBe(warn);
 
-    // Jobs drain: 4 sent -> queued = 0 -> warning clears on recovery!
-    const recovered = monitor.update({ claimed: 4, sent: 4, failed: 0, ambiguous: 0 });
+    // Jobs drain: 2 sent, 1 failed, 1 ambiguous -> total drained = 4 -> queued = 0 -> warning clears!
+    const recovered = monitor.update({ claimed: 4, sent: 2, failed: 1, ambiguous: 1 });
     expect(recovered).toBeNull();
     expect(monitor.currentWarning()).toBeNull();
   });
@@ -89,12 +89,28 @@ describe("BacklogMonitor lifecycle and recovery", () => {
     monitor.update({ claimed: 3, sent: 0, failed: 0, ambiguous: 0 });
     expect(monitor.currentWarning()).not.toBeNull();
 
-    // Null counts clears warning
-    expect(monitor.update(null)).toBeNull();
-    expect(monitor.currentWarning()).toBeNull();
+    // Null counts does not erase currentWarning
+    expect(monitor.update(null)).not.toBeNull();
+    expect(monitor.currentWarning()).not.toBeNull();
 
     // Reset
     monitor.reset();
     expect(monitor.currentWarning()).toBeNull();
+  });
+
+  it("handles counter reset (relay restart) and clock skew gracefully", () => {
+    let now = 10_000;
+    const monitor = new BacklogMonitor({ threshold: 5, stuckTimeoutMs: 30_000, now: () => now });
+
+    // 10 jobs drained previously
+    monitor.update({ claimed: 10, sent: 10, failed: 0, ambiguous: 0 });
+
+    // Relay restarts: drained count drops to 0, 1 job claimed
+    now = 12_000;
+    expect(monitor.update({ claimed: 1, sent: 0, failed: 0, ambiguous: 0 })).toBeNull();
+
+    // Clock steps backwards: currentTime < lastDrainedAt
+    now = 5_000;
+    expect(monitor.update({ claimed: 1, sent: 0, failed: 0, ambiguous: 0 })).toBeNull();
   });
 });
