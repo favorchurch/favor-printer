@@ -138,6 +138,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   /** The last `lpinfo` listing failed, so "no printer" may mean "could not look". */
   let scanFailed = false;
   let printerAttached = false;
+  let inUseElsewhere = false;
   let paused = false;
   let update: UpdateState = { kind: "idle" };
   let setupStep: SetupStep | null = null;
@@ -224,6 +225,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       queue: scan.kind === "found" ? scan.queue : "ready",
       paused,
       update,
+      inUseElsewhere,
     };
     const derived = deriveStatus(statusInputs);
     const fiveStateResult = deriveFiveState(statusInputs);
@@ -333,6 +335,9 @@ export function createAppController(deps: ControllerDeps): AppController {
     // A failed `lpinfo` says nothing about the printer, so it never flips the flag.
     if (!outcome.listFailed) {
       const attached = outcome.scan.kind === "found";
+      if (!attached) {
+        inUseElsewhere = false;
+      }
       if (attached !== printerAttached) {
         printerAttached = attached;
         supervisor.setPrinterAttached(attached);
@@ -424,6 +429,7 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     async selectPrinter(deviceId) {
       if (scan.kind === "found" && scan.devices.some((device) => device.id === deviceId)) {
+        inUseElsewhere = false;
         await prefs.update({ selectedPrinterId: deviceId }).catch(() => undefined);
         await scanOnce();
       }
@@ -472,6 +478,10 @@ export function createAppController(deps: ControllerDeps): AppController {
           const status = outcome.status === undefined ? "" : ` (HTTP ${outcome.status})`;
           const detail = outcome.reason === "printer_conflict" ? ` (${outcome.conflict})` : "";
           log("warn", "enroll", `enrollment failed: ${outcome.reason}${detail}${status}, printer serial ${usbSerial ? "present" : "missing"}`);
+          if (outcome.reason === "printer_conflict" && outcome.conflict === "serial_in_use") {
+            inUseElsewhere = true;
+            emit();
+          }
           return outcome.reason === "printer_conflict"
             ? { ok: false, reason: outcome.reason, conflict: outcome.conflict }
             : { ok: false, reason: outcome.reason };
@@ -487,6 +497,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false }).catch(() => undefined);
         log("info", "enroll", "enrolled this laptop");
         enrolled = true;
+        inUseElsewhere = false;
         testPrintConfirmed = false;
         setupStep = "connected";
         await supervisor.restart();
@@ -612,6 +623,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     beginReenroll() {
+      inUseElsewhere = false;
       setupStep = "code";
       emit();
       deps.ui.showSetupWindow();

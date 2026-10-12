@@ -185,6 +185,21 @@ describe("status / about screen rendering", () => {
     }) as unknown as FakeElement;
     expect(text(rendered)).toContain("Connected: Run a local test print in Favor Printer to verify labels.");
   });
+
+  it("renders In use elsewhere state and its recovery action on status screen", () => {
+    const rendered = renderScreen("status", {
+      snapshot: {
+        ...fixtureFor("status").snapshot,
+        fiveState: "In use elsewhere",
+        recoveryAction: "Ask an admin to disconnect this printer from the other laptop.",
+      },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(
+      "In use elsewhere: Ask an admin to disconnect this printer from the other laptop.",
+    );
+  });
 });
 
 describe("edge case rendering in screens", () => {
