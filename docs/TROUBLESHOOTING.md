@@ -9,6 +9,25 @@ menu say what is wrong and what to do.
 | Amber | Needs attention: paused, printer missing, an update is waiting, or a job is unconfirmed. |
 | Red | Not working: not enrolled, cannot reach Favor RSVP, or the printer queue is broken. |
 
+## Printer status states and recovery
+
+Favor Printer evaluates relay and printer signals into exactly five states, each with one recovery action:
+
+| State | Meaning | Recovery Action |
+| --- | --- | --- |
+| Connected | The printer is plugged in and ready to print. | Run a local test print in Favor Printer to verify labels. |
+| Unplugged | No Zebra printer is detected on USB. | Plug in the Zebra with its USB cable. |
+| Waiting | Favor Printer is starting, restarting, or waiting for Favor RSVP. | Check the internet connection and wait for Favor RSVP to respond. |
+| Needs re-enrollment | The laptop was removed, un-enrolled, or its credentials were rejected. | Ask an admin for a new six-digit code in Favor RSVP. |
+| In use elsewhere | The Zebra printer is currently in use by another laptop. | Ask an admin to disconnect this printer from the other laptop. |
+
+## Backlog warning
+
+When queued jobs exceed the backlog threshold or stop draining, a warning appears in the menu and operational status:
+- **Growing backlog**: Multiple labels are queued and waiting. Check that the printer is online and loaded with label stock.
+- **Stuck backlog**: Queued labels have stopped draining. Check the printer connection and USB cable.
+- **Recovery**: The backlog warning clears automatically as soon as queued jobs finish printing or drain to the printer.
+
 ## Volunteer recovery
 
 Try these in order. Stop when the icon turns green.
@@ -32,7 +51,7 @@ Try these in order. Stop when the icon turns green.
    wait a minute before trying again. If it says the code and printer do not match (another campus,
    a different Zebra, already connected to another laptop, listed twice), nothing was changed and the
    code still works: tell the admin the exact message so they can fix it in Set up printing. If it says
-   the code was used up, ask for a new one. After enrolling, setup shows the printer and campus this Mac
+   the code has expired or was used up, ask for a new one. After enrolling, setup shows the printer and campus this Mac
    now serves; check it is the one you expect.
 8. **Still stuck.** Send the tech team the app version (menu footer), the menu text and what you tried.
    Do not send photos of labels.

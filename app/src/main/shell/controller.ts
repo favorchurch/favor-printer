@@ -22,6 +22,8 @@ import {
 } from "../../shared";
 import type { RelayStatus } from "../../../../vendor/relay/status";
 import {
+  BacklogMonitor,
+  deriveFiveState,
   deriveStatus,
   powerWarnings,
   recentJobs,
@@ -173,6 +175,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     apiUrl: deps.apiUrl,
   });
 
+  const backlogMonitor = new BacklogMonitor();
+
   const supervisor = deps.createSupervisor({
     resolveStart: async () => {
       const resolution = await resolveRelayStart();
@@ -189,6 +193,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     onRelayStatus: (status) => {
       if (status.cloud === "revoked") void handleRevoked();
       updatePower();
+      backlogMonitor.update(status.counts);
     },
   });
 
@@ -200,7 +205,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   const snapshot = (): AppSnapshot => {
     const current = prefs.get();
     const relay = supervisorState.relay;
-    const derived = deriveStatus({
+    const statusInputs = {
       enrolled,
       revoked: current.revoked,
       legacyRelayLoaded: legacyLoaded,
@@ -210,14 +215,20 @@ export function createAppController(deps: ControllerDeps): AppController {
       queue: scan.kind === "found" ? scan.queue : "ready",
       paused,
       update,
-    });
+    };
+    const derived = deriveStatus(statusInputs);
+    const fiveStateResult = deriveFiveState(statusInputs);
     const status = legacyLoaded && migrationFailed && derived.color !== "red" ? { ...derived, detail: LEGACY_FAILED_DETAIL } : derived;
     const warnings = powerWarnings({ onBattery: power.onBattery === true });
     if (power.asleep) warnings.push(ASLEEP_WARNING);
     if (power.locked) warnings.push(LOCKED_WARNING);
+    const backlogWarning = backlogMonitor.update(relay?.counts ?? null);
+    if (backlogWarning) warnings.push(backlogWarning);
     return {
       version: deps.version,
       status,
+      fiveState: fiveStateResult.state,
+      recoveryAction: fiveStateResult.recoveryAction,
       enrolled,
       label: current.label,
       printerName: enrolled ? current.printerName : null,

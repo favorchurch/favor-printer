@@ -83,7 +83,7 @@ describe("enroll", () => {
     [401, "invalid_code"],
     [403, "invalid_code"],
     [404, "invalid_code"],
-    [410, "invalid_code"],
+    [410, "code_expired"],
     [429, "throttled"],
     [501, "disabled"],
     [500, "unreachable"],
@@ -230,14 +230,20 @@ describe("enroll printer conflicts", () => {
 
 describe("mapEnrollStatus and copy", () => {
   it("has plain copy for every failure reason", () => {
-    const reasons: EnrollFailure[] = ["invalid_code", "code_used", "throttled", "disabled", "unreachable", "invalid_request", "printer_not_found"];
+    const reasons: EnrollFailure[] = ["invalid_code", "code_expired", "code_used", "throttled", "disabled", "unreachable", "invalid_request", "printer_not_found"];
     for (const reason of reasons) expect(ENROLL_FAILURE_COPY[reason].length).toBeGreaterThan(10);
     expect(Object.keys(ENROLL_FAILURE_COPY).sort()).toEqual([...reasons].sort());
   });
 
-  it("tells an expired code from a throttled one in the copy", () => {
-    expect(ENROLL_FAILURE_COPY.invalid_code).toMatch(/expired/i);
-    expect(ENROLL_FAILURE_COPY.throttled).toMatch(/wait/i);
+  it("tells an invalid, expired, and already-used code apart with distinct messages", () => {
+    expect(ENROLL_FAILURE_COPY.invalid_code).toBe("That code did not work. Ask an admin for a new one.");
+    expect(ENROLL_FAILURE_COPY.code_expired).toBe("That code has expired. Ask an admin for a new code.");
+    expect(ENROLL_FAILURE_COPY.code_used).toBe("That code was already used up. Ask an admin for a new code.");
+    expect(ENROLL_FAILURE_COPY.invalid_code).not.toBe(ENROLL_FAILURE_COPY.code_expired);
+    expect(ENROLL_FAILURE_COPY.code_expired).not.toBe(ENROLL_FAILURE_COPY.code_used);
+    expect(mapEnrollStatus(410)).toBe("code_expired");
+    expect(mapEnrollStatus(404)).toBe("invalid_code");
+    expect(mapEnrollStatus(200, "code_expired")).toBe("code_expired");
     expect(mapEnrollStatus(429)).toBe("throttled");
   });
 

@@ -999,4 +999,49 @@ describe("shutdown", () => {
     h.forks.last().emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
     expect(h.controller.jobInFlight()).toBe(true);
   });
+
+  it("exposes fiveState and recoveryAction on snapshot", async () => {
+    const h = await started();
+    // Initially starting up, so state is Waiting
+    expect(h.controller.snapshot().fiveState).toBe("Waiting");
+    expect(h.controller.snapshot().recoveryAction).toBe(
+      "Check the internet connection and wait for Favor RSVP to respond.",
+    );
+
+    // When relay reports running and cloud ok, transition to Connected
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ state: "running", cloud: "ok" }),
+    });
+
+    const snap = h.controller.snapshot();
+    expect(snap.fiveState).toBe("Connected");
+    expect(snap.recoveryAction).toBe("Run a local test print in Favor Printer to verify labels.");
+  });
+
+  it("adds backlog warning when queued jobs exceed threshold, and clears on recovery", async () => {
+    const h = await started();
+    expect(h.controller.snapshot().warnings.some((w) => w.includes("backlog"))).toBe(false);
+
+    // Relay reports 6 claimed jobs, none sent (exceeds threshold 5)
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ counts: { claimed: 6, sent: 0, failed: 0, ambiguous: 0 } }),
+    });
+
+    const snapWithWarning = h.controller.snapshot();
+    const backlogWarning = snapWithWarning.warnings.find((w) => w.includes("backlog"));
+    expect(backlogWarning).toBeDefined();
+    expect(backlogWarning).toContain("Print backlog is growing: 6 jobs are waiting to print.");
+
+    // Relay drains all 6 jobs -> warning clears on recovery!
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ counts: { claimed: 6, sent: 6, failed: 0, ambiguous: 0 } }),
+    });
+
+    const snapRecovered = h.controller.snapshot();
+    expect(snapRecovered.warnings.some((w) => w.includes("backlog"))).toBe(false);
+  });
 });
+

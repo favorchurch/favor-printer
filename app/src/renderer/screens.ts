@@ -313,6 +313,9 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         "Favor Printer",
         statusPill(snapshot),
         snapshot.status.detail ? lead(snapshot.status.detail) : null,
+        snapshot.fiveState && snapshot.recoveryAction
+          ? h("p", { class: "recovery-action hint" }, `${snapshot.fiveState}: ${snapshot.recoveryAction}`)
+          : null,
         printerLine(snapshot),
         h(
           "div",

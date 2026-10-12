@@ -499,6 +499,20 @@ describe("a refused enrollment on the code screen", () => {
     expect(lines).not.toContain(ENROLL_CONFLICT_COPY.unknown);
   });
 
+  it("shows distinct error copy for invalid, expired, and already-used codes", async () => {
+    const invalidLines = await submit({ ok: false, reason: "invalid_code" });
+    expect(invalidLines).toContain(ENROLL_ERROR_COPY.invalid_code);
+
+    const expiredLines = await submit({ ok: false, reason: "code_expired" });
+    expect(expiredLines).toContain(ENROLL_ERROR_COPY.code_expired);
+
+    const usedLines = await submit({ ok: false, reason: "code_used" });
+    expect(usedLines).toContain(ENROLL_ERROR_COPY.code_used);
+
+    expect(ENROLL_ERROR_COPY.invalid_code).not.toBe(ENROLL_ERROR_COPY.code_expired);
+    expect(ENROLL_ERROR_COPY.code_expired).not.toBe(ENROLL_ERROR_COPY.code_used);
+  });
+
   it("still shows the plain copy for other failures", async () => {
     const lines = await submit({ ok: false, reason: "throttled" });
     expect(lines).toContain(ENROLL_ERROR_COPY.throttled);
