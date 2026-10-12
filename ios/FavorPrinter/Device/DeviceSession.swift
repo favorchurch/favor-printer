@@ -22,11 +22,19 @@ final class DeviceSession {
     private let api: any DeviceAPI
     private let secrets: any SecretStore
     private let records: any DeviceRecordStore
+    private let now: @Sendable () -> Date
+    private var automaticRefreshPausedUntil: Date?
 
-    init(api: any DeviceAPI, secrets: any SecretStore, records: any DeviceRecordStore) {
+    init(
+        api: any DeviceAPI,
+        secrets: any SecretStore,
+        records: any DeviceRecordStore,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.api = api
         self.secrets = secrets
         self.records = records
+        self.now = now
     }
 
     /// Restores state after launch, then checks the server when a credential exists.
@@ -48,7 +56,8 @@ final class DeviceSession {
     }
 
     func register(campusId: Int, label: String) async {
-        guard !isBusy else { return }
+        // Registering over a live grant would overwrite its secret and strand that grant.
+        guard !isBusy, state == .unregistered else { return }
         isBusy = true
         notice = nil
         defer { isBusy = false }
@@ -69,8 +78,10 @@ final class DeviceSession {
     }
 
     /// Asks the server for the current status. Pending, approved and revoked all arrive as 200.
-    func refresh() async {
+    /// Automatic callers (polling) are held back after a throttled or unavailable response.
+    func refresh(automatic: Bool = false) async {
         guard !isBusy else { return }
+        if automatic, let until = automaticRefreshPausedUntil, now() < until { return }
         guard let token = (try? secrets.read()) ?? nil else {
             if case .pending = state { markRevoked(label: nil) }
             else if case .approved = state { markRevoked(label: nil) }
@@ -79,10 +90,25 @@ final class DeviceSession {
         isBusy = true
         defer { isBusy = false }
         do {
-            apply(try await api.status(token: token))
+            let grant = try await api.status(token: token)
+            // The credential may have been wiped or replaced while the request was in flight.
+            guard (try? secrets.read()) == token else { return }
+            apply(grant)
             notice = nil
+            automaticRefreshPausedUntil = nil
         } catch {
+            guard (try? secrets.read()) == token else { return }
+            pauseAutomaticRefresh(after: error)
             report(error)
+        }
+    }
+
+    private func pauseAutomaticRefresh(after error: Error) {
+        guard case .server(_, let code)? = error as? APIError else { return }
+        switch code {
+        case .throttled: automaticRefreshPausedUntil = now().addingTimeInterval(10 * 60)
+        case .unavailable: automaticRefreshPausedUntil = now().addingTimeInterval(60)
+        default: break
         }
     }
 

@@ -89,7 +89,7 @@ struct PendingView: View {
             // Poll gently while the screen is visible.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
-                await session.refresh()
+                await session.refresh(automatic: true)
             }
         }
     }

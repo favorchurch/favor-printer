@@ -11,6 +11,7 @@ struct DeviceSessionTests {
     func session() -> DeviceSession { DeviceSession(api: api, secrets: secrets, records: records) }
 
     func registered(_ session: DeviceSession) async {
+        await session.start()
         await api.setRegister(.success(DeviceRegistration(grant: Fixture.deviceGrant(.pending), token: Fixture.token)))
         await session.register(campusId: 1, label: "Manila Kids iPad 2")
     }
@@ -141,6 +142,50 @@ struct DeviceSessionTests {
         #expect(await api.statusTokens.isEmpty)
     }
 
+    // MARK: review fixes
+
+    @Test func registerIsIgnoredWhileAGrantExists() async {
+        let session = session()
+        await registered(session)
+        await api.setRegister(.success(DeviceRegistration(grant: Fixture.deviceGrant(.pending), token: "checkin_device_" + String(repeating: "z", count: 43))))
+        await session.register(campusId: 1, label: "Other")
+
+        #expect(secrets.current == Fixture.token)
+    }
+
+    @Test func staleApprovedResponseDoesNotResurrectAWipedCredential() async {
+        let session = session()
+        await registered(session)
+        await api.setStatus(.success(Fixture.deviceGrant(.approved)))
+        await api.setGate { [secrets] in try? secrets.delete() }
+        await session.refresh()
+
+        #expect(session.state == .pending(Fixture.deviceGrant(.pending)))
+        #expect(secrets.current == nil)
+        #expect(records.load()?.grant?.status == .pending)
+    }
+
+    @Test func pollingBacksOffAfterThrottleButManualRefreshStillWorks() async {
+        let clock = Clock(Date(timeIntervalSince1970: 1_000))
+        let session = DeviceSession(api: api, secrets: secrets, records: records, now: { clock.now })
+        await registered(session)
+        await api.setStatus(.failure(.server(status: 429, code: .throttled)))
+        await session.refresh(automatic: true)
+        #expect(await api.statusTokens.count == 1)
+
+        clock.advance(599)
+        await session.refresh(automatic: true)
+        #expect(await api.statusTokens.count == 1)
+        await session.refresh()
+        #expect(await api.statusTokens.count == 2)
+
+        clock.advance(601)
+        await api.setStatus(.success(Fixture.deviceGrant(.approved)))
+        await session.refresh(automatic: true)
+        #expect(await api.statusTokens.count == 3)
+        #expect(session.state == .approved(Fixture.deviceGrant(.approved)))
+    }
+
     // MARK: launch and restart
 
     @Test func launchWithoutSecretIsUnregistered() async {
@@ -212,6 +257,7 @@ struct DeviceSessionTests {
         defer { try? keychain.delete() }
         let session = DeviceSession(api: try server.client(), secrets: keychain, records: records)
 
+        await session.start()
         await session.register(campusId: 1, label: "Manila Kids iPad 2")
         #expect(try keychain.read() == Fixture.token)
         await session.refresh()
@@ -221,4 +267,12 @@ struct DeviceSessionTests {
         let status = try #require(server.requests.last)
         #expect(status.value(forHTTPHeaderField: "Authorization") == "Bearer \(Fixture.token)")
     }
+}
+
+final class Clock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var date: Date
+    init(_ date: Date) { self.date = date }
+    var now: Date { lock.withLock { date } }
+    func advance(_ seconds: TimeInterval) { lock.withLock { date = date.addingTimeInterval(seconds) } }
 }

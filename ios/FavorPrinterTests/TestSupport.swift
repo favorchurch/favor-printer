@@ -161,8 +161,11 @@ actor FakeDeviceAPI: DeviceAPI {
     var registerResult: Result<DeviceRegistration, APIError> = .failure(.transport)
     var statusResult: Result<DeviceGrant, APIError> = .failure(.transport)
     private(set) var statusTokens: [String] = []
+    /// Runs inside `status` before it answers, to hold a request in flight.
+    var statusGate: (@Sendable () async -> Void)?
 
     func setRegister(_ result: Result<DeviceRegistration, APIError>) { registerResult = result }
+    func setGate(_ gate: (@Sendable () async -> Void)?) { statusGate = gate }
     func setStatus(_ result: Result<DeviceGrant, APIError>) { statusResult = result }
 
     func register(campusId: Int, label: String) async throws -> DeviceRegistration {
@@ -171,6 +174,7 @@ actor FakeDeviceAPI: DeviceAPI {
 
     func status(token: String) async throws -> DeviceGrant {
         statusTokens.append(token)
+        if let statusGate { await statusGate() }
         return try statusResult.get()
     }
 }
