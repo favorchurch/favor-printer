@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     let session: DeviceSession
+    let service: CheckinService
 
     var body: some View {
         NavigationStack {
@@ -14,7 +15,7 @@ struct RootView: View {
                 case .pending(let grant):
                     PendingView(session: session, grant: grant)
                 case .approved(let grant):
-                    ApprovedView(session: session, grant: grant)
+                    CheckinHomeView(session: session, service: service, grant: grant)
                 case .revoked(let label):
                     RevokedView(session: session, label: label)
                 }
@@ -54,8 +55,12 @@ struct RegisterView: View {
             Section("Register this iPad") {
                 TextField("Campus number", text: $campus)
                     .keyboardType(.numberPad)
+                    .accessibilityLabel("Campus number")
+                    .accessibilityIdentifier("campus-field")
                 TextField("Name, for example Manila Kids iPad 2", text: $label)
                     .textInputAutocapitalization(.words)
+                    .accessibilityLabel("Name for this iPad")
+                    .accessibilityIdentifier("label-field")
             }
             Section {
                 Button("Request approval") {
@@ -63,6 +68,8 @@ struct RegisterView: View {
                     Task { await session.register(campusId: campusId, label: label) }
                 }
                 .disabled(campusId == nil || label.isEmpty || session.isBusy)
+                .accessibilityLabel("Request approval")
+                .accessibilityIdentifier("register-button")
                 NoticeText(notice: session.notice)
             } footer: {
                 Text("An admin approves this iPad in Favor RSVP before it can check anyone in.")
@@ -83,6 +90,8 @@ struct PendingView: View {
         } actions: {
             Button("Check again") { Task { await session.refresh() } }
                 .disabled(session.isBusy)
+                .accessibilityLabel("Check approval again")
+                .accessibilityIdentifier("check-again")
             NoticeText(notice: session.notice)
         }
         .task {
@@ -91,23 +100,6 @@ struct PendingView: View {
                 try? await Task.sleep(for: .seconds(15))
                 await session.refresh(automatic: true)
             }
-        }
-    }
-}
-
-struct ApprovedView: View {
-    let session: DeviceSession
-    let grant: DeviceGrant
-
-    var body: some View {
-        ContentUnavailableView {
-            Label("Ready", systemImage: "checkmark.seal")
-        } description: {
-            Text("\(grant.label) is approved for campus \(grant.campusId).")
-        } actions: {
-            Button("Refresh status") { Task { await session.refresh() } }
-                .disabled(session.isBusy)
-            NoticeText(notice: session.notice)
         }
     }
 }
@@ -123,6 +115,8 @@ struct RevokedView: View {
             Text("\(label ?? "This iPad") can no longer check anyone in. Register it again to request new approval.")
         } actions: {
             Button("Register again") { session.registerAgain() }
+                .accessibilityLabel("Register this iPad again")
+                .accessibilityIdentifier("register-again")
         }
     }
 }

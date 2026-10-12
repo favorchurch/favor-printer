@@ -87,14 +87,16 @@ struct DeviceAPIClient: DeviceAPI {
 
     // MARK: - Plumbing
 
-    private func makeRequest(path: String, method: String) -> URLRequest {
-        var request = URLRequest(url: baseURL.appending(path: "api/native/v1/\(path)"))
+    func makeRequest(path: String, method: String, query: [URLQueryItem] = []) -> URLRequest {
+        var components = URLComponents(url: baseURL.appending(path: "api/native/v1/\(path)"), resolvingAgainstBaseURL: false)!
+        if !query.isEmpty { components.queryItems = query }
+        var request = URLRequest(url: components.url!)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return request
     }
 
-    private func send<Response: Decodable>(_ request: URLRequest, expecting success: Int) async throws -> Response {
+    func send<Response: Decodable>(_ request: URLRequest, expecting success: Int) async throws -> Response {
         let data: Data
         let urlResponse: URLResponse
         do {
