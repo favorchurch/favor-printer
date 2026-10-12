@@ -4,7 +4,15 @@
  * a removed laptop outranks everything, and green needs every light on.
  */
 
-import type { JobCounts, QueueState, StatusSummary, UpdateState } from "../../shared";
+import {
+  evaluateFiveState,
+  RECOVERY_ACTIONS,
+  type FiveState,
+  type JobCounts,
+  type QueueState,
+  type StatusSummary,
+  type UpdateState,
+} from "../../shared";
 import type { RelayStatus } from "../../../../vendor/relay/status";
 
 export const REVOKED_HEADLINE = "This laptop was removed. Ask an admin for a new code.";
@@ -22,6 +30,8 @@ export type StatusInputs = {
   queue: QueueState;
   paused: boolean;
   update: UpdateState;
+  /** Another laptop has claimed this printer. */
+  inUseElsewhere?: boolean;
 };
 
 const amber = (headline: string, detail: string | null): StatusSummary => ({ color: "amber", headline, detail });
@@ -77,3 +87,37 @@ export function recentJobs(relay: RelayStatus | null): JobCounts {
     ambiguous: relay?.counts.ambiguous ?? 0,
   };
 }
+
+export type FiveStateResult = {
+  state: FiveState;
+  recoveryAction: string;
+};
+
+export function deriveFiveState(inputs: StatusInputs & { inUseElsewhere?: boolean }): FiveStateResult {
+  const { relay } = inputs;
+  const cloud = inputs.revoked || relay?.cloud === "revoked" ? "revoked" : relay?.cloud === "ok" ? "ok" : "unreachable";
+  const relayState =
+    inputs.relayRestarting
+      ? "restarting"
+      : relay?.state === "running"
+        ? "running"
+        : relay?.state === "starting"
+          ? "starting"
+          : "stopped";
+
+  const state = evaluateFiveState({
+    printerAttached: inputs.printerAttached,
+    enrolled: inputs.enrolled,
+    revoked: inputs.revoked,
+    inUseElsewhere: Boolean(inputs.inUseElsewhere),
+    cloud,
+    relayState,
+    queue: inputs.queue,
+  });
+
+  return {
+    state,
+    recoveryAction: RECOVERY_ACTIONS[state],
+  };
+}
+

@@ -10,7 +10,8 @@
  *           (an unknown or missing reason, or any other 409, is a conflict with reason "unknown")
  *   409     { error: "conflict" }, no reason   -> code_used (RSVP spent the code after losing a race)
  *   400/422 malformed request          -> invalid_request
- *   401/403/404/410 unknown or expired -> invalid_code (the cloud does not say which)
+ *   410, or { error: "code_expired" }  -> code_expired
+ *   401/403/404 unknown code           -> invalid_code
  *   429     too many attempts          -> throttled
  *   501, or { error: "enrollment_disabled" } -> disabled
  *   other 5xx, network failure         -> unreachable
@@ -61,7 +62,8 @@ export function mapEnrollStatus(status: number, errorCode?: string): EnrollFailu
   if (status === 501 || errorCode === "enrollment_disabled") return "disabled";
   if (status === 429) return "throttled";
   if (status === 400 || status === 422) return "invalid_request";
-  if ([401, 403, 404, 410].includes(status)) return "invalid_code";
+  if (status === 410 || errorCode === "code_expired" || errorCode === "expired") return "code_expired";
+  if ([401, 403, 404].includes(status) || errorCode === "invalid_code") return "invalid_code";
   return "unreachable";
 }
 
@@ -126,7 +128,7 @@ export async function enroll(request: EnrollRequest): Promise<EnrollOutcome> {
     return credentials ? { ok: true, credentials } : { ok: false, reason: "unreachable", status: response.status };
   }
   if (response.status === 409) {
-    if (isRecord(body) && body.error === "conflict" && body.reason === undefined) return { ok: false, reason: "code_used", status: response.status };
+    if (isRecord(body) && (body.error === "conflict" || body.error === "code_used") && body.reason === undefined) return { ok: false, reason: "code_used", status: response.status };
     const conflict = isRecord(body) && body.error === "printer_conflict" ? toConflictReason(body.reason) : "unknown";
     return { ok: false, reason: "printer_conflict", conflict, status: response.status };
   }

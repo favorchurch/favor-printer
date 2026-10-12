@@ -11,7 +11,7 @@ import {
   type ControllerHarness,
   type HarnessOptions,
 } from "./testing/controllerHarness";
-import type { ScanOutcome } from "../services";
+import type { EnrollOutcome, ScanOutcome } from "../services";
 import { LEGACY_FAILED_DETAIL } from "./controller";
 import { relayStatus } from "./testing/fakeChild";
 
@@ -595,6 +595,82 @@ describe("enroll", () => {
     expect(h.logLines.join("\n")).toContain("printer_conflict (serial_in_use) (HTTP 409)");
   });
 
+  it("propagates RSVP serial_in_use conflict into In use elsewhere fiveState and clears when resolved", async () => {
+    let enrollOutcome: EnrollOutcome = { ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 };
+    const h = await started({
+      ...ENROLLED,
+      enroll: async () => enrollOutcome,
+    });
+    // Established connected state
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ state: "running", cloud: "ok" }),
+    });
+    expect(h.controller.snapshot().fiveState).toBe("Connected");
+
+    // Re-enroll attempt fails with serial_in_use conflict
+    await h.controller.enroll("123456");
+    const conflictSnap = h.controller.snapshot();
+    expect(conflictSnap.fiveState).toBe("In use elsewhere");
+    expect(conflictSnap.recoveryAction).toBe("Ask an admin to disconnect this printer from the other laptop.");
+
+    // Resolves when enrolled successfully
+    enrollOutcome = {
+      ok: true,
+      credentials: { ...CREDENTIALS, label: "Front desk", printer: { name: "Lobby Zebra", campusId: 7 } },
+    };
+    const enrolling = h.controller.enroll("123456");
+    await finishStop(h);
+    await enrolling;
+    const resolvedSnap = h.controller.snapshot();
+    expect(resolvedSnap.fiveState).not.toBe("In use elsewhere");
+    expect(resolvedSnap.enrolled).toBe(true);
+  });
+
+  it("clears In use elsewhere on the next healthy relay status after a conflict", async () => {
+    const h = await started({
+      ...ENROLLED,
+      enroll: async () => ({ ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 }),
+    });
+    await h.controller.enroll("123456");
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    // A running relay that cannot reach the cloud proves nothing about the claim.
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "unreachable" }) });
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    // Running and back at the cloud under the binding it holds: the conflict is over.
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "ok" }) });
+    expect(h.controller.snapshot().fiveState).toBe("Connected");
+  });
+
+  it("clears In use elsewhere when setup closes without enrolling", async () => {
+    const h = await started({
+      ...ENROLLED,
+      prefs: { openAtLogin: true, setupComplete: false },
+      enroll: async () => ({ ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 }),
+    });
+    h.controller.beginReenroll();
+    await h.controller.enroll("123456");
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    // The volunteer walks the rest of the flow without ever enrolling again.
+    await h.controller.advance(); // connected: this laptop is still enrolled from before
+    // A starting relay that reached the cloud advances the flow but proves nothing yet.
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "starting", cloud: "ok" }) });
+    await h.controller.advance(); // test-print
+    await h.controller.confirmTestPrint(true);
+    await h.controller.advance(); // done
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    await h.controller.advance(); // done -> setup closes
+    const closed = h.controller.snapshot();
+    expect(closed.setupStep).toBeNull();
+    expect(closed.fiveState).toBe("Waiting");
+    expect(h.ui.closeSetupWindow).toHaveBeenCalled();
+    expect(h.prefsFs.saved()).toMatchObject({ setupComplete: true });
+  });
+
   it("starts the relay once enrolled", async () => {
     const h = await setup();
     await h.controller.enroll("123456");
@@ -999,4 +1075,64 @@ describe("shutdown", () => {
     h.forks.last().emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
     expect(h.controller.jobInFlight()).toBe(true);
   });
+
+  it("exposes fiveState and recoveryAction on snapshot", async () => {
+    const h = await started();
+    // Initially starting up, so state is Waiting
+    expect(h.controller.snapshot().fiveState).toBe("Waiting");
+    expect(h.controller.snapshot().recoveryAction).toBe(
+      "Check the internet connection and wait for Favor RSVP to respond.",
+    );
+
+    // When relay reports running and cloud ok, transition to Connected
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ state: "running", cloud: "ok" }),
+    });
+
+    const snap = h.controller.snapshot();
+    expect(snap.fiveState).toBe("Connected");
+    expect(snap.recoveryAction).toBe("Run a local test print in Favor Printer to verify labels.");
+
+    // Revocation triggers Needs re-enrollment
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ state: "running", cloud: "revoked" }),
+    });
+    const revokedSnap = h.controller.snapshot();
+    expect(revokedSnap.fiveState).toBe("Needs re-enrollment");
+    expect(revokedSnap.recoveryAction).toBe("Ask an admin for a new six-digit code in Favor RSVP.");
+  });
+
+  it("exposes Unplugged when no printer is attached", async () => {
+    const h = await started({ ...ENROLLED, scan: NO_PRINTER });
+    expect(h.controller.snapshot().fiveState).toBe("Unplugged");
+    expect(h.controller.snapshot().recoveryAction).toBe("Plug in the Zebra with its USB cable.");
+  });
+
+  it("adds backlog warning when queued jobs exceed threshold, and clears on recovery", async () => {
+    const h = await started();
+    expect(h.controller.snapshot().warnings.some((w) => w.includes("backlog"))).toBe(false);
+
+    // Relay reports 6 claimed jobs, none sent (exceeds threshold 5)
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ counts: { claimed: 6, sent: 0, failed: 0, ambiguous: 0 } }),
+    });
+
+    const snapWithWarning = h.controller.snapshot();
+    const backlogWarning = snapWithWarning.warnings.find((w) => w.includes("backlog"));
+    expect(backlogWarning).toBeDefined();
+    expect(backlogWarning).toContain("Print backlog is growing: 6 jobs are waiting to print.");
+
+    // Relay drains all 6 jobs -> warning clears on recovery!
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ counts: { claimed: 6, sent: 6, failed: 0, ambiguous: 0 } }),
+    });
+
+    const snapRecovered = h.controller.snapshot();
+    expect(snapRecovered.warnings.some((w) => w.includes("backlog"))).toBe(false);
+  });
 });
+

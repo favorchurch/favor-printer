@@ -22,6 +22,8 @@ import {
 } from "../../shared";
 import type { RelayStatus } from "../../../../vendor/relay/status";
 import {
+  BacklogMonitor,
+  deriveFiveState,
   deriveStatus,
   powerWarnings,
   recentJobs,
@@ -127,6 +129,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   /** The last `lpinfo` listing failed, so "no printer" may mean "could not look". */
   let scanFailed = false;
   let printerAttached = false;
+  let inUseElsewhere = false;
   let paused = false;
   let update: UpdateState = { kind: "idle" };
   let setupStep: SetupStep | null = null;
@@ -173,6 +176,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     apiUrl: deps.apiUrl,
   });
 
+  const backlogMonitor = new BacklogMonitor();
+
   const supervisor = deps.createSupervisor({
     resolveStart: async () => {
       const resolution = await resolveRelayStart();
@@ -188,7 +193,14 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
     onRelayStatus: (status) => {
       if (status.cloud === "revoked") void handleRevoked();
+      // A running relay that reached the cloud still holds its binding, so a conflict left by a
+      // re-enroll attempt is over and must not keep the status on "In use elsewhere".
+      if (inUseElsewhere && status.state === "running" && status.cloud === "ok") {
+        inUseElsewhere = false;
+        emit();
+      }
       updatePower();
+      backlogMonitor.update(status.counts);
     },
   });
 
@@ -200,7 +212,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   const snapshot = (): AppSnapshot => {
     const current = prefs.get();
     const relay = supervisorState.relay;
-    const derived = deriveStatus({
+    const statusInputs = {
       enrolled,
       revoked: current.revoked,
       legacyRelayLoaded: legacyLoaded,
@@ -210,14 +222,21 @@ export function createAppController(deps: ControllerDeps): AppController {
       queue: scan.kind === "found" ? scan.queue : "ready",
       paused,
       update,
-    });
+      inUseElsewhere,
+    };
+    const derived = deriveStatus(statusInputs);
+    const fiveStateResult = deriveFiveState(statusInputs);
     const status = legacyLoaded && migrationFailed && derived.color !== "red" ? { ...derived, detail: LEGACY_FAILED_DETAIL } : derived;
     const warnings = powerWarnings({ onBattery: power.onBattery === true });
     if (power.asleep) warnings.push(ASLEEP_WARNING);
     if (power.locked) warnings.push(LOCKED_WARNING);
+    const backlogWarning = backlogMonitor.update(relay?.counts ?? null);
+    if (backlogWarning) warnings.push(backlogWarning);
     return {
       version: deps.version,
       status,
+      fiveState: fiveStateResult.state,
+      recoveryAction: fiveStateResult.recoveryAction,
       enrolled,
       label: current.label,
       printerName: enrolled ? current.printerName : null,
@@ -250,6 +269,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     const previous = setupStep;
     setupStep = step;
     if (step === null && previous !== null) {
+      // Setup closes without a successful enrollment keeping the conflict it reported.
+      inUseElsewhere = false;
       void prefs.update({ setupComplete: true }).catch(() => undefined);
       deps.ui.closeSetupWindow();
     }
@@ -294,6 +315,9 @@ export function createAppController(deps: ControllerDeps): AppController {
     // A failed `lpinfo` says nothing about the printer, so it never flips the flag.
     if (!outcome.listFailed) {
       const attached = outcome.scan.kind === "found";
+      if (!attached) {
+        inUseElsewhere = false;
+      }
       if (attached !== printerAttached) {
         printerAttached = attached;
         supervisor.setPrinterAttached(attached);
@@ -385,6 +409,7 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     async selectPrinter(deviceId) {
       if (scan.kind === "found" && scan.devices.some((device) => device.id === deviceId)) {
+        inUseElsewhere = false;
         await prefs.update({ selectedPrinterId: deviceId }).catch(() => undefined);
         await scanOnce();
       }
@@ -433,6 +458,10 @@ export function createAppController(deps: ControllerDeps): AppController {
           const status = outcome.status === undefined ? "" : ` (HTTP ${outcome.status})`;
           const detail = outcome.reason === "printer_conflict" ? ` (${outcome.conflict})` : "";
           log("warn", "enroll", `enrollment failed: ${outcome.reason}${detail}${status}, printer serial ${usbSerial ? "present" : "missing"}`);
+          if (outcome.reason === "printer_conflict" && outcome.conflict === "serial_in_use") {
+            inUseElsewhere = true;
+            emit();
+          }
           return outcome.reason === "printer_conflict"
             ? { ok: false, reason: outcome.reason, conflict: outcome.conflict }
             : { ok: false, reason: outcome.reason };
@@ -448,6 +477,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false }).catch(() => undefined);
         log("info", "enroll", "enrolled this laptop");
         enrolled = true;
+        inUseElsewhere = false;
         testPrintConfirmed = false;
         setupStep = "connected";
         await supervisor.restart();
@@ -554,6 +584,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     beginReenroll() {
+      inUseElsewhere = false;
       setupStep = "code";
       emit();
       deps.ui.showSetupWindow();

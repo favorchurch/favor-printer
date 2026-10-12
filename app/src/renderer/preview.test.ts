@@ -172,6 +172,34 @@ describe("status / about screen rendering", () => {
     }) as unknown as FakeElement;
     expect(text(rendered)).toContain("Ready to print");
   });
+
+  it("renders fiveState and recoveryAction hint on status screen", () => {
+    const rendered = renderScreen("status", {
+      snapshot: {
+        ...fixtureFor("status").snapshot,
+        fiveState: "Connected",
+        recoveryAction: "Run a local test print in Favor Printer to verify labels.",
+      },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain("Connected: Run a local test print in Favor Printer to verify labels.");
+  });
+
+  it("renders In use elsewhere state and its recovery action on status screen", () => {
+    const rendered = renderScreen("status", {
+      snapshot: {
+        ...fixtureFor("status").snapshot,
+        fiveState: "In use elsewhere",
+        recoveryAction: "Ask an admin to disconnect this printer from the other laptop.",
+      },
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(
+      "In use elsewhere: Ask an admin to disconnect this printer from the other laptop.",
+    );
+  });
 });
 
 describe("edge case rendering in screens", () => {
@@ -497,6 +525,27 @@ describe("a refused enrollment on the code screen", () => {
     const lines = await submit({ ok: false, reason: "code_used" });
     expect(lines).toContain(ENROLL_ERROR_COPY.code_used);
     expect(lines).not.toContain(ENROLL_CONFLICT_COPY.unknown);
+  });
+
+  it("shows distinct error copy for invalid, expired, and already-used codes", async () => {
+    const invalidLines = await submit({ ok: false, reason: "invalid_code" });
+    expect(invalidLines).toContain(ENROLL_ERROR_COPY.invalid_code);
+    expect(invalidLines).not.toContain(ENROLL_ERROR_COPY.code_expired);
+    expect(invalidLines).not.toContain(ENROLL_ERROR_COPY.code_used);
+
+    const expiredLines = await submit({ ok: false, reason: "code_expired" });
+    expect(expiredLines).toContain(ENROLL_ERROR_COPY.code_expired);
+    expect(expiredLines).not.toContain(ENROLL_ERROR_COPY.invalid_code);
+    expect(expiredLines).not.toContain(ENROLL_ERROR_COPY.code_used);
+
+    const usedLines = await submit({ ok: false, reason: "code_used" });
+    expect(usedLines).toContain(ENROLL_ERROR_COPY.code_used);
+    expect(usedLines).not.toContain(ENROLL_ERROR_COPY.invalid_code);
+    expect(usedLines).not.toContain(ENROLL_ERROR_COPY.code_expired);
+
+    expect(ENROLL_ERROR_COPY.invalid_code).not.toBe(ENROLL_ERROR_COPY.code_expired);
+    expect(ENROLL_ERROR_COPY.code_expired).not.toBe(ENROLL_ERROR_COPY.code_used);
+    expect(ENROLL_ERROR_COPY.invalid_code).not.toBe(ENROLL_ERROR_COPY.code_used);
   });
 
   it("still shows the plain copy for other failures", async () => {

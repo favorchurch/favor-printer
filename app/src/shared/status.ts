@@ -5,6 +5,7 @@
  */
 
 import type { UpdateChannel } from "./constants";
+import type { FiveState } from "./statusReducer";
 
 export type StatusColor = "green" | "amber" | "red";
 
@@ -49,6 +50,10 @@ export type PrinterScan =
 export type AppSnapshot = {
   version: string;
   status: StatusSummary;
+  /** Exactly one of the five operating states. */
+  fiveState?: FiveState;
+  /** Recovery action for the current operating state. */
+  recoveryAction?: string;
   enrolled: boolean;
   /** Admin-chosen label of this laptop, shown in the menu. */
   label: string | null;

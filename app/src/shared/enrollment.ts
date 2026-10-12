@@ -26,7 +26,15 @@ export function toConflictReason(value: unknown): EnrollConflictReason {
  * `code_used` is a 409 `{ error: "conflict" }` with no reason: RSVP spent the code on another request that won a race.
  * It is not a printer conflict, so it has no reason and no "nothing was changed" copy.
  */
-export type EnrollPlainFailure = "invalid_code" | "code_used" | "throttled" | "disabled" | "unreachable" | "invalid_request" | "printer_not_found";
+export type EnrollPlainFailure =
+  | "invalid_code"
+  | "code_expired"
+  | "code_used"
+  | "throttled"
+  | "disabled"
+  | "unreachable"
+  | "invalid_request"
+  | "printer_not_found";
 
 export type EnrollFailure =
   | { ok: false; reason: EnrollPlainFailure }
@@ -34,7 +42,8 @@ export type EnrollFailure =
   | { ok: false; reason: "printer_conflict"; conflict: EnrollConflictReason };
 
 export const ENROLL_FAILURE_COPY: Record<EnrollPlainFailure, string> = {
-  invalid_code: "That code did not work. It may have expired. Ask an admin for a new one.",
+  invalid_code: "That code did not work. Ask an admin for a new one.",
+  code_expired: "That code has expired. Ask an admin for a new code.",
   code_used: "That code was already used up. Ask an admin for a new code.",
   throttled: "Too many tries. Wait a few minutes, then enter the code again.",
   disabled: "Enrolling is turned off right now. Ask an admin for help.",

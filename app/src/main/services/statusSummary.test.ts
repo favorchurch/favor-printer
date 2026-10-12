@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { QueueState, StatusColor, UpdateState } from "../../shared";
 import type { CloudState, RelayState, RelayStatus } from "../../../../vendor/relay/status";
-import { deriveStatus, recentJobs, REVOKED_HEADLINE, type StatusInputs } from "./statusSummary";
+import { deriveFiveState, deriveStatus, recentJobs, REVOKED_HEADLINE, type StatusInputs } from "./statusSummary";
 
 const relay = (overrides: Partial<RelayStatus> = {}): RelayStatus => ({
   state: "running",
@@ -228,3 +228,48 @@ describe("recentJobs", () => {
     expect(recentJobs(null)).toEqual({ sent: 0, failed: 0, ambiguous: 0 });
   });
 });
+
+describe("deriveFiveState", () => {
+  it("maps to Connected when healthy", () => {
+    const outcome = deriveFiveState(inputs());
+    expect(outcome.state).toBe("Connected");
+    expect(outcome.recoveryAction).toBe("Run a local test print in Favor Printer to verify labels.");
+  });
+
+  it("maps to Unplugged when printer is missing", () => {
+    const outcome = deriveFiveState(inputs({ printerAttached: false }));
+    expect(outcome.state).toBe("Unplugged");
+    expect(outcome.recoveryAction).toBe("Plug in the Zebra with its USB cable.");
+  });
+
+  it("maps to Waiting when cloud is unreachable", () => {
+    const outcome = deriveFiveState(inputs({ relay: relay({ cloud: "unreachable" }) }));
+    expect(outcome.state).toBe("Waiting");
+    expect(outcome.recoveryAction).toBe("Check the internet connection and wait for Favor RSVP to respond.");
+  });
+
+  it("maps to Needs re-enrollment when revoked or unenrolled", () => {
+    expect(deriveFiveState(inputs({ revoked: true })).state).toBe("Needs re-enrollment");
+    expect(deriveFiveState(inputs({ enrolled: false })).state).toBe("Needs re-enrollment");
+    expect(deriveFiveState(inputs({ relay: relay({ cloud: "revoked" }) })).state).toBe("Needs re-enrollment");
+    expect(deriveFiveState(inputs({ revoked: true })).recoveryAction).toBe(
+      "Ask an admin for a new six-digit code in Favor RSVP.",
+    );
+  });
+
+  it("maps to Waiting when relay is restarting, queue missing/disabled, or relay stopped/null", () => {
+    expect(deriveFiveState(inputs({ relayRestarting: true })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ queue: "missing" })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ queue: "disabled" })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ relay: null })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ relay: relay({ state: "starting" }) })).state).toBe("Waiting");
+    expect(deriveFiveState(inputs({ relay: relay({ state: "stopped" }) })).state).toBe("Waiting");
+  });
+
+  it("maps to In use elsewhere when printer is in use elsewhere", () => {
+    const outcome = deriveFiveState(inputs({ inUseElsewhere: true }));
+    expect(outcome.state).toBe("In use elsewhere");
+    expect(outcome.recoveryAction).toBe("Ask an admin to disconnect this printer from the other laptop.");
+  });
+});
+
