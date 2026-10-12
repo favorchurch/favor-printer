@@ -11,7 +11,7 @@ import {
   type ControllerHarness,
   type HarnessOptions,
 } from "./testing/controllerHarness";
-import type { ScanOutcome } from "../services";
+import type { EnrollOutcome, ScanOutcome } from "../services";
 import { LEGACY_FAILED_DETAIL } from "./controller";
 import { relayStatus } from "./testing/fakeChild";
 
@@ -593,6 +593,38 @@ describe("enroll", () => {
     expect(h.prefsFs.saved()?.printerName ?? null).toBeNull();
     expect(h.controller.snapshot()).toMatchObject({ enrolled: false, printerName: null });
     expect(h.logLines.join("\n")).toContain("printer_conflict (serial_in_use) (HTTP 409)");
+  });
+
+  it("propagates RSVP serial_in_use conflict into In use elsewhere fiveState and clears when resolved", async () => {
+    let enrollOutcome: EnrollOutcome = { ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 };
+    const h = await started({
+      ...ENROLLED,
+      enroll: async () => enrollOutcome,
+    });
+    // Established connected state
+    h.forks.last().emitMessage({
+      type: "event",
+      event: relayStatus({ state: "running", cloud: "ok" }),
+    });
+    expect(h.controller.snapshot().fiveState).toBe("Connected");
+
+    // Re-enroll attempt fails with serial_in_use conflict
+    await h.controller.enroll("123456");
+    const conflictSnap = h.controller.snapshot();
+    expect(conflictSnap.fiveState).toBe("In use elsewhere");
+    expect(conflictSnap.recoveryAction).toBe("Ask an admin to disconnect this printer from the other laptop.");
+
+    // Resolves when enrolled successfully
+    enrollOutcome = {
+      ok: true,
+      credentials: { ...CREDENTIALS, label: "Front desk", printer: { name: "Lobby Zebra", campusId: 7 } },
+    };
+    const enrolling = h.controller.enroll("123456");
+    await finishStop(h);
+    await enrolling;
+    const resolvedSnap = h.controller.snapshot();
+    expect(resolvedSnap.fiveState).not.toBe("In use elsewhere");
+    expect(resolvedSnap.enrolled).toBe(true);
   });
 
   it("starts the relay once enrolled", async () => {
