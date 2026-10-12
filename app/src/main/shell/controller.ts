@@ -193,6 +193,12 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
     onRelayStatus: (status) => {
       if (status.cloud === "revoked") void handleRevoked();
+      // A running relay that reached the cloud still holds its binding, so a conflict left by a
+      // re-enroll attempt is over and must not keep the status on "In use elsewhere".
+      if (inUseElsewhere && status.state === "running" && status.cloud === "ok") {
+        inUseElsewhere = false;
+        emit();
+      }
       updatePower();
       backlogMonitor.update(status.counts);
     },
@@ -263,6 +269,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     const previous = setupStep;
     setupStep = step;
     if (step === null && previous !== null) {
+      // Setup closes without a successful enrollment keeping the conflict it reported.
+      inUseElsewhere = false;
       void prefs.update({ setupComplete: true }).catch(() => undefined);
       deps.ui.closeSetupWindow();
     }

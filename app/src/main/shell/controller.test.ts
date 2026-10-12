@@ -627,6 +627,50 @@ describe("enroll", () => {
     expect(resolvedSnap.enrolled).toBe(true);
   });
 
+  it("clears In use elsewhere on the next healthy relay status after a conflict", async () => {
+    const h = await started({
+      ...ENROLLED,
+      enroll: async () => ({ ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 }),
+    });
+    await h.controller.enroll("123456");
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    // A running relay that cannot reach the cloud proves nothing about the claim.
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "unreachable" }) });
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    // Running and back at the cloud under the binding it holds: the conflict is over.
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "ok" }) });
+    expect(h.controller.snapshot().fiveState).toBe("Connected");
+  });
+
+  it("clears In use elsewhere when setup closes without enrolling", async () => {
+    const h = await started({
+      ...ENROLLED,
+      prefs: { openAtLogin: true, setupComplete: false },
+      enroll: async () => ({ ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 }),
+    });
+    h.controller.beginReenroll();
+    await h.controller.enroll("123456");
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    // The volunteer walks the rest of the flow without ever enrolling again.
+    await h.controller.advance(); // connected: this laptop is still enrolled from before
+    // A starting relay that reached the cloud advances the flow but proves nothing yet.
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "starting", cloud: "ok" }) });
+    await h.controller.advance(); // test-print
+    await h.controller.confirmTestPrint(true);
+    await h.controller.advance(); // done
+    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+
+    await h.controller.advance(); // done -> setup closes
+    const closed = h.controller.snapshot();
+    expect(closed.setupStep).toBeNull();
+    expect(closed.fiveState).toBe("Waiting");
+    expect(h.ui.closeSetupWindow).toHaveBeenCalled();
+    expect(h.prefsFs.saved()).toMatchObject({ setupComplete: true });
+  });
+
   it("starts the relay once enrolled", async () => {
     const h = await setup();
     await h.controller.enroll("123456");

@@ -113,4 +113,22 @@ describe("BacklogMonitor lifecycle and recovery", () => {
     now = 5_000;
     expect(monitor.update({ claimed: 1, sent: 0, failed: 0, ambiguous: 0 })).toBeNull();
   });
+
+  it("resets stuck timer when idle so first job after idle period does not falsely warn", () => {
+    let now = 0;
+    const monitor = new BacklogMonitor({ threshold: 5, stuckTimeoutMs: 30_000, now: () => now });
+
+    // Update with no jobs at t=0
+    expect(monitor.update({ claimed: 0, sent: 0, failed: 0, ambiguous: 0 })).toBeNull();
+
+    // At t=60_000, update with claimed 1 and sent 0 -> expect null (not immediately stuck)
+    now = 60_000;
+    expect(monitor.update({ claimed: 1, sent: 0, failed: 0, ambiguous: 0 })).toBeNull();
+
+    // At t=95_000, 35s have elapsed with no drain -> expect stuck copy
+    now = 95_000;
+    expect(monitor.update({ claimed: 1, sent: 0, failed: 0, ambiguous: 0 })).toBe(
+      "Print backlog is stuck: queued jobs have stopped draining. Check that Favor Printer can reach the printer.",
+    );
+  });
 });

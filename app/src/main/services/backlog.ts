@@ -39,6 +39,7 @@ export function evaluateBacklog(input: {
 
 export class BacklogMonitor {
   private lastDrainedCount = 0;
+  private lastQueuedCount = 0;
   private lastDrainedAt: number | null = null;
   private lastWarning: string | null = null;
   private readonly threshold: number;
@@ -64,13 +65,20 @@ export class BacklogMonitor {
     const queued = Math.max(0, counts.claimed - drained);
     const currentTime = this.now();
 
-    if (this.lastDrainedAt === null || drained < this.lastDrainedCount || currentTime < (this.lastDrainedAt ?? currentTime)) {
+    if (
+      this.lastDrainedAt === null ||
+      queued === 0 ||
+      this.lastQueuedCount === 0 ||
+      drained < this.lastDrainedCount ||
+      currentTime < (this.lastDrainedAt ?? currentTime)
+    ) {
       this.lastDrainedAt = currentTime;
       this.lastDrainedCount = drained;
     } else if (drained > this.lastDrainedCount) {
       this.lastDrainedCount = drained;
       this.lastDrainedAt = currentTime;
     }
+    this.lastQueuedCount = queued;
 
     const elapsed = Math.max(0, currentTime - (this.lastDrainedAt ?? currentTime));
     const isStuck = queued > 0 && elapsed >= this.stuckTimeoutMs;
@@ -90,6 +98,7 @@ export class BacklogMonitor {
 
   reset(): void {
     this.lastDrainedCount = 0;
+    this.lastQueuedCount = 0;
     this.lastDrainedAt = null;
     this.lastWarning = null;
   }
