@@ -588,6 +588,10 @@ describe("rename controls on the connected screen", () => {
     expect(message?.children).toEqual([{ text: RENAME_ERROR_COPY.name_taken }]);
   });
 
+  it("words the name_taken reason for either a laptop or a printer", () => {
+    expect(RENAME_ERROR_COPY.name_taken).not.toMatch(/printer/i);
+  });
+
   it("offers no printer name to edit before a printer is bound", () => {
     const { root } = connected(INITIAL_LOCAL, { printerName: null });
     expect(field(root, "printer-name")).toBeUndefined();
