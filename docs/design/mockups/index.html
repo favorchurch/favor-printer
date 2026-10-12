@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Favor Printer — Mockups Gallery</title>
+    <title>Favor Printer Mockups Gallery</title>
     <link rel="stylesheet" href="mockup-styles.css" />
   </head>
   <body>
     <header class="gallery-header">
       <div class="gallery-title-row">
         <div class="brand-badge">FAVOR CHURCH 2026</div>
-        <h1>Favor Printer — Standalone Mockups</h1>
+        <h1>Favor Printer Standalone Mockups</h1>
       </div>
       <p class="gallery-sub">Interactive, standalone visual mockups for every key flow and state in Favor Printer.</p>
       
@@ -18,8 +18,9 @@
         <a href="#welcome" class="nav-chip active" data-target="welcome">1. Welcome</a>
         <a href="#printer-none" class="nav-chip" data-target="printer-none">2A. Printer (None)</a>
         <a href="#printer-several" class="nav-chip" data-target="printer-several">2B. Printer (Multiple)</a>
-        <a href="#printer-fallback" class="nav-chip" data-target="printer-fallback">2C. Printer (Settings Guide)</a>
-        <a href="#printer-ready" class="nav-chip" data-target="printer-ready">2D. Printer (Ready)</a>
+        <a href="#printer-no-queue" class="nav-chip" data-target="printer-no-queue">2C. Printer (Set Up)</a>
+        <a href="#printer-fallback" class="nav-chip" data-target="printer-fallback">2D. Printer (Settings Guide)</a>
+        <a href="#printer-ready" class="nav-chip" data-target="printer-ready">2E. Printer (Ready)</a>
         <a href="#code" class="nav-chip" data-target="code">3. Enter Code</a>
         <a href="#code-invalid" class="nav-chip" data-target="code-invalid">3B. Code Invalid</a>
         <a href="#connected" class="nav-chip" data-target="connected">4. Connected</a>
@@ -29,6 +30,9 @@
         <a href="#legacy" class="nav-chip" data-target="legacy">Replace Old Relay</a>
         <a href="#legacy-confirm" class="nav-chip" data-target="legacy-confirm">Turn Off Old Relay?</a>
         <a href="#revoked" class="nav-chip" data-target="revoked">Laptop Removed</a>
+        <a href="#status" class="nav-chip" data-target="status">Status Window</a>
+        <a href="#update" class="nav-chip" data-target="update">Update Ready</a>
+        <a href="#tray" class="nav-chip" data-target="tray">Tray Menu</a>
       </nav>
     </header>
 
@@ -119,7 +123,29 @@
         </div>
       </section>
 
-      <!-- 2C. PRINTER FALLBACK -->
+      <!-- 2C. PRINTER NO QUEUE -->
+      <section id="printer-no-queue" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="printer-no-queue">
+            <header class="header">
+              <p class="step">Step 1 of 5</p>
+              <h1>Set up the printer</h1>
+            </header>
+            <p class="lead">Your Mac does not have this printer set up yet. Favor Printer can do it for you. macOS may ask for your password.</p>
+            <div class="actions">
+              <button type="button" class="button primary">Set up printer</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2D. PRINTER FALLBACK -->
       <section id="printer-fallback" class="mockup-stage">
         <div class="window-shell">
           <div class="window-titlebar">
@@ -147,7 +173,7 @@
         </div>
       </section>
 
-      <!-- 2D. PRINTER READY -->
+      <!-- 2E. PRINTER READY -->
       <section id="printer-ready" class="mockup-stage">
         <div class="window-shell">
           <div class="window-titlebar">
@@ -385,6 +411,104 @@
             <div class="actions">
               <button type="button" class="button primary">Enter a new code</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STATUS WINDOW -->
+      <section id="status" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="status">
+            <header class="header">
+              <h1>Favor Printer</h1>
+            </header>
+            <p class="pill green">
+              <span class="dot" aria-hidden="true"></span>
+              <span>Ready to print</span>
+            </p>
+            <p class="hint" id="bound-printer">Printer: Lobby Zebra · Campus ID 7</p>
+            <div class="status-meta">
+              <p class="hint">Version 0.2.0 (Stable)</p>
+              <p class="hint">Up to date</p>
+            </div>
+            <div class="actions">
+              <button type="button" class="button primary">Close</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- UPDATE READY (status window) -->
+      <section id="update" class="mockup-stage">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <span class="traffic-light close"></span>
+            <span class="traffic-light min"></span>
+            <span class="traffic-light max"></span>
+            <span class="window-title">Favor Printer</span>
+          </div>
+          <div class="screen" data-screen="status">
+            <header class="header">
+              <h1>Favor Printer</h1>
+            </header>
+            <p class="pill green">
+              <span class="dot" aria-hidden="true"></span>
+              <span>Ready to print</span>
+            </p>
+            <p class="hint" id="bound-printer-update">Printer: Lobby Zebra · Campus ID 7</p>
+            <div class="status-meta">
+              <p class="hint">Version 0.2.0 (Stable)</p>
+              <p class="hint">Update ready. Restart to apply.</p>
+            </div>
+            <div class="actions">
+              <button type="button" class="button primary">Close</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TRAY MENU -->
+      <section id="tray" class="mockup-stage">
+        <div class="desktop-shell">
+          <div class="menubar">
+            <span class="menubar-item">Finder</span>
+            <span class="menubar-item">File</span>
+            <span class="menubar-item">Edit</span>
+            <span class="tray-tooltip">Favor Printer: Ready to print</span>
+            <span class="tray-icon" role="img" aria-label="Favor Printer: Ready to print"></span>
+          </div>
+          <div class="tray-menu" role="menu" aria-label="Favor Printer menu bar menu">
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Ready to print</p>
+            <p class="tray-item info" role="menuitem" aria-disabled="true">This laptop: Front desk laptop</p>
+            <hr class="tray-separator" />
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Labels this session: 142 sent, 0 failed</p>
+            <hr class="tray-separator" />
+            <button type="button" class="tray-item" role="menuitem">Pause printing</button>
+            <button type="button" class="tray-item" role="menuitem">Local hardware test print...</button>
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Check-in test: RSVP, Set up printing</p>
+            <button type="button" class="tray-item submenu" role="menuitem">
+              <span>Keep printing</span>
+              <span class="submenu-caret" aria-hidden="true"></span>
+            </button>
+            <hr class="tray-separator" />
+            <label class="tray-item checkbox" role="menuitemcheckbox" aria-checked="true">
+              <input type="checkbox" checked />
+              <span>Open at login</span>
+            </label>
+            <button type="button" class="tray-item" role="menuitem">Check for updates</button>
+            <button type="button" class="tray-item submenu" role="menuitem">
+              <span>Update channel</span>
+              <span class="submenu-caret" aria-hidden="true"></span>
+            </button>
+            <hr class="tray-separator" />
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Favor Printer 0.2.0</p>
+            <button type="button" class="tray-item" role="menuitem">Quit Favor Printer</button>
           </div>
         </div>
       </section>

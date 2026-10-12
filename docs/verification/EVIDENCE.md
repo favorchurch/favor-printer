@@ -134,9 +134,9 @@ Screenshots were captured using `scripts/capture-screenshots.mjs` against the ex
 | `test-print-confirm` | Test Print Prompt (`test-print`) | Verification step: "Did a label come out?" | [screenshots/test-print-confirm.png](screenshots/test-print-confirm.png) |
 | `done` | Setup Complete (`done`) | "You are all set" screen with operational advice and "Finish" button | [screenshots/done.png](screenshots/done.png) |
 | `revoked` | Laptop Revoked (`revoked`) | Red status banner and volunteer instructions to contact an admin | [screenshots/revoked.png](screenshots/revoked.png) |
-| `legacy-relay` | Replace Old Relay (`welcome`) | Migration step detecting the old launchd print relay | [screenshots/legacy-relay.png](screenshots/legacy-relay.png) |
-| `legacy-confirm` | Confirm Relay Migration (`welcome`) | Confirmation prompt to turn off the old relay daemon | [screenshots/legacy-confirm.png](screenshots/legacy-confirm.png) |
-| `legacy-failed` | Relay Migration Failed (`welcome`) | Error banner when old relay daemon cannot be unloaded | [screenshots/legacy-failed.png](screenshots/legacy-failed.png) |
+| `legacy-relay` | Replace Old Relay (`legacy`) | Migration step detecting the old launchd print relay | [screenshots/legacy-relay.png](screenshots/legacy-relay.png) |
+| `legacy-confirm` | Confirm Relay Migration (`legacy-confirm`) | Confirmation prompt to turn off the old relay daemon | [screenshots/legacy-confirm.png](screenshots/legacy-confirm.png) |
+| `legacy-failed` | Relay Migration Failed (`legacy`) | Error banner when old relay daemon cannot be unloaded | [screenshots/legacy-failed.png](screenshots/legacy-failed.png) |
 | `status` | Status Normal (`status`) | Main status window showing enrolled ready status and "Up to date" | [screenshots/status.png](screenshots/status.png) |
 | `update-ready` | Update Ready (`status`) | Main status window showing pending update version 0.2.0 | [screenshots/update-ready.png](screenshots/update-ready.png) |
 | `update-error` | Update Error (`status`) | Main status window showing update check failure message | [screenshots/update-error.png](screenshots/update-error.png) |
