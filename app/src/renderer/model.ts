@@ -77,7 +77,7 @@ export type RenameTarget = "laptop" | "printer";
 export type RenameFailureReason = Extract<RenameResult, { ok: false }>["reason"];
 
 export const RENAME_ERROR_COPY: Record<RenameFailureReason, string> = {
-  name_taken: "Another printer in RSVP already has this name. Pick a different name.",
+  name_taken: "RSVP already has something with this name. Pick a different name.",
   invalid_name: "RSVP did not accept that name. Try another.",
   not_found: "RSVP no longer links this printer to this laptop. Ask an admin for help.",
   not_enrolled: "This laptop is not connected to RSVP. Enter a code from an admin.",
