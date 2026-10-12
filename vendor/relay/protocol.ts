@@ -101,3 +101,27 @@ export type RelayEnrollConflictResponse = {
   error: "printer_conflict";
   reason: RelayEnrollConflictReason;
 };
+
+/**
+ * Body of POST /api/printing/relay/rename: exactly one rename per request —
+ * this laptop's label, or the name of one printer bound to it.
+ */
+export type RelayRenameRequest =
+  | { label: string }
+  | { printerId: string; name: string };
+
+/** Answer of POST /api/printing/relay/rename: the fleet identity now stored in the cloud. */
+export type RelayRenameResponse = {
+  apiVersion: 1;
+  relayId: string;
+  /** A laptop rename: the label now stored. */
+  label?: string | null;
+  /** A printer rename: the printer now stored. */
+  printer?: { id: string; name: string; usbSerial: string | null };
+};
+
+/** Answer of POST /api/printing/relay/rename with status 409: another printer already holds the name. */
+export type RelayRenameConflictResponse = {
+  error: "name_taken";
+  message: string;
+};

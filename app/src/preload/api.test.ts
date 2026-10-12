@@ -31,6 +31,8 @@ describe("preload API", () => {
         "onSnapshot",
         "openPrinterSettings",
         "quit",
+        "renameLaptop",
+        "renamePrinter",
         "requestTestPrint",
         "scanPrinters",
         "selectPrinter",
@@ -56,6 +58,8 @@ describe("preload API", () => {
     ["setOpenAtLogin", IPC_CHANNELS.setOpenAtLogin, [false]],
     ["setChannel", IPC_CHANNELS.setChannel, ["preview"]],
     ["migrateLegacyRelay", IPC_CHANNELS.migrateLegacyRelay, []],
+    ["renameLaptop", IPC_CHANNELS.renameLaptop, ["Lobby desk"]],
+    ["renamePrinter", IPC_CHANNELS.renamePrinter, ["Front Zebra"]],
     ["advance", IPC_CHANNELS.advance, []],
     ["quit", IPC_CHANNELS.quit, []],
   ] as const)("%s invokes its own channel with its own arguments", async (method, channel, args) => {

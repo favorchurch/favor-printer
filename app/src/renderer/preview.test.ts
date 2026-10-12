@@ -4,7 +4,7 @@ import type { AppSnapshot, FavorPrinterApi } from "../shared";
 import { boot } from "./boot";
 import { ENROLL_CONFLICT_COPY, ENROLL_CONFLICT_REASONS, type EnrollConflictReason } from "../shared";
 import { startApp } from "./app";
-import { INITIAL_LOCAL, ENROLL_ERROR_COPY, LOCAL_TEST_COPY } from "./model";
+import { INITIAL_LOCAL, ENROLL_ERROR_COPY, LOCAL_TEST_COPY, RENAME_ERROR_COPY } from "./model";
 import { channelLabel, renderScreen, updateStatusText } from "./screens";
 import { createMockApi, FIXTURE_NAMES, fixtureFor } from "./fixtures";
 import { fixtureButtons, shouldShowFixtureBar, startPreview } from "./preview";
@@ -551,5 +551,50 @@ describe("a refused enrollment on the code screen", () => {
   it("still shows the plain copy for other failures", async () => {
     const lines = await submit({ ok: false, reason: "throttled" });
     expect(lines).toContain(ENROLL_ERROR_COPY.throttled);
+  });
+});
+
+describe("rename controls on the connected screen", () => {
+  const snapshot = (patch: Partial<AppSnapshot> = {}): AppSnapshot => ({ ...fixtureFor("connected").snapshot, label: "Front desk", printerName: "Lobby Zebra", ...patch });
+  const connected = (local = INITIAL_LOCAL, patch?: Partial<AppSnapshot>) => {
+    const actions = { renameLaptop: vi.fn(), renamePrinter: vi.fn() };
+    const root = renderScreen("connected", { snapshot: snapshot(patch), local, actions: actions as never }) as unknown as FakeElement;
+    return { root, actions };
+  };
+  const field = (root: FakeElement, id: string) => descendants(root).find((node) => node.attrs.get("id") === id) as FakeElement & { value?: string };
+  const submit = (root: FakeElement, id: string) => {
+    const form = descendants(root).find((node) => node.tagName === "form" && descendants(node).some((child) => child.attrs.get("id") === id));
+    form?.listeners.get("submit")?.[0]({ preventDefault: vi.fn() });
+  };
+
+  it("saves the laptop and the printer name separately, as typed", () => {
+    const { root, actions } = connected();
+    field(root, "laptop-name").value = "Lobby desk";
+    submit(root, "laptop-name");
+    expect(actions.renameLaptop).toHaveBeenCalledExactlyOnceWith("Lobby desk");
+    expect(actions.renamePrinter).not.toHaveBeenCalled();
+
+    field(root, "printer-name").value = "Front Zebra";
+    submit(root, "printer-name");
+    expect(actions.renamePrinter).toHaveBeenCalledExactlyOnceWith("Front Zebra");
+  });
+
+  it("shows the RSVP reason under the field that failed, and keeps the typed name there", () => {
+    const { root } = connected({ ...INITIAL_LOCAL, renameError: { target: "printer", reason: "name_taken", name: "Front Zebra" } });
+    expect(field(root, "printer-name").getAttribute("value")).toBe("Front Zebra");
+    expect(field(root, "printer-name").getAttribute("aria-invalid")).toBe("true");
+    expect(field(root, "laptop-name").getAttribute("aria-invalid")).toBe("false");
+    const message = descendants(root).find((node) => node.attrs.get("id") === "printer-name-error");
+    expect(message?.children).toEqual([{ text: RENAME_ERROR_COPY.name_taken }]);
+  });
+
+  it("words the name_taken reason for either a laptop or a printer", () => {
+    expect(RENAME_ERROR_COPY.name_taken).not.toMatch(/printer/i);
+  });
+
+  it("offers no printer name to edit before a printer is bound", () => {
+    const { root } = connected(INITIAL_LOCAL, { printerName: null });
+    expect(field(root, "printer-name")).toBeUndefined();
+    expect(field(root, "laptop-name")).toBeDefined();
   });
 });

@@ -35,6 +35,7 @@ import {
   createSecretStore,
   createUpdateController,
   enroll,
+  renameInCloud,
   systemTimers,
 } from "./services";
 import { createAppController } from "./shell/controller";
@@ -170,6 +171,7 @@ async function runApp(): Promise<void> {
       },
     }),
     enroll,
+    rename: renameInCloud,
     createSupervisor: (hooks) => createRelaySupervisor({ fork: relayForker(), log, ...hooks }),
     power: createPowerController({ blocker: powerSaveBlocker }),
     updates,

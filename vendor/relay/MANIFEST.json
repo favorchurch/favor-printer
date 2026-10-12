@@ -3,18 +3,18 @@
   "source": {
     "repository": "favorchurch/rsvp.favor.church",
     "path": "relay",
-    "commit": "cffee3190230c394110410036be92106ea0c1615"
+    "commit": "bfddd1b99233d9d2152c4291e48c0a366c1cf994"
   },
   "entryPoints": [
     "embedded.ts",
     "index.ts"
   ],
-  "treeSha256": "9b472092c70117820117056ae197277fe0527443683d5b090e37dc1df2a632c6",
+  "treeSha256": "f5419b447159b60093f348d44408ac98dc2dcc0e06e44e5a3d176e6a0773576e",
   "files": [
     {
       "path": "apiClient.ts",
-      "sha256": "8bef32b6c09b1648d15ae21bb2625c7db7e3700e386fb2dd0db50e3892ff9bf5",
-      "bytes": 4464
+      "sha256": "a9bac3afc7d9a5c94867b71228335d758df77e55dc5d0faf6ad2fdada381c50b",
+      "bytes": 5006
     },
     {
       "path": "config.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "protocol.ts",
-      "sha256": "ab3cb666f4350261226fd3c822b042630c9e24ad0527019c65b19f2604e175e7",
-      "bytes": 3042
+      "sha256": "327c6a8ad71f20a119dea0ca324ab82ca2e93fcc43e24623eb81b7da330db751",
+      "bytes": 3848
     },
     {
       "path": "relay.ts",

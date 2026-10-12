@@ -12,6 +12,7 @@ import {
   type AppSnapshot,
   type EnrollConflictReason,
   type EnrollPlainFailure,
+  type RenameResult,
   type SetupStep,
   type TestPrintResult,
 } from "../shared";
@@ -57,6 +58,8 @@ export type LocalState = {
   confirmingMigration: boolean;
   /** The last move failed. Printing stays off. */
   migrateError: boolean;
+  /** A rename RSVP refused or could not take. `name` is what was typed, so it is not lost on re-render. */
+  renameError: { target: RenameTarget; reason: RenameFailureReason; name: string } | null;
 };
 
 export const INITIAL_LOCAL: LocalState = {
@@ -67,6 +70,20 @@ export const INITIAL_LOCAL: LocalState = {
   busy: false,
   confirmingMigration: false,
   migrateError: false,
+  renameError: null,
+};
+
+export type RenameTarget = "laptop" | "printer";
+export type RenameFailureReason = Extract<RenameResult, { ok: false }>["reason"];
+
+export const RENAME_ERROR_COPY: Record<RenameFailureReason, string> = {
+  name_taken: "RSVP already has something with this name. Pick a different name.",
+  invalid_name: "RSVP did not accept that name. Try another.",
+  not_found: "RSVP no longer links this printer to this laptop. Ask an admin for help.",
+  not_enrolled: "This laptop is not connected to RSVP. Enter a code from an admin.",
+  printer_not_ready: "The printer has not checked in with RSVP yet. Try again in a moment.",
+  revoked: "RSVP removed this laptop. Enter a new code from an admin.",
+  unreachable: "Could not reach RSVP. Try again.",
 };
 
 export const STEP_ORDER: SetupStep[] = ["welcome", "printer", "code", "connected", "test-print", "done"];

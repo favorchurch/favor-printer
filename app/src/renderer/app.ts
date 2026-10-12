@@ -1,7 +1,7 @@
 /** Connects the screens to the preload API: one render loop, and one local state object. */
 
-import type { AppSnapshot, FavorPrinterApi } from "../shared";
-import { INITIAL_LOCAL, pickScreen, type LocalState } from "./model";
+import type { AppSnapshot, FavorPrinterApi, RenameResult } from "../shared";
+import { INITIAL_LOCAL, pickScreen, type LocalState, type RenameTarget } from "./model";
 import { renderScreen, type Actions } from "./screens";
 
 export type AppOptions = { initialLocal?: Partial<LocalState>; closeWindow?: () => void };
@@ -46,10 +46,17 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   const applySnapshot = (next: AppSnapshot) => {
     // A new step starts clean: an old error does not follow the volunteer forward.
     if (next.setupStep !== current.setupStep) {
-      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false };
+      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false, renameError: null };
     }
     current = next;
     render();
+  };
+
+  /** A failed rename keeps what was typed and says why. A success reads back the stored name from main. */
+  const rename = async (target: RenameTarget, name: string, call: () => Promise<RenameResult>) => {
+    const result = await call();
+    local = { ...local, renameError: result.ok ? null : { target, reason: result.reason, name } };
+    applySnapshot(await api.getSnapshot());
   };
 
   const actions: Actions = {
@@ -98,6 +105,8 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
         local = { ...local, confirmingMigration: false, migrateError: !result.ok };
         applySnapshot(await api.getSnapshot());
       }),
+    renameLaptop: (name) => void busy(() => rename("laptop", name, () => api.renameLaptop(name))),
+    renamePrinter: (name) => void busy(() => rename("printer", name, () => api.renamePrinter(name))),
     closeWindow: options.closeWindow ?? (() => window.close()),
   };
 

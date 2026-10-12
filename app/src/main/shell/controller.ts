@@ -14,12 +14,14 @@ import {
   type MigrateLegacyResult,
   type PrinterDevice,
   type PrinterScan,
+  type RenameResult,
   type SetUpPrinterResult,
   type SetupStep,
   type TestPrintResult,
   type UpdateChannel,
   type UpdateState,
 } from "../../shared";
+import type { RelayRenameRequest } from "../../../../vendor/relay/protocol";
 import type { RelayStatus } from "../../../../vendor/relay/status";
 import {
   BacklogMonitor,
@@ -32,7 +34,9 @@ import {
   type LegacyRelay,
   type PowerController,
   type PrinterService,
+  type RenameCloudOutcome,
   type SecretStore,
+  type StoredCredentials,
   type Timers,
 } from "../services";
 import { systemTimers } from "../services";
@@ -60,6 +64,8 @@ export type ControllerDeps = {
   printers: PrinterService;
   legacy: LegacyRelay;
   enroll(request: EnrollRequest): Promise<EnrollOutcome>;
+  /** Renames in the cloud registry. Never enrolls and never changes the saved pairing. */
+  rename(request: RelayRenameRequest, options: { apiUrl: string; credentials: StoredCredentials }): Promise<RenameCloudOutcome>;
   createSupervisor: SupervisorFactory;
   power: Pick<PowerController, "update" | "dispose">;
   updates: { setChannel(channel: UpdateChannel): Promise<void>; checkNow(): Promise<void> };
@@ -94,6 +100,8 @@ export type AppController = {
   setOpenAtLogin(enabled: boolean): Promise<void>;
   setChannel(channel: UpdateChannel): Promise<void>;
   migrateLegacyRelay(): Promise<MigrateLegacyResult>;
+  renameLaptop(label: string): Promise<RenameResult>;
+  renamePrinter(name: string): Promise<RenameResult>;
   advance(): Promise<AppSnapshot>;
 
   /** Menu actions that combine a request with the confirmation question. */
@@ -121,6 +129,7 @@ const LOCKED_WARNING = "The screen is locked. Keep the lid open so printing is n
 export function createAppController(deps: ControllerDeps): AppController {
   const { prefs, secrets, printers, legacy, log } = deps;
   const timers = deps.timers ?? systemTimers;
+  const apiUrl = deps.apiUrl ?? "https://rsvp.favor.church";
 
   let enrolled = false;
   let legacyLoaded = false;
@@ -296,6 +305,25 @@ export function createAppController(deps: ControllerDeps): AppController {
     emit();
   }
 
+  /** The saved pairing a rename is sent with. Null when this laptop is not enrolled or was revoked. */
+  async function pairing(): Promise<StoredCredentials | null> {
+    if (!enrolled || prefs.get().revoked) return null;
+    return secrets.load().catch(() => null);
+  }
+
+  /** Sends one rename and mirrors the name the cloud stored. A rejected token revokes the laptop, as any other call does. */
+  async function renameCloud(request: RelayRenameRequest, credentials: StoredCredentials): Promise<RenameResult> {
+    const outcome = await deps.rename(request, { apiUrl, credentials });
+    if (!outcome.ok) {
+      if (outcome.reason === "revoked") await handleRevoked();
+      return { ok: false, reason: outcome.reason };
+    }
+    if ("label" in request) await prefs.update({ label: outcome.label }).catch(() => undefined);
+    else if (outcome.printerName) await prefs.update({ printerName: outcome.printerName }).catch(() => undefined);
+    emit();
+    return { ok: true };
+  }
+
   async function runScan(): Promise<void> {
     const outcome = await printers.scan(prefs.get().selectedPrinterId);
     scan = outcome.scan;
@@ -447,7 +475,7 @@ export function createAppController(deps: ControllerDeps): AppController {
           return { ok: false, reason: "printer_not_found" };
         }
         const outcome = await deps.enroll({
-          apiUrl: deps.apiUrl ?? "https://rsvp.favor.church",
+          apiUrl,
           code,
           usbSerial,
           appVersion: deps.version,
@@ -487,6 +515,25 @@ export function createAppController(deps: ControllerDeps): AppController {
         enrolling = null;
       });
       return enrolling;
+    },
+
+    async renameLaptop(label) {
+      const name = label.trim();
+      if (!name) return { ok: false, reason: "invalid_name" };
+      const credentials = await pairing();
+      if (!credentials) return { ok: false, reason: "not_enrolled" };
+      return renameCloud({ label: name }, credentials);
+    },
+
+    async renamePrinter(name) {
+      const trimmed = name.trim();
+      if (!trimmed) return { ok: false, reason: "invalid_name" };
+      const credentials = await pairing();
+      if (!credentials) return { ok: false, reason: "not_enrolled" };
+      // The cloud id of the printer comes from the relay's heartbeat, which may not have answered yet.
+      const printerId = supervisorState.relay?.printerIds[0];
+      if (!printerId) return { ok: false, reason: "printer_not_ready" };
+      return renameCloud({ printerId, name: trimmed }, credentials);
     },
 
     async requestTestPrint() {

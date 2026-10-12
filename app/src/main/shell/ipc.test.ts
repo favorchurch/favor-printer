@@ -34,6 +34,8 @@ function setup(trusted = true) {
     setOpenAtLogin: vi.fn(async () => undefined),
     setChannel: vi.fn(async () => undefined),
     migrateLegacyRelay: vi.fn(async () => ({ ok: true }) as const),
+    renameLaptop: vi.fn(async () => ({ ok: true }) as const),
+    renamePrinter: vi.fn(async () => ({ ok: true }) as const),
     advance: vi.fn(async () => snapshotFor()),
     quit: vi.fn(async () => undefined),
   } satisfies Omit<FavorPrinterApi, "onSnapshot">;
