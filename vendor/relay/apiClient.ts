@@ -12,6 +12,8 @@ import type {
   HeartbeatRequest,
   HeartbeatResponse,
   RelayConfigResponse,
+  RelayRenameRequest,
+  RelayRenameResponse,
   RelayTestPrintResponse,
   ReportOutcome,
 } from "./protocol";
@@ -99,6 +101,17 @@ export class RelayApiClient {
     const response = await this.post("/test-print", { printerId });
     if (!response.ok) throw new RelayNetworkError(`test print answered ${response.status}`);
     return (await response.json()) as RelayTestPrintResponse;
+  }
+
+  /**
+   * Rename this laptop's label or one of its printers' names in the cloud
+   * registry (#629), the same rows /admin/printing edits. A printer of another
+   * relay is refused like an unknown one.
+   */
+  async rename(request: RelayRenameRequest): Promise<RelayRenameResponse> {
+    const response = await this.post("/rename", request);
+    if (!response.ok) throw new RelayNetworkError(`rename answered ${response.status}`);
+    return (await response.json()) as RelayRenameResponse;
   }
 
   private async jobCall(path: string, body: unknown): Promise<JobCallResult> {
