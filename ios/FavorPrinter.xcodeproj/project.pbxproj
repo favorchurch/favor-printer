@@ -14,6 +14,13 @@
 			remoteGlobalIDString = A10000000000000000000030;
 			remoteInfo = FavorPrinter;
 		};
+		A10000000000000000000023 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000100 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000030;
+			remoteInfo = FavorPrinter;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +29,7 @@
 		A10000000000000000000012 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		A10000000000000000000013 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		A10000000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000017 /* FavorPrinterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FavorPrinterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -33,6 +41,11 @@
 		A10000000000000000000016 /* FavorPrinterTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FavorPrinterTests;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000018 /* FavorPrinterUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FavorPrinterUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +65,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000046 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -60,6 +80,7 @@
 			children = (
 				A10000000000000000000015 /* FavorPrinter */,
 				A10000000000000000000016 /* FavorPrinterTests */,
+				A10000000000000000000018 /* FavorPrinterUITests */,
 				A10000000000000000000051 /* Config */,
 				A10000000000000000000052 /* Products */,
 			);
@@ -80,6 +101,7 @@
 			children = (
 				A10000000000000000000010 /* FavorPrinter.app */,
 				A10000000000000000000011 /* FavorPrinterTests.xctest */,
+				A10000000000000000000017 /* FavorPrinterUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,6 +150,27 @@
 			productReference = A10000000000000000000011 /* FavorPrinterTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		A10000000000000000000032 /* FavorPrinterUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000063 /* Build configuration list for PBXNativeTarget "FavorPrinterUITests" */;
+			buildPhases = (
+				A10000000000000000000047 /* Sources */,
+				A10000000000000000000046 /* Frameworks */,
+				A10000000000000000000048 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000022 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000018 /* FavorPrinterUITests */,
+			);
+			name = FavorPrinterUITests;
+			productName = FavorPrinterUITests;
+			productReference = A10000000000000000000017 /* FavorPrinterUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -142,6 +185,10 @@
 						CreatedOnToolsVersion = 27.0;
 					};
 					A10000000000000000000031 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = A10000000000000000000030;
+					};
+					A10000000000000000000032 = {
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = A10000000000000000000030;
 					};
@@ -162,6 +209,7 @@
 			targets = (
 				A10000000000000000000030 /* FavorPrinter */,
 				A10000000000000000000031 /* FavorPrinterTests */,
+				A10000000000000000000032 /* FavorPrinterUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -175,6 +223,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000000045 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000048 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -198,6 +253,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000047 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -205,6 +267,11 @@
 			isa = PBXTargetDependency;
 			target = A10000000000000000000030 /* FavorPrinter */;
 			targetProxy = A10000000000000000000020 /* PBXContainerItemProxy */;
+		};
+		A10000000000000000000022 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000030 /* FavorPrinter */;
+			targetProxy = A10000000000000000000023 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -325,6 +392,36 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000076 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = church.favor.printer.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = FavorPrinter;
+			};
+			name = Debug;
+		};
+		A10000000000000000000077 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = church.favor.printer.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = FavorPrinter;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -351,6 +448,15 @@
 			buildConfigurations = (
 				A10000000000000000000070 /* Debug */,
 				A10000000000000000000071 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000063 /* Build configuration list for PBXNativeTarget "FavorPrinterUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000076 /* Debug */,
+				A10000000000000000000077 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

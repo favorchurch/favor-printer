@@ -96,8 +96,10 @@ enum APIError: Error, Sendable, Equatable {
             case .devicePending: "This iPad is waiting for approval."
             case .deviceRevoked: "This iPad was removed. Register it again."
             case .missingToken, .malformedToken, .unknownDevice: "This iPad is not registered. Register it again."
-            case .wrongCampus, .definitionForbidden, .occurrenceForbidden, .printerForbidden:
-                "This iPad is not allowed to do that."
+            case .wrongCampus: "This iPad can only check in people at its own campus."
+            case .definitionForbidden: "That check-in is turned off or belongs to another campus. Pick another."
+            case .occurrenceForbidden: "That service is not open to this iPad. Go back and pick another."
+            case .printerForbidden: "That printer is not available to this iPad. Pick another."
             }
         case .unexpected, .invalidResponse: "Unexpected response from Favor RSVP."
         case .transport: "Could not reach Favor RSVP. Check the network."

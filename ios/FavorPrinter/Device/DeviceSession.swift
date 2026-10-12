@@ -128,6 +128,23 @@ final class DeviceSession {
         }
     }
 
+    /// Runs an authenticated call with the stored secret. Only an approved grant may call: pending,
+    /// revoked and unregistered states make no request. Failures go through `report(_:)`.
+    func withCredential<T: Sendable>(_ call: (String, DeviceGrant) async throws -> T) async throws -> T {
+        guard case .approved(let grant) = state, let token = (try? secrets.read()) ?? nil else {
+            throw CheckinFailure.notApproved
+        }
+        do {
+            let value = try await call(token, grant)
+            // The credential may have been wiped or replaced while the request was in flight.
+            guard (try? secrets.read()) == token, case .approved = state else { throw CheckinFailure.notApproved }
+            return value
+        } catch let error as APIError {
+            if (try? secrets.read()) == token { report(error) }
+            throw CheckinFailure.api(error)
+        }
+    }
+
     /// Leaves the revoked screen. The old credential is already gone.
     func registerAgain() {
         wipeSecret()
