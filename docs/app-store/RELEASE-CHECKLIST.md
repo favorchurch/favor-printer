@@ -61,7 +61,7 @@
 - [ ] Unlisted distribution request approved and the canonical direct link obtained before any sharing or QR handoff.
 - [ ] Signing/provisioning/private keys managed securely outside Git.
 - [ ] Final privacy policy approved by responsible legal/organizational owner and live on public HTTPS URL.
-- [ ] Apple's app privacy questionnaire reviewed against code, logs and third parties for every platform, using the native API field list from [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/main/docs/native-api/v1.md) once it exists.
+- [ ] Apple's app privacy questionnaire reviewed against code, logs and third parties for every platform, using the native API field list transcribed in the [App privacy inventory](APP-PRIVACY-INVENTORY.md) from [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/8a560ce305ce25252e28ce92886ecb3b9fd995bc/docs/native-api/v1.md).
 - [ ] Underlying child/family data protection, consent/notice responsibilities, incident handling and retention validated.
 - [ ] Age rating, export compliance, territories, content rights, screenshot/icon copyrights and accessibility reviewed.
 - [ ] Metadata and screenshots are factual and match the actual uploaded version; include 13-inch iPad and/or Mac sizes.

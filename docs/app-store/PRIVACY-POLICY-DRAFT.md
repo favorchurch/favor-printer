@@ -20,7 +20,7 @@
 
 This policy describes how [LEGAL ENTITY] processes personal information in Favor Printer and its connected Favor RSVP printing service for authorized Favor Church personnel. Printing may involve names and other content derived from check-in records, including information about children and families. The native iPad application in the first release is check-in only and online only; it processes the same check-in and label content for event and Kids check-in. Printer hosting on iPad is a later update and is not covered by this release.
 
-The exact data fields the native iPad app receives are pending: they must be transcribed from [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/main/docs/native-api/v1.md) once that reference exists, not inferred. See [App privacy inventory](APP-PRIVACY-INVENTORY.md).
+The exact data fields the native iPad app receives are transcribed field for field in the [App privacy inventory](APP-PRIVACY-INVENTORY.md) from [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/8a560ce305ce25252e28ce92886ecb3b9fd995bc/docs/native-api/v1.md) at the accepted contract commit (not yet on rsvp `main`), never inferred; the Apple data-type mapping and retention answers still await the audit.
 
 [VERIFY] Relationship to existing Favor Church / RSVP / Rock RMS privacy notices and laws covering the relevant countries and attendees.
 
@@ -68,7 +68,7 @@ Changes will be published at [APPROVED PUBLIC URL] with an updated effective dat
 
 ## Approval gates
 
-- [ ] Actual app/API/Rock/CUPS data map and third-party inventory validated, including the native iPad API field list from [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/main/docs/native-api/v1.md)
+- [ ] Actual app/API/Rock/CUPS data map and third-party inventory validated, including the native iPad API field list transcribed in the [App privacy inventory](APP-PRIVACY-INVENTORY.md) from [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/8a560ce305ce25252e28ce92886ecb3b9fd995bc/docs/native-api/v1.md)
 - [ ] Legal identity, contact, rights process and child-data obligations approved
 - [ ] Log/spool/job/database/backup retention verified
 - [ ] Provider, hosting, security and international processing statements checked

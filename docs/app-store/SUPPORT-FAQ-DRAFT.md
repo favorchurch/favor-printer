@@ -1,6 +1,6 @@
 # Favor Printer: volunteer support FAQ (working draft)
 
-**Do not publish features that have not shipped.** Names, cloud-ready tests and one-step onboarding below include planned improvements tracked in GitHub.
+**Do not publish features that have not shipped.** Friendly device names, in-app one-time code entry and the setup flow below are in Favor Printer now; anything still tracked in GitHub is marked as such where it appears.
 
 ## Locked decisions this FAQ reflects
 
@@ -33,24 +33,24 @@ No. iPad v1 is **online-only**: while disconnected, the app shows a connection-r
 
 ## Why does a printer say “USB Printer” or my Mac say “Unnamed laptop”?
 
-Those are generic labels from current enrollment. The improvement will offer editable friendly names for both the physical printer and its host laptop in Favor Printer and RSVP. Until this is in the shipping version, do not guess or change relay IDs to rename a device.
+Those are generic labels from current enrollment. Favor Printer renames both the physical printer and its host laptop, and the same names save to RSVP through the relay rename API, so the friendly names show up wherever the device is listed. Keep the names campus-specific, like “MNL Zebra 2”. Do not guess or change relay IDs to rename a device.
 
 ## Why did the app's test label print but a real check-in did not?
 
 Local printing only tests the cable/queue. A cloud-routed check-in uses a **logical printer record and specific enrolled relay ID**; these may still point to a different record. Verify campus, printer UUID, live host binding and cloud job queue, then escalate. This failure is documented in [RSVP #623](https://github.com/favorchurch/rsvp.favor.church/issues/623).
 
-## What should the new setup flow be? (proposed; not yet released)
+## What is the setup flow?
 
 1. Open Favor Printer and select the USB Zebra found by the Mac.
 2. Name the Mac and printer in human-friendly terms, such as “MNL Zebra 2”.
-3. Follow the RSVP one-time enrollment invitation tied to the intended cloud printer and campus.
-4. Let the app automatically enroll the relay and confirm matching cloud identities.
-5. Run a **server-routed test** and verify a label physically emerges.
+3. Enter the one-time code from an admin in Favor Printer, tied to the intended cloud printer and campus.
+4. The app enrolls the relay and confirms matching cloud identities.
+5. Run a test and verify a label physically emerges. The built-in test print is local only; the server-routed test is still tracked with [RSVP #623](https://github.com/favorchurch/rsvp.favor.church/issues/623).
 6. Select/pair the same cloud printer on the RSVP check-in device. No manual relay ID should be needed.
 
 ## Printer disconnected, laptop replaced or device offline?
 
-Check power, cable, Mac awake/login and network, then follow verified status guidance. Do not create a new cloud printer just because a Mac was replaced. Re-enroll the **existing** printer deliberately with an authorized operator and preserve UUID, campus, device pairings and queued jobs. Warn the captain before binding a recovered relay with older queued labels.
+Check power, cable, Mac awake/login and network, then read the status window. It shows exactly one of five states (Connected, Unplugged, Waiting, Needs re-enrollment, In use) and offers one recovery action for each, so follow the action it names. A backlog warning appears when queued jobs are stuck or growing and clears once the queue drains. Do not create a new cloud printer just because a Mac was replaced. Re-enroll the **existing** printer deliberately with an authorized operator and preserve UUID, campus, device pairings and queued jobs. Warn the captain before binding a recovered relay with older queued labels.
 
 ## What if a label already printed or the queue says “Ambiguous”?
 

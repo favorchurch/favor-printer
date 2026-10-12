@@ -59,7 +59,7 @@ For Apple reviewers lacking the hardware, provide a safe usable demonstration an
 
 **Distribution and audience:** the release is [unlisted, shared by direct link](https://github.com/favorchurch/rsvp.favor.church/issues/628#issuecomment-6110595534); say so in the notes. The first rollout is a controlled pilot wave at **MNL, BNE and SEL** with per-campus go/no-go. Personally owned iPads participate only with an [approved check-in device grant](https://github.com/favorchurch/rsvp.favor.church/issues/636#issuecomment-6111575395).
 
-**Pending:** hardware and iPadOS lifecycle results, reviewer-accessible demo data, approved App Store wording, and the exact native API data inventory ([rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/main/docs/native-api/v1.md)). Never advertise hosting in a check-in-only binary.
+**Pending:** hardware and iPadOS lifecycle results, reviewer-accessible demo data, approved App Store wording, and the audit mapping behind the native API data inventory (response fields are transcribed in the [App privacy inventory](APP-PRIVACY-INVENTORY.md) from [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/8a560ce305ce25252e28ce92886ecb3b9fd995bc/docs/native-api/v1.md)). Never advertise hosting in a check-in-only binary.
 
 ## Submission checks
 

@@ -18,7 +18,9 @@ This dossier prepares the store listing, privacy review, reviewer instructions a
 
 The shipped Favor Printer is a macOS Electron menu-bar app that prints Zebra labels via CUPS and talks to Favor RSVP. It is deliberately unsandboxed and distributed through signed/notarized GitHub DMGs; the existing build is not proven to meet Mac App Store sandbox requirements.
 
-The native iPad app is not implemented in this repository. Its locked first-release scope is Favor Printer check-in for Rock event and Kids check-in, online only, printing through the existing cloud to Mac relay. iPad printer hosting is a committed later update of that same app, gated on hardware and iPadOS lifecycle proof.
+This release adds the Mac onboarding work to the same app: first-run and re-enrollment screens take the RSVP one-time code in the app, the status reducer resolves to exactly one of five states (Connected, Unplugged, Waiting, Needs re-enrollment, In use), each state offers one recovery action, a warning appears when the relay backlog is stuck or growing, and the laptop and every bound printer can be renamed through the RSVP relay rename API.
+
+The native iPad app is implemented in this repository at `ios/`: a SwiftUI, iPad-only iPadOS target (Xcode scheme `FavorPrinter`, display name Favor Printer) with unit tests over a mocked transport and simulator UI tests, run with `xcodebuild test` as documented in `ios/README.md`. Its locked first-release scope is Favor Printer check-in for Rock event and Kids check-in, online only, printing through the existing cloud to Mac relay, with device registration and approved check-in device grants following [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/8a560ce305ce25252e28ce92886ecb3b9fd995bc/docs/native-api/v1.md). iPad printer hosting is a committed later update of that same app, gated on hardware and iPadOS lifecycle proof.
 
 ## Draft package
 
@@ -34,9 +36,9 @@ The native iPad app is not implemented in this repository. Its locked first-rele
 
 1. [Hardware, iPadOS lifecycle and Mac sandbox feasibility](https://github.com/favorchurch/rsvp.favor.church/issues/625) results are not recorded yet.
 2. Apple developer organization account, legal seller name and release approval are unverified.
-3. The privacy inventory cannot be finalized until the native API reference exists: [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/main/docs/native-api/v1.md).
+3. The privacy inventory now transcribes the native API response fields from the accepted contract revision [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/8a560ce305ce25252e28ce92886ecb3b9fd995bc/docs/native-api/v1.md) (not yet on rsvp `main`); the Apple data-type mapping, retention and processor answers still await the audit.
 4. [RSVP native iPad device grants, approved BYOD and revocation](https://github.com/favorchurch/rsvp.favor.church/issues/648) is the hard gate for personally owned iPads.
-5. Deliver [atomic cloud pairing](https://github.com/favorchurch/rsvp.favor.church/issues/623), [name editing](https://github.com/favorchurch/rsvp.favor.church/issues/629), and [Mac app-guided setup](https://github.com/favorchurch/favor-printer/issues/16).
+5. [Atomic cloud pairing](https://github.com/favorchurch/rsvp.favor.church/issues/623) is still open. [Name editing](https://github.com/favorchurch/rsvp.favor.church/issues/629) and [Mac app-guided setup](https://github.com/favorchurch/favor-printer/issues/16) are built in this repository: laptop and printer rename through the RSVP relay rename API, in-app one-time code entry, the five-state status set with a recovery action each, and the relay backlog warning.
 
 ## Controls
 
