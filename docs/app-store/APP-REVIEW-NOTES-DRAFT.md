@@ -55,7 +55,7 @@ For Apple reviewers lacking the hardware, provide a safe usable demonstration an
 4. Turn off the network and show the connection-required state: check-in actions are disabled and nothing queues for later.
 5. Show the revoked or off-campus state, and the clearly labelled hand-off to the existing web routes for volunteer roster, ticketing and registration.
 
-**Printer Host is out of v1:** [iPad printer hosting](https://github.com/favorchurch/rsvp.favor.church/issues/627#issuecomment-6106334709) is a committed later update of this same app. Do not demo, describe or screenshot it for this build, and do not imply the iPad prints directly over USB.
+**Printer Host is out of v1:** [iPad printer hosting is a committed later update of this same app](https://github.com/favorchurch/rsvp.favor.church/issues/630#issuecomment-6110550319), with the dual-role product decision recorded at [Option C](https://github.com/favorchurch/rsvp.favor.church/issues/627#issuecomment-6106334709). Do not demo, describe or screenshot it for this build, and do not imply the iPad prints directly over USB.
 
 **Distribution and audience:** the release is [unlisted, shared by direct link](https://github.com/favorchurch/rsvp.favor.church/issues/628#issuecomment-6110595534); say so in the notes. The first rollout is a controlled pilot wave at **MNL, BNE and SEL** with per-campus go/no-go. Personally owned iPads participate only with an [approved check-in device grant](https://github.com/favorchurch/rsvp.favor.church/issues/636#issuecomment-6111575395).
 

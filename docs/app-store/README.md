@@ -3,7 +3,7 @@
 **Status: Working drafts, NOT approved for Apple review**  
 Created: 2026-10-11. Owner: Favor Church (legal entity / Apple Account Holder to verify).
 
-This dossier prepares the store listing, privacy review, reviewer instructions and release gates for the unlisted iPad App Store release, and for the separate Mac App Store question. It is NOT an App Store build, an approved legal policy, a privacy declaration, or permission to deploy or submit. It supersedes the earlier draft PR (#18).
+This dossier prepares the store listing, privacy review, reviewer instructions and release gates for the unlisted iPad App Store release, and for the separate Mac App Store question. It is NOT an App Store build, an approved legal policy, a privacy declaration, or permission to deploy or submit. It supersedes the earlier draft dossier in [PR #18](https://github.com/favorchurch/favor-printer/pull/18).
 
 ## Locked decisions every file in this folder reflects
 

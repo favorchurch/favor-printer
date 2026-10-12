@@ -484,20 +484,20 @@
             <span class="tray-icon" role="img" aria-label="Favor Printer: Ready to print"></span>
           </div>
           <div class="tray-menu" role="menu" aria-label="Favor Printer menu bar menu">
-            <p class="tray-item info">Ready to print</p>
-            <p class="tray-item info">This laptop: Front desk laptop</p>
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Ready to print</p>
+            <p class="tray-item info" role="menuitem" aria-disabled="true">This laptop: Front desk laptop</p>
             <hr class="tray-separator" />
-            <p class="tray-item info">Labels this session: 142 sent, 0 failed</p>
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Labels this session: 142 sent, 0 failed</p>
             <hr class="tray-separator" />
             <button type="button" class="tray-item" role="menuitem">Pause printing</button>
             <button type="button" class="tray-item" role="menuitem">Local hardware test print...</button>
-            <p class="tray-item info">Check-in test: RSVP, Set up printing</p>
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Check-in test: RSVP, Set up printing</p>
             <button type="button" class="tray-item submenu" role="menuitem">
               <span>Keep printing</span>
               <span class="submenu-caret" aria-hidden="true"></span>
             </button>
             <hr class="tray-separator" />
-            <label class="tray-item checkbox">
+            <label class="tray-item checkbox" role="menuitemcheckbox" aria-checked="true">
               <input type="checkbox" checked />
               <span>Open at login</span>
             </label>
@@ -507,7 +507,7 @@
               <span class="submenu-caret" aria-hidden="true"></span>
             </button>
             <hr class="tray-separator" />
-            <p class="tray-item info">Favor Printer 0.2.0</p>
+            <p class="tray-item info" role="menuitem" aria-disabled="true">Favor Printer 0.2.0</p>
             <button type="button" class="tray-item" role="menuitem">Quit Favor Printer</button>
           </div>
         </div>
