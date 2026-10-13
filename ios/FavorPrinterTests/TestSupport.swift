@@ -1,4 +1,5 @@
 import Foundation
+import Security
 @testable import FavorPrinter
 
 /// Routes requests by host so each test owns an isolated handler and tests can run in parallel.
@@ -177,4 +178,27 @@ actor FakeDeviceAPI: DeviceAPI {
         if let statusGate { await statusGate() }
         return try statusResult.get()
     }
+}
+
+/// Wraps a secret store so a test can make reads fail like a locked iPad's keychain
+/// (errSecInteractionNotAllowed) while the stored value stays where it is.
+final class UnreadableSecretStore: SecretStore, @unchecked Sendable {
+    private let inner: any SecretStore
+    private let lock = NSLock()
+    private var blocked = false
+
+    init(_ inner: any SecretStore) { self.inner = inner }
+
+    var failReads: Bool {
+        get { lock.withLock { blocked } }
+        set { lock.withLock { blocked = newValue } }
+    }
+
+    func read() throws -> String? {
+        if lock.withLock({ blocked }) { throw KeychainError(status: errSecInteractionNotAllowed) }
+        return try inner.read()
+    }
+
+    func write(_ secret: String) throws { try inner.write(secret) }
+    func delete() throws { try inner.delete() }
 }

@@ -15,6 +15,10 @@ enum DeviceState: Equatable, Sendable {
 @MainActor
 @Observable
 final class DeviceSession {
+    /// Shown when the keychain refuses to answer (e.g. errSecInteractionNotAllowed). The credential
+    /// is not missing in that case, so nothing may be torn down because of it.
+    static let keychainReadMessage = "Could not read the device key on this iPad. It has not been removed; try again."
+
     private(set) var state: DeviceState = .launching
     private(set) var isBusy = false
     private(set) var notice: String?
@@ -46,13 +50,20 @@ final class DeviceSession {
             state = .revoked(label: record?.grant?.label)
             return
         }
-        guard (try? secrets.read()) != nil else {
+        switch readSecret() {
+        case .found:
+            if let grant = record?.grant { state = Self.state(for: grant) }
+            await refresh()
+            // No record to show and the status call failed: leave the launch spinner so the notice is visible.
+            if state == .launching { state = .unregistered }
+        case .missing:
             records.clear()
             state = .unregistered
-            return
+        case .unavailable:
+            // Only a nil secret is missing. Keep the stored token and the device record untouched.
+            state = record?.grant.map(Self.state(for:)) ?? .unregistered
+            notice = Self.keychainReadMessage
         }
-        if let grant = record?.grant { state = Self.state(for: grant) }
-        await refresh()
     }
 
     func register(campusId: Int, label: String) async {
@@ -82,9 +93,17 @@ final class DeviceSession {
     func refresh(automatic: Bool = false) async {
         guard !isBusy else { return }
         if automatic, let until = automaticRefreshPausedUntil, now() < until { return }
-        guard let token = (try? secrets.read()) ?? nil else {
-            if case .pending = state { markRevoked(label: nil) }
-            else if case .approved = state { markRevoked(label: nil) }
+        let token: String
+        switch readSecret() {
+        case .found(let found):
+            token = found
+        case .missing:
+            // The credential vanished locally: same teardown as a 401, keeping the label for the screen.
+            if let grant = currentGrant { markRevoked(label: grant.label) }
+            return
+        case .unavailable:
+            // The keychain not answering is not a lost credential: keep the token and the record.
+            notice = Self.keychainReadMessage
             return
         }
         isBusy = true
@@ -92,12 +111,12 @@ final class DeviceSession {
         do {
             let grant = try await api.status(token: token)
             // The credential may have been wiped or replaced while the request was in flight.
-            guard (try? secrets.read()) == token else { return }
+            guard credentialStillMatches(token) else { return }
             apply(grant)
             notice = nil
             automaticRefreshPausedUntil = nil
         } catch {
-            guard (try? secrets.read()) == token else { return }
+            guard credentialStillMatches(token) else { return }
             pauseAutomaticRefresh(after: error)
             report(error)
         }
@@ -131,16 +150,27 @@ final class DeviceSession {
     /// Runs an authenticated call with the stored secret. Only an approved grant may call: pending,
     /// revoked and unregistered states make no request. Failures go through `report(_:)`.
     func withCredential<T: Sendable>(_ call: (String, DeviceGrant) async throws -> T) async throws -> T {
-        guard case .approved(let grant) = state, let token = (try? secrets.read()) ?? nil else {
+        guard case .approved(let grant) = state else { throw CheckinFailure.notApproved }
+        let token: String
+        switch readSecret() {
+        case .found(let found):
+            token = found
+        case .missing:
             throw CheckinFailure.notApproved
+        case .unavailable:
+            // Nothing was sent, so this is an ordinary failure that says what actually happened.
+            throw CheckinFailure.api(.invalidInput(Self.keychainReadMessage))
         }
         do {
             let value = try await call(token, grant)
-            // The credential may have been wiped or replaced while the request was in flight.
-            guard (try? secrets.read()) == token, case .approved = state else { throw CheckinFailure.notApproved }
+            // The call was sent and answered, but the credential or the state moved under it. The
+            // server may still have acted on the request, so its answer is dropped as an
+            // outcome-unknown failure: the flow must make the volunteer confirm before retrying
+            // (maybeRecorded) instead of treating it as a plain failure and double-sending.
+            guard credentialStillMatches(token), case .approved = state else { throw CheckinFailure.api(.transport) }
             return value
         } catch let error as APIError {
-            if (try? secrets.read()) == token { report(error) }
+            if credentialStillMatches(token) { report(error) }
             throw CheckinFailure.api(error)
         }
     }
@@ -154,6 +184,37 @@ final class DeviceSession {
     }
 
     // MARK: - Internals
+
+    /// What the keychain said about the stored secret. Only `missing` (a nil value, no error) means
+    /// there is no credential; `unavailable` means the keychain refused to answer.
+    private enum SecretRead {
+        case found(String)
+        case missing
+        case unavailable
+    }
+
+    private func readSecret() -> SecretRead {
+        do {
+            guard let token = try secrets.read() else { return .missing }
+            return .found(token)
+        } catch {
+            return .unavailable
+        }
+    }
+
+    /// True while the stored secret is still exactly `token`. A keychain read failure cannot confirm
+    /// a match: it says so and keeps everything, rather than looking like a changed credential.
+    private func credentialStillMatches(_ token: String) -> Bool {
+        switch readSecret() {
+        case .found(let current):
+            return current == token
+        case .missing:
+            return false
+        case .unavailable:
+            notice = Self.keychainReadMessage
+            return false
+        }
+    }
 
     private var currentGrant: DeviceGrant? {
         switch state {

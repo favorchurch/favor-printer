@@ -138,7 +138,7 @@ struct DeviceSessionTests {
         try? secrets.delete()
         await session.refresh()
 
-        #expect(session.state == .revoked(label: nil))
+        #expect(session.state == .revoked(label: "Manila Kids iPad 2"))
         #expect(await api.statusTokens.isEmpty)
     }
 
@@ -209,6 +209,17 @@ struct DeviceSessionTests {
         #expect(await api.statusTokens == [Fixture.token])
     }
 
+    @Test func launchWithSecretButNoRecordLeavesTheSpinnerWhenTheServerIsUnreachable() async {
+        try? secrets.write(Fixture.token)
+        await api.setStatus(.failure(.transport))
+        let session = session()
+        await session.start()
+
+        #expect(session.state == .unregistered)
+        #expect(session.notice == APIError.transport.message)
+        #expect(secrets.current == Fixture.token)
+    }
+
     @Test func launchWithRevokedRecordWipesLingeringSecretWithoutNetwork() async {
         try? secrets.write(Fixture.token)
         records.save(DeviceRecord(grant: Fixture.deviceGrant(.approved), revoked: true))
@@ -245,6 +256,150 @@ struct DeviceSessionTests {
         #expect(session.state == .unregistered)
         #expect(records.load() == nil)
         #expect(secrets.current == nil)
+    }
+
+    // MARK: keychain read failures
+
+    @Test func launchWithUnreadableKeychainKeepsTheRecordAndTheSecret() async {
+        let backing = InMemorySecretStore(Fixture.token)
+        let keychain = UnreadableSecretStore(backing)
+        keychain.failReads = true
+        records.save(DeviceRecord(grant: Fixture.deviceGrant(.approved), revoked: false))
+        let session = DeviceSession(api: api, secrets: keychain, records: records)
+        await session.start()
+
+        #expect(session.notice == DeviceSession.keychainReadMessage)
+        #expect(session.state == .approved(Fixture.deviceGrant(.approved)))
+        #expect(records.load()?.grant == Fixture.deviceGrant(.approved))
+        #expect(backing.current == Fixture.token)
+        #expect(await api.statusTokens.isEmpty)
+    }
+
+    @Test func refreshWithUnreadableKeychainKeepsTheRecordAndTheSecret() async {
+        let backing = InMemorySecretStore()
+        let keychain = UnreadableSecretStore(backing)
+        let session = DeviceSession(api: api, secrets: keychain, records: records)
+        await session.start()
+        await api.setRegister(.success(DeviceRegistration(grant: Fixture.deviceGrant(.pending), token: Fixture.token)))
+        await session.register(campusId: 1, label: "Manila Kids iPad 2")
+        keychain.failReads = true
+        await session.refresh()
+
+        #expect(session.notice == DeviceSession.keychainReadMessage)
+        #expect(session.state == .pending(Fixture.deviceGrant(.pending)))
+        #expect(records.load()?.revoked == false)
+        #expect(backing.current == Fixture.token)
+        #expect(await api.statusTokens.isEmpty)
+    }
+
+    @Test func unreadableKeychainWhileApplyingAStatusAnswerSaysSoAndKeepsEverything() async {
+        let backing = InMemorySecretStore()
+        let keychain = UnreadableSecretStore(backing)
+        let session = DeviceSession(api: api, secrets: keychain, records: records)
+        await session.start()
+        await api.setRegister(.success(DeviceRegistration(grant: Fixture.deviceGrant(.pending), token: Fixture.token)))
+        await session.register(campusId: 1, label: "Manila Kids iPad 2")
+        await api.setStatus(.success(Fixture.deviceGrant(.approved)))
+        await api.setGate { [keychain] in keychain.failReads = true }
+        await session.refresh()
+
+        #expect(session.notice == DeviceSession.keychainReadMessage)
+        #expect(session.state == .pending(Fixture.deviceGrant(.pending)))
+        #expect(records.load()?.grant == Fixture.deviceGrant(.pending))
+        #expect(backing.current == Fixture.token)
+    }
+
+    @Test func unreadableKeychainBeforeACallIsAFailureButNotAFakeNotApproved() async {
+        let backing = InMemorySecretStore()
+        let keychain = UnreadableSecretStore(backing)
+        let session = DeviceSession(api: api, secrets: keychain, records: records)
+        await session.start()
+        await api.setRegister(.success(DeviceRegistration(grant: Fixture.deviceGrant(.pending), token: Fixture.token)))
+        await session.register(campusId: 1, label: "Manila Kids iPad 2")
+        await api.setStatus(.success(Fixture.deviceGrant(.approved)))
+        await session.refresh()
+        keychain.failReads = true
+
+        do {
+            _ = try await session.withCredential { _, _ -> String in
+                Issue.record("no call may be made while the credential cannot be read")
+                return "sent"
+            }
+            Issue.record("expected a failure")
+        } catch let failure as CheckinFailure {
+            #expect(failure == CheckinFailure.api(.invalidInput(DeviceSession.keychainReadMessage)))
+            #expect(!failure.outcomeUnknown) // nothing was sent, so a retry cannot duplicate it
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+        #expect(backing.current == Fixture.token)
+        #expect(session.state == .approved(Fixture.deviceGrant(.approved)))
+    }
+
+    // MARK: answered calls whose verification fails
+
+    @Test func answeredCallWhoseFollowUpKeychainReadFailsIsOutcomeUnknown() async {
+        let backing = InMemorySecretStore()
+        let keychain = UnreadableSecretStore(backing)
+        let session = DeviceSession(api: api, secrets: keychain, records: records)
+        await session.start()
+        await api.setRegister(.success(DeviceRegistration(grant: Fixture.deviceGrant(.pending), token: Fixture.token)))
+        await session.register(campusId: 1, label: "Manila Kids iPad 2")
+        await api.setStatus(.success(Fixture.deviceGrant(.approved)))
+        await session.refresh()
+
+        do {
+            _ = try await session.withCredential { [keychain] _, _ -> String in
+                keychain.failReads = true // the POST is answered; the follow-up check cannot read
+                return "sent"
+            }
+            Issue.record("expected the answer to be dropped")
+        } catch let failure as CheckinFailure {
+            // The server acted on the request; the flow must show it as maybe-recorded and demand an
+            // explicit confirm-retry (CheckinFailure.outcomeUnknown feeds maybeRecorded), never a plain failure.
+            #expect(failure.outcomeUnknown)
+            #expect(failure != CheckinFailure.notApproved)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
+    @Test func answeredCallWhoseCredentialVanishesIsOutcomeUnknown() async {
+        let session = session()
+        await registered(session)
+        await api.setStatus(.success(Fixture.deviceGrant(.approved)))
+        await session.refresh()
+
+        do {
+            _ = try await session.withCredential { [secrets] _, _ -> String in
+                try? secrets.delete() // the follow-up check finds the credential gone
+                return "sent"
+            }
+            Issue.record("expected the answer to be dropped")
+        } catch let failure as CheckinFailure {
+            #expect(failure.outcomeUnknown)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
+    @Test func answeredCallWhoseGrantLeavesApprovedIsOutcomeUnknown() async {
+        let session = session()
+        await registered(session)
+        await api.setStatus(.success(Fixture.deviceGrant(.approved)))
+        await session.refresh()
+
+        do {
+            _ = try await session.withCredential { _, _ -> String in
+                session.report(APIError.server(status: 403, code: .devicePending)) // state moved
+                return "sent"
+            }
+            Issue.record("expected the answer to be dropped")
+        } catch let failure as CheckinFailure {
+            #expect(failure.outcomeUnknown)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
     }
 
     // MARK: client and session together
