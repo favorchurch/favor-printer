@@ -54,6 +54,8 @@ final class DeviceSession {
         case .found:
             if let grant = record?.grant { state = Self.state(for: grant) }
             await refresh()
+            // No record to show and the status call failed: leave the launch spinner so the notice is visible.
+            if state == .launching { state = .unregistered }
         case .missing:
             records.clear()
             state = .unregistered

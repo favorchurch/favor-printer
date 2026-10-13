@@ -209,6 +209,17 @@ struct DeviceSessionTests {
         #expect(await api.statusTokens == [Fixture.token])
     }
 
+    @Test func launchWithSecretButNoRecordLeavesTheSpinnerWhenTheServerIsUnreachable() async {
+        try? secrets.write(Fixture.token)
+        await api.setStatus(.failure(.transport))
+        let session = session()
+        await session.start()
+
+        #expect(session.state == .unregistered)
+        #expect(session.notice == APIError.transport.message)
+        #expect(secrets.current == Fixture.token)
+    }
+
     @Test func launchWithRevokedRecordWipesLingeringSecretWithoutNetwork() async {
         try? secrets.write(Fixture.token)
         records.save(DeviceRecord(grant: Fixture.deviceGrant(.approved), revoked: true))

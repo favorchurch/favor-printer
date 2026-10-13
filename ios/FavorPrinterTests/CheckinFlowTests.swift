@@ -192,7 +192,8 @@ struct CheckinFlowTests {
         await call.value
 
         #expect(search.results == nil)
-        #expect(search.failure == .notApproved)
+        // The call was answered before the wipe, so its outcome is unknown, not a plain failure.
+        #expect(search.failure?.outcomeUnknown == true)
         #expect(session.state == .unregistered)
     }
 
