@@ -138,7 +138,7 @@ struct DeviceSessionTests {
         try? secrets.delete()
         await session.refresh()
 
-        #expect(session.state == .revoked(label: nil))
+        #expect(session.state == .revoked(label: "Manila Kids iPad 2"))
         #expect(await api.statusTokens.isEmpty)
     }
 

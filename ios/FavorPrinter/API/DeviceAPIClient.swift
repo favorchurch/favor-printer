@@ -88,9 +88,8 @@ struct DeviceAPIClient: DeviceAPI {
     // MARK: - Plumbing
 
     func makeRequest(path: String, method: String, query: [URLQueryItem] = []) -> URLRequest {
-        var components = URLComponents(url: baseURL.appending(path: "api/native/v1/\(path)"), resolvingAgainstBaseURL: false)!
-        if !query.isEmpty { components.queryItems = query }
-        var request = URLRequest(url: components.url!)
+        let url = baseURL.appending(path: "api/native/v1/\(path)")
+        var request = URLRequest(url: query.isEmpty ? url : url.appending(queryItems: query))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return request

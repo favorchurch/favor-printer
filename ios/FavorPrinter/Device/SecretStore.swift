@@ -44,17 +44,20 @@ struct KeychainSecretStore: SecretStore {
 
     func write(_ secret: String) throws {
         let data = Data(secret.utf8)
+        // Readable after first unlock so queued work can replay while the iPad is locked; never leaves the device.
+        let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        // The accessibility class is enforced on updates too, so an item left by an earlier
+        // build can never keep a class that would let the secret leave the device in a backup.
         let update = SecItemUpdate(
             identity as CFDictionary,
-            [kSecValueData as String: data] as CFDictionary
+            [kSecValueData as String: data, kSecAttrAccessible as String: accessible] as CFDictionary
         )
         if update == errSecSuccess { return }
         guard update == errSecItemNotFound else { throw KeychainError(status: update) }
 
         var add = identity
         add[kSecValueData as String] = data
-        // Readable after first unlock so queued work can replay while the iPad is locked; never leaves the device.
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        add[kSecAttrAccessible as String] = accessible
         let status = SecItemAdd(add as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }

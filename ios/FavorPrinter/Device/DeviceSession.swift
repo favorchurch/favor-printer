@@ -83,8 +83,8 @@ final class DeviceSession {
         guard !isBusy else { return }
         if automatic, let until = automaticRefreshPausedUntil, now() < until { return }
         guard let token = (try? secrets.read()) ?? nil else {
-            if case .pending = state { markRevoked(label: nil) }
-            else if case .approved = state { markRevoked(label: nil) }
+            // The credential vanished locally: same teardown as a 401, keeping the label for the screen.
+            if let grant = currentGrant { markRevoked(label: grant.label) }
             return
         }
         isBusy = true

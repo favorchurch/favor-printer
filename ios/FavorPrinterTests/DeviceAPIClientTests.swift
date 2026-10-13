@@ -172,6 +172,15 @@ struct DeviceAPIClientTests {
 
     // MARK: setup and messages
 
+    @Test func makeRequestEncodesQueryValuesIntoTheURL() throws {
+        let client = try DeviceAPIClient(baseURL: URL(string: "https://rsvp.favor.church")!)
+        let request = client.makeRequest(path: "checkin/contacts", method: "GET", query: [
+            .init(name: "query", value: "a&b=c ü"), .init(name: "limit", value: "20"),
+        ])
+        #expect(request.url?.absoluteString
+            == "https://rsvp.favor.church/api/native/v1/checkin/contacts?query=a%26b%3Dc%20%C3%BC&limit=20")
+    }
+
     @Test func clientRequiresHTTPS() {
         #expect(throws: APIError.insecureBaseURL) { try DeviceAPIClient(baseURL: URL(string: "http://rsvp.favor.church")!) }
         #expect(throws: APIError.insecureBaseURL) { try DeviceAPIClient(baseURL: URL(string: "https://")!) }
