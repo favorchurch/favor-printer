@@ -9,6 +9,18 @@ struct AppConfigTests {
         #expect(config.rsvpBaseURL.absoluteString == "https://rsvp.favor.church")
     }
 
+    @Test func trimsNewlinesAsWellAsWhitespaceFromTheConfiguredURL() throws {
+        let config = try AppConfig(info: ["RSVPBaseURL": "\n https://rsvp.favor.church \n"], build: .release)
+        #expect(config.rsvpBaseURL.absoluteString == "https://rsvp.favor.church")
+        let preview = try AppConfig(info: ["RSVPBaseURL": "\n\thttps://rsvp-preview.favor.church\t\n"], build: .debug)
+        #expect(preview.rsvpBaseURL.absoluteString == "https://rsvp-preview.favor.church")
+    }
+
+    @Test func aNewlineOnlyValueIsEmptyAndDebugFallsBackToThePreviewHost() throws {
+        let config = try AppConfig(info: ["RSVPBaseURL": "\n \n"], build: .debug)
+        #expect(config.rsvpBaseURL.absoluteString == "https://rsvp-preview.favor.church")
+    }
+
     @Test func rejectsInsecureValues() {
         #expect(throws: AppConfig.Failure.insecure) { try AppConfig(info: ["RSVPBaseURL": "http://rsvp.favor.church"], build: .debug) }
         #expect(throws: AppConfig.Failure.insecure) { try AppConfig(info: ["RSVPBaseURL": "http://rsvp.favor.church"], build: .release) }

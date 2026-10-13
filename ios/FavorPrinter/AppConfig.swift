@@ -42,7 +42,8 @@ struct AppConfig: Sendable, Equatable {
     }
 
     init(info: [String: Any]?, build: Build = .current) throws {
-        let raw = (info?["RSVPBaseURL"] as? String)?.trimmingCharacters(in: .whitespaces)
+        // A value pasted or templated into the plist can carry newlines as well as spaces.
+        let raw = (info?["RSVPBaseURL"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         if raw == nil || raw?.isEmpty == true {
             // Debug defaults to the preview host; a Release build must be configured.
             guard build == .debug, let preview = URL(string: "https://\(Self.previewHost)") else {
