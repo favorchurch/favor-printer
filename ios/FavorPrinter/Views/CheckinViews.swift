@@ -427,9 +427,8 @@ struct PrintView: View {
             }
         }
         .navigationTitle("Print")
-        .task {
-            if model.phase == .tracking { await model.trackUntilSettled() } else { await model.loadPrinters() }
-        }
+        .task { await model.start() }
+        .onDisappear { model.stop() }
     }
 
     @ViewBuilder private var chooseSections: some View {
@@ -456,7 +455,7 @@ struct PrintView: View {
             FailureText(failure: model.printersFailure)
         }
         Section {
-            Button("Print") { Task { await model.enqueue(); await model.trackUntilSettled() } }
+            Button("Print") { Task { await model.enqueueAndTrack() } }
                 .disabled(!model.canEnqueue)
                 .accessibilityLabel("Print")
                 .accessibilityIdentifier("print-button")

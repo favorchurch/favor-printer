@@ -72,11 +72,19 @@ final class CheckinService {
 
     var isOnline: Bool { connectivity.isOnline }
 
-    /// Marks a write as in flight. False when the same write is already being sent, even from a screen
-    /// the volunteer has since left and reopened, so a second tap never becomes a second request.
-    func claim(_ key: String) -> Bool { activeKeys.insert(key).inserted }
+    /// The in-flight key for checking one child in to one event. Every path that writes a check-in
+    /// (single or family, from any screen) claims this per child, so one child is never sent twice at once.
+    static func checkInKey(eventId: String, childId: String) -> String { "check-in|\(eventId)|\(childId)" }
 
-    func release(_ key: String) { activeKeys.remove(key) }
+    /// Marks writes as in flight, all or none. False when any of them is already being sent, even from a
+    /// screen the volunteer has since left and reopened, so a second tap never becomes a second request.
+    func claim(_ keys: [String]) -> Bool {
+        guard activeKeys.isDisjoint(with: keys) else { return false }
+        activeKeys.formUnion(keys)
+        return true
+    }
+
+    func release(_ keys: [String]) { activeKeys.subtract(keys) }
 
     func call<T: Sendable>(_ operation: (any CheckinAPI, String, Int) async throws -> T) async throws -> T {
         guard connectivity.isOnline else { throw CheckinFailure.offline }

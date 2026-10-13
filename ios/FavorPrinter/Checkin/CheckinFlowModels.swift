@@ -133,12 +133,12 @@ final class EventCheckinModel {
 
     func checkIn() async {
         guard canSubmit else { return }
-        let key = "check-in|\(target.occurrence.eventId)|\(contact.contactId)"
-        guard service.claim(key) else {
+        let keys = [CheckinService.checkInKey(eventId: target.occurrence.eventId, childId: contact.contactId)]
+        guard service.claim(keys) else {
             phase = .refused("This check-in is already being sent. Wait a moment before trying again.")
             return
         }
-        defer { service.release(key) }
+        defer { service.release(keys) }
         phase = .submitting
         let target = target
         let contactId = contact.contactId
@@ -286,14 +286,14 @@ final class FamilyCheckinModel {
 
     func submit() async {
         guard phase == .ready, submitBlock == nil, let anchorAliasId else { return }
-        let key = "family|\(target.occurrence.eventId)|\(anchorAliasId)"
-        guard service.claim(key) else {
-            phase = .failed(message: "This family is already being checked in. Reload the family to see the result.", maybeRecorded: true)
+        let children = selectedAliasIds.sorted()
+        let keys = children.map { CheckinService.checkInKey(eventId: target.occurrence.eventId, childId: String($0)) }
+        guard service.claim(keys) else {
+            phase = .failed(message: "A child here is already being checked in. Reload the family to see the result.", maybeRecorded: true)
             return
         }
-        defer { service.release(key) }
+        defer { service.release(keys) }
         phase = .submitting
-        let children = selectedAliasIds.sorted()
         let target = target
         let pickup = pickupChoiceId.map { FamilyCheckinRequest.Pickup(choiceId: $0, remember: rememberPickup) }
         let print = printLabels
@@ -354,6 +354,9 @@ final class PrintModel {
     private(set) var statusFailure: CheckinFailure?
     private(set) var isRefreshing = false
     private var isTracking = false
+    /// False once the screen has gone away, so nothing starts polling for a screen nobody sees.
+    private var isVisible = true
+    private var tracker: Task<Void, Never>?
     var printerId: String?
 
     private let service: CheckinService
@@ -439,10 +442,41 @@ final class PrintModel {
         }
     }
 
+    /// The screen appeared: follow the print status again if a request was accepted, else load the printers.
+    func start() async {
+        isVisible = true
+        if phase == .tracking { startTracking() } else { await loadPrinters() }
+    }
+
+    /// The screen went away: stop polling. A print request already sent is left to finish.
+    func stop() {
+        isVisible = false
+        tracker?.cancel()
+        tracker = nil
+    }
+
+    /// Print button: send the request, then follow its status while the screen is showing.
+    func enqueueAndTrack() async {
+        await enqueue()
+        startTracking()
+    }
+
     /// Refresh button: fetch now even when the last status looks settled, then keep following it.
     func refresh() async {
         await refreshStatus()
-        await trackUntilSettled()
+        startTracking()
+    }
+
+    /// Runs the poll in a task the model can cancel from `stop()`. Replaces any poll already running,
+    /// after that one has wound down, because only one poll may run at a time.
+    private func startTracking() {
+        guard isVisible else { return }
+        let previous = tracker
+        previous?.cancel()
+        tracker = Task {
+            await previous?.value
+            await trackUntilSettled()
+        }
     }
 
     func refreshStatus() async {
@@ -460,9 +494,9 @@ final class PrintModel {
             }
             statusFailure = nil
         } catch let failure as CheckinFailure {
-            statusFailure = failure
+            if !Task.isCancelled { statusFailure = failure }
         } catch {
-            statusFailure = .api(.transport)
+            if !Task.isCancelled { statusFailure = .api(.transport) }
         }
     }
 

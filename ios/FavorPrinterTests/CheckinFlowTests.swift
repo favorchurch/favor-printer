@@ -22,6 +22,10 @@ actor FakeCheckinAPI: CheckinAPI {
     var contactsHandler: (@Sendable (String) async -> [CheckinContact])?
     /// Runs inside `checkIn` before it answers, to hold a request in flight.
     var checkInGate: (@Sendable () async -> Void)?
+    /// Runs inside `familyCheckIn` before it answers, to hold a request in flight.
+    var familyCheckInGate: (@Sendable () async -> Void)?
+    /// Runs inside `printStatus` before it answers; throwing here fails the request.
+    var statusGate: (@Sendable () async throws -> Void)?
     private(set) var calls: [String] = []
     private(set) var tokens: [String] = []
     private(set) var familyRequests: [FamilyCheckinRequest] = []
@@ -31,6 +35,8 @@ actor FakeCheckinAPI: CheckinAPI {
     func set(contactsGate gate: (@Sendable () async -> Void)?) { contactsGate = gate }
     func set(contactsHandler handler: (@Sendable (String) async -> [CheckinContact])?) { contactsHandler = handler }
     func set(checkInGate gate: (@Sendable () async -> Void)?) { checkInGate = gate }
+    func set(familyCheckInGate gate: (@Sendable () async -> Void)?) { familyCheckInGate = gate }
+    func set(statusGate gate: (@Sendable () async throws -> Void)?) { statusGate = gate }
     func set(checkIn: Result<CheckinOutcome, APIError>) { checkInResult = checkIn }
     func set(family: Result<KidsFamilyResult, APIError>) { familyResult = family }
     func set(familyCheckIn: Result<FamilyCheckinResult, APIError>) { familyCheckInResult = familyCheckIn }
@@ -57,7 +63,9 @@ actor FakeCheckinAPI: CheckinAPI {
         return try checkInResult.get()
     }
     func familyCheckIn(token: String, _ request: FamilyCheckinRequest) async throws -> FamilyCheckinResult {
-        record("familyCheckIn", token); familyRequests.append(request); return try familyCheckInResult.get()
+        record("familyCheckIn", token); familyRequests.append(request)
+        if let familyCheckInGate { await familyCheckInGate() }
+        return try familyCheckInResult.get()
     }
     func printers(token: String, campusId: Int, definitionName: String, eventId: String) async throws -> [PairablePrinter] {
         record("printers", token); return try printersResult.get()
@@ -67,6 +75,7 @@ actor FakeCheckinAPI: CheckinAPI {
     }
     func printStatus(token: String, campusId: Int, definitionName: String, eventId: String, printerId: String, attendanceIds: [Int]) async throws -> PrintStatus {
         record("status", token)
+        if let statusGate { try await statusGate() }
         if statusResults.count > 1 { return try statusResults.removeFirst().get() }
         return try (statusResults.first ?? .failure(.transport)).get()
     }
@@ -621,5 +630,189 @@ struct CheckinFlowTests {
         #expect(print.enqueueMessage?.contains("unavailable") == true)
         #expect(checkIn.phase == .done(attendanceId: 7))
         #expect(await api.calls.filter { $0 == "checkIn" }.count == 1)
+    }
+
+    // MARK: one child, one request at a time
+
+    private func child(_ id: String) -> CheckinContact {
+        CheckinContact(contactId: id, personId: nil, firstName: "Kid", lastName: id, preferredName: nil, age: 8, gender: nil, campusIds: ["1"])
+    }
+
+    private func okFamilyResult() -> FamilyCheckinResult {
+        FamilyCheckinResult(
+            children: [FamilyChildOutcome(childAliasId: 1, status: .checkedIn, attendanceId: 9, targets: [])],
+            printAttendanceIds: [9], pickup: .init(saved: true), print: .skipped
+        )
+    }
+
+    @Test func familyCannotSendAChildWhoseSingleCheckInIsInFlight() async {
+        await session.refresh()
+        await api.set(family: .success(family()))
+        await api.set(familyCheckIn: .success(okFamilyResult()))
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await api.set(checkInGate: { release.yield(); try? await Task.sleep(for: .milliseconds(200)) })
+        // Child 1 is checked in on their own page while the family page for another anchor lists them.
+        let single = EventCheckinModel(service: service, target: target, contact: child("1"))
+        let call = Task { await single.checkIn() }
+        for await _ in entered { break }
+
+        let family = FamilyCheckinModel(service: service, target: target, contact: contact)
+        await family.load()
+        await family.submit()
+        #expect(await api.familyRequests.isEmpty)
+        guard case .failed(_, true) = family.phase else { Issue.record("expected the family to be held back"); return }
+
+        await call.value
+        #expect(single.phase == .done(attendanceId: 7))
+        await family.retryAfterFailure()
+        await family.submit()
+        #expect(await api.familyRequests.count == 1)
+    }
+
+    @Test func singleCheckInCannotSendAChildWhoseFamilyCheckInIsInFlight() async {
+        await session.refresh()
+        await api.set(family: .success(family()))
+        await api.set(familyCheckIn: .success(okFamilyResult()))
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await api.set(familyCheckInGate: { release.yield(); try? await Task.sleep(for: .milliseconds(200)) })
+        let family = FamilyCheckinModel(service: service, target: target, contact: contact)
+        await family.load()
+        let call = Task { await family.submit() }
+        for await _ in entered { break }
+
+        let single = EventCheckinModel(service: service, target: target, contact: child("1"))
+        await single.checkIn()
+        #expect(await api.calls.filter { $0 == "checkIn" }.isEmpty)
+        guard case .refused = single.phase else { Issue.record("expected the single check-in to be refused"); return }
+        await call.value
+    }
+
+    @Test func twoFamilyScreensCannotSendTheSameChildAtOnce() async {
+        await session.refresh()
+        await api.set(family: .success(family()))
+        await api.set(familyCheckIn: .success(okFamilyResult()))
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await api.set(familyCheckInGate: { release.yield(); try? await Task.sleep(for: .milliseconds(200)) })
+        // Reached from two different adults of the same family, so the anchors differ but child 1 is shared.
+        let first = FamilyCheckinModel(service: service, target: target, contact: contact)
+        let second = FamilyCheckinModel(service: service, target: target, contact: child("777"))
+        await first.load()
+        await second.load()
+        let call = Task { await first.submit() }
+        for await _ in entered { break }
+
+        await second.submit()
+        #expect(await api.familyRequests.count == 1)
+        guard case .failed(_, true) = second.phase else { Issue.record("expected the second screen to be held back"); return }
+        await call.value
+    }
+
+    @Test func aHeldBackFamilyLeavesNoClaimsBehind() async {
+        await session.refresh()
+        // Two selectable children: only child 2 is held by a single check-in, so child 1 must not stay claimed.
+        let both = KidsFamilyResult.found(.init(
+            siblings: [
+                .eligible(personAliasId: 1, displayName: "A", age: 9, checkedIn: false, isAdult: false),
+                .eligible(personAliasId: 2, displayName: "B", age: 7, checkedIn: false, isAdult: false),
+            ],
+            choices: [], selectedChoiceId: nil, remember: false, remembered: nil
+        ))
+        await api.set(family: .success(both))
+        await api.set(familyCheckIn: .success(okFamilyResult()))
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await api.set(checkInGate: { release.yield(); try? await Task.sleep(for: .milliseconds(200)) })
+        let single = EventCheckinModel(service: service, target: target, contact: child("2"))
+        let call = Task { await single.checkIn() }
+        for await _ in entered { break }
+
+        let family = FamilyCheckinModel(service: service, target: target, contact: contact)
+        await family.load()
+        await family.submit()
+        #expect(await api.familyRequests.isEmpty)
+        await call.value
+
+        await api.set(checkInGate: nil)
+        let other = EventCheckinModel(service: service, target: target, contact: child("1"))
+        await other.checkIn()
+        #expect(other.phase == .done(attendanceId: 7))
+    }
+
+    // MARK: print status polling follows the screen
+
+    private func workingStatus() -> Result<PrintStatus, APIError> {
+        let job = PrintJob(id: "j", status: "queued", reviewReason: nil, kind: "child", lastError: nil, canReprint: false)
+        return .success(.enrolled(chip: .init(tone: "info", text: "x"), printerName: "P", jobs: [job]))
+    }
+
+    private func statusCalls() async -> Int { await api.calls.filter { $0 == "status" }.count }
+
+    private func waitForStatusCalls(atLeast count: Int) async {
+        for _ in 0..<500 {
+            if await statusCalls() >= count { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    @Test func leavingThePrintScreenStopsPolling() async {
+        await session.refresh()
+        await api.set(statuses: [workingStatus()])
+        let model = PrintModel(service: service, target: target, attendanceIds: [9], alreadyQueuedOn: "p1", pollInterval: .milliseconds(5), maxPolls: 10_000)
+        await model.start()
+        await waitForStatusCalls(atLeast: 3)
+
+        model.stop()
+        try? await Task.sleep(for: .milliseconds(50))
+        let atStop = await statusCalls()
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(await statusCalls() == atStop)
+        #expect(atStop >= 3)
+    }
+
+    @Test func leavingWhileAStatusRequestIsInFlightShowsNoFailure() async {
+        await session.refresh()
+        await api.set(statuses: [workingStatus()])
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        // Throws when its task is cancelled, as a cancelled URLSession request does.
+        await api.set(statusGate: { release.yield(); try await Task.sleep(for: .seconds(30)) })
+        let model = PrintModel(service: service, target: target, attendanceIds: [9], alreadyQueuedOn: "p1", pollInterval: .milliseconds(5))
+        await model.start()
+        for await _ in entered { break }
+
+        model.stop()
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(model.statusFailure == nil)
+        #expect(await statusCalls() == 1)
+    }
+
+    @Test func comingBackToThePrintScreenResumesPolling() async {
+        await session.refresh()
+        await api.set(statuses: [workingStatus()])
+        let model = PrintModel(service: service, target: target, attendanceIds: [9], alreadyQueuedOn: "p1", pollInterval: .milliseconds(5), maxPolls: 10_000)
+        await model.start()
+        await waitForStatusCalls(atLeast: 2)
+        model.stop()
+        try? await Task.sleep(for: .milliseconds(50))
+        let atStop = await statusCalls()
+
+        await model.start()
+        await waitForStatusCalls(atLeast: atStop + 2)
+        #expect(await statusCalls() >= atStop + 2)
+        model.stop()
+    }
+
+    @Test func aPrintFinishingAfterTheScreenWentAwayDoesNotStartPolling() async {
+        await session.refresh()
+        await api.set(enqueue: .success(.queued(created: true, jobIds: ["j"], refused: [])))
+        await api.set(statuses: [workingStatus()])
+        let model = PrintModel(service: service, target: target, attendanceIds: [9], pollInterval: .milliseconds(5), maxPolls: 10_000)
+        model.printerId = "p1"
+        model.stop()
+        await model.enqueueAndTrack()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(model.phase == .tracking)
+        // The request was still sent, and the one status read that follows it happened, but nothing polls on.
+        #expect(await api.enqueueRequests.count == 1)
+        #expect(await statusCalls() == 1)
     }
 }
