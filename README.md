@@ -25,7 +25,7 @@ Releases on this repository are the app's download and auto-update source.
 
 ## Development
 
-Requires Node 22.13 or newer and pnpm 10 (`corepack enable`). Install with pnpm only.
+Requires Node 22.13 or newer and pnpm 10 (`corepack enable`). Install with pnpm only. Agents: see [AGENTS.md](AGENTS.md) for the testing policy.
 
 ```sh
 pnpm install
