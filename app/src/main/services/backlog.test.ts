@@ -95,7 +95,7 @@ const queuedOf = (model: BacklogModel) => model.claimed - drainedOf(model);
 function expectedWarning(model: BacklogModel): string | null {
   const drained = drainedOf(model);
   const queued = queuedOf(model);
-  if (model.progressAt === null || queued === 0 || model.lastQueued === 0 || drained !== model.lastDrained) {
+  if (model.progressAt === null || model.now < model.progressAt || queued === 0 || model.lastQueued === 0 || drained !== model.lastDrained) {
     model.progressAt = model.now;
   }
   model.lastDrained = drained;
@@ -131,6 +131,8 @@ const backlogCommands = [
       ),
     ),
   fc.integer({ min: 1, max: 20_000 }).map((ms) => poll(`wait ${ms}ms`, (model) => void (model.now += ms))),
+  // The wall clock can step backwards (NTP, manual change): that restarts the stuck window, never fires it.
+  fc.integer({ min: 1, max: 40_000 }).map((ms) => poll(`clock back ${ms}ms`, (model) => void (model.now = Math.max(0, model.now - ms)))),
   fc.integer({ min: 0, max: 3 }).map((claimed) =>
     poll(`relay restart, ${claimed} claimed`, (model) => Object.assign(model, { claimed, sent: 0, failed: 0, ambiguous: 0 })),
   ),
@@ -156,6 +158,65 @@ describe("BacklogMonitor model", () => {
           }),
           sequence,
         );
+      }),
+      propertyParams(),
+    );
+  });
+});
+
+/** Anchor cases stated without the model, so the model and the monitor cannot share a misreading. */
+describe("BacklogMonitor anchors", () => {
+  const counts = (claimed: number, sent = 0) => ({ claimed, sent, failed: 0, ambiguous: 0 });
+
+  it("warns stuck when a short queue has not drained for longer than the window", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: THRESHOLD - 1 }), fc.integer({ min: STUCK_MS, max: 10 * STUCK_MS }), (queued, wait) => {
+        let now = 0;
+        const monitor = new BacklogMonitor({ threshold: THRESHOLD, stuckTimeoutMs: STUCK_MS, now: () => now });
+        expect(monitor.update(counts(queued))).toBeNull();
+        now = wait;
+        expect(monitor.update(counts(queued))).toBe(STUCK);
+      }),
+      propertyParams(),
+    );
+  });
+
+  it("never warns while a short queue drains at least once per window", () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer({ min: 1, max: STUCK_MS - 1 }), { minLength: 1, maxLength: 20 }), (gaps) => {
+        let now = 0;
+        const monitor = new BacklogMonitor({ threshold: THRESHOLD, stuckTimeoutMs: STUCK_MS, now: () => now });
+        const claimed = gaps.length + 1;
+        expect(monitor.update(counts(Math.min(claimed, THRESHOLD - 1)))).toBeNull();
+        gaps.forEach((gap, sent) => {
+          now += gap;
+          const queuedClaim = Math.min(claimed, sent + THRESHOLD - 1);
+          expect(monitor.update(counts(queuedClaim, sent + 1))).toBeNull();
+        });
+      }),
+      propertyParams(),
+    );
+  });
+
+  it("measures the stuck window from the stepped-back time after the clock goes backwards", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 10 * STUCK_MS }), fc.integer({ min: 1, max: 10 * STUCK_MS }), (start, back) => {
+        let now = start + back;
+        const monitor = new BacklogMonitor({ threshold: THRESHOLD, stuckTimeoutMs: STUCK_MS, now: () => now });
+        expect(monitor.update(counts(1))).toBeNull();
+        now = start;
+        expect(monitor.update(counts(1))).toBeNull();
+        now = start + STUCK_MS;
+        expect(monitor.update(counts(1))).toBe(STUCK);
+      }),
+      propertyParams(),
+    );
+  });
+
+  it("warns growing whenever the queue reaches the threshold", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: THRESHOLD, max: 100 }), (queued) => {
+        expect(new BacklogMonitor({ threshold: THRESHOLD }).update(counts(queued))).toMatch(/backlog is growing/);
       }),
       propertyParams(),
     );
