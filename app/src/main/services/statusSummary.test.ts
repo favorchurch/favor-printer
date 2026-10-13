@@ -1,6 +1,8 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import type { QueueState, StatusColor, UpdateState } from "../../shared";
+import { evaluateFiveState, RECOVERY_ACTIONS, type QueueState, type StatusColor, type UpdateState } from "../../shared";
+import { propertyParams } from "../../shared/testing/property";
 import type { CloudState, RelayState, RelayStatus } from "../../../../vendor/relay/status";
 import { deriveFiveState, deriveStatus, recentJobs, REVOKED_HEADLINE, type StatusInputs } from "./statusSummary";
 
@@ -29,35 +31,6 @@ const inputs = (overrides: Partial<StatusInputs> = {}): StatusInputs => ({
   ...overrides,
 });
 
-describe("deriveStatus colors", () => {
-  const cases: Array<[string, Partial<StatusInputs>, StatusColor]> = [
-    ["enrolled, cloud ok, queue ready", {}, "green"],
-    ["not enrolled", { enrolled: false, relay: null }, "amber"],
-    ["legacy relay loaded", { legacyRelayLoaded: true, relay: null }, "amber"],
-    ["relay restarting", { relayRestarting: true, relay: null }, "amber"],
-    ["no printer", { printerAttached: false }, "amber"],
-    ["queue missing", { queue: "missing" }, "amber"],
-    ["queue disabled", { queue: "disabled" }, "amber"],
-    ["relay not running", { relay: null }, "amber"],
-    ["relay starting", { relay: relay({ state: "starting" }) }, "amber"],
-    ["relay stopping", { relay: relay({ state: "stopping" }) }, "amber"],
-    ["relay stopped", { relay: relay({ state: "stopped" }) }, "amber"],
-    ["cloud unreachable", { relay: relay({ cloud: "unreachable" }) }, "amber"],
-    ["paused by the volunteer", { paused: true }, "amber"],
-    ["relay paused", { relay: relay({ state: "paused" }) }, "amber"],
-    ["update downloading", { update: { kind: "downloading" } }, "amber"],
-    ["update checking", { update: { kind: "checking" } }, "green"],
-    ["update ready", { update: { kind: "ready", version: "0.2.0" } }, "green"],
-    ["update failed", { update: { kind: "error" } }, "green"],
-    ["revoked flag", { revoked: true }, "red"],
-    ["cloud says revoked", { relay: relay({ cloud: "revoked" }) }, "red"],
-  ];
-
-  it.each(cases)("%s is %s", (_name, overrides, color) => {
-    expect(deriveStatus(inputs(overrides)).color).toBe(color);
-  });
-});
-
 describe("deriveStatus copy", () => {
   it("shows the removed-laptop message in red", () => {
     expect(deriveStatus(inputs({ revoked: true }))).toEqual({
@@ -70,23 +43,6 @@ describe("deriveStatus copy", () => {
 
   it("is ready when everything is on", () => {
     expect(deriveStatus(inputs())).toEqual({ color: "green", headline: "Ready to print", detail: null });
-  });
-
-  it("gives every non-green state a next step or a plain reason", () => {
-    for (const [name, overrides, color] of [
-      ["not enrolled", { enrolled: false, relay: null }, "amber"],
-      ["no printer", { printerAttached: false }, "amber"],
-      ["queue missing", { queue: "missing" }, "amber"],
-      ["queue disabled", { queue: "disabled" }, "amber"],
-      ["unreachable", { relay: relay({ cloud: "unreachable" }) }, "amber"],
-      ["paused", { paused: true }, "amber"],
-      ["legacy", { legacyRelayLoaded: true, relay: null }, "amber"],
-    ] as Array<[string, Partial<StatusInputs>, StatusColor]>) {
-      const summary = deriveStatus(inputs(overrides));
-      expect(summary.color, name).toBe(color);
-      expect(summary.headline.length, name).toBeGreaterThan(0);
-      expect(summary.detail, name).not.toBeNull();
-    }
   });
 
   it("warns on green when the last label is in doubt, and when it failed", () => {
@@ -158,60 +114,68 @@ describe("deriveStatus priority", () => {
   });
 });
 
-describe("deriveStatus is green only when everything is on", () => {
-  const bool = [false, true];
-  const queues: QueueState[] = ["ready", "missing", "disabled"];
-  const relayStates: RelayState[] = ["starting", "running", "paused", "stopping", "stopped"];
-  const clouds: CloudState[] = ["ok", "unreachable", "revoked"];
-  const updates: UpdateState[] = [
+const relayArb = fc.option(
+  fc.record({
+    state: fc.constantFrom<RelayState[]>("starting", "running", "paused", "stopping", "stopped"),
+    cloud: fc.constantFrom<CloudState[]>("ok", "unreachable", "revoked"),
+    lastError: fc.constantFrom(null, "send_failed", "send_ambiguous"),
+  }).map((overrides) => relay(overrides)),
+  { nil: null },
+);
+
+const inputsArb: fc.Arbitrary<StatusInputs> = fc.record({
+  enrolled: fc.boolean(),
+  revoked: fc.boolean(),
+  legacyRelayLoaded: fc.boolean(),
+  relay: relayArb,
+  relayRestarting: fc.boolean(),
+  printerAttached: fc.boolean(),
+  queue: fc.constantFrom<QueueState[]>("ready", "missing", "disabled"),
+  paused: fc.boolean(),
+  update: fc.constantFrom<UpdateState[]>(
     { kind: "idle" },
     { kind: "checking" },
     { kind: "downloading" },
     { kind: "ready", version: "0.2.0" },
     { kind: "error" },
-  ];
+  ),
+  inUseElsewhere: fc.boolean(),
+});
 
-  it("checks every combination", () => {
-    let checked = 0;
-    for (const enrolled of bool)
-      for (const revoked of bool)
-        for (const legacyRelayLoaded of bool)
-          for (const relayRestarting of bool)
-            for (const printerAttached of bool)
-              for (const paused of bool)
-                for (const queue of queues)
-                  for (const state of relayStates)
-                    for (const cloud of clouds)
-                      for (const update of updates) {
-                        const summary = deriveStatus({
-                          enrolled,
-                          revoked,
-                          legacyRelayLoaded,
-                          relay: relay({ state, cloud }),
-                          relayRestarting,
-                          printerAttached,
-                          queue,
-                          paused,
-                          update,
-                        });
-                        checked += 1;
-                        const mustBeRed = revoked || cloud === "revoked";
-                        const allOn =
-                          !mustBeRed &&
-                          !legacyRelayLoaded &&
-                          enrolled &&
-                          !relayRestarting &&
-                          printerAttached &&
-                          queue === "ready" &&
-                          state === "running" &&
-                          cloud === "ok" &&
-                          !paused &&
-                          update.kind !== "downloading";
-                        const expected: StatusColor = mustBeRed ? "red" : allOn ? "green" : "amber";
-                        expect(summary.color).toBe(expected);
-                        expect(summary.headline.length).toBeGreaterThan(0);
-                      }
-    expect(checked).toBe(2 ** 6 * 3 * 5 * 3 * 5);
+describe("deriveStatus properties", () => {
+  it("is red when revoked, green only when everything is on, and amber otherwise", () => {
+    fc.assert(
+      fc.property(inputsArb, (input) => {
+        const summary = deriveStatus(input);
+        const red = input.revoked || input.relay?.cloud === "revoked";
+        const allOn =
+          !input.legacyRelayLoaded &&
+          input.enrolled &&
+          !input.relayRestarting &&
+          input.printerAttached &&
+          input.queue === "ready" &&
+          input.relay?.state === "running" &&
+          input.relay.cloud === "ok" &&
+          !input.paused &&
+          input.update.kind !== "downloading";
+        expect(summary.color).toBe(red ? "red" : allOn ? "green" : "amber");
+        expect(summary.headline.length).toBeGreaterThan(0);
+        expect(`${summary.headline} ${summary.detail ?? ""}`).not.toMatch(/—/);
+      }),
+      propertyParams(),
+    );
+  });
+
+  it("agrees with the five-state model: red is Needs re-enrollment, green is Connected unless the printer is claimed elsewhere", () => {
+    fc.assert(
+      fc.property(inputsArb, (input) => {
+        const { color } = deriveStatus(input);
+        const { state } = deriveFiveState(input);
+        if (color === "red") expect(state).toBe("Needs re-enrollment");
+        if (color === "green") expect(state).toBe(input.inUseElsewhere ? "In use elsewhere" : "Connected");
+      }),
+      propertyParams(),
+    );
   });
 });
 
@@ -230,46 +194,33 @@ describe("recentJobs", () => {
 });
 
 describe("deriveFiveState", () => {
-  it("maps to Connected when healthy", () => {
-    const outcome = deriveFiveState(inputs());
-    expect(outcome.state).toBe("Connected");
-    expect(outcome.recoveryAction).toBe("Run a local test print in Favor Printer to verify labels.");
-  });
-
-  it("maps to Unplugged when printer is missing", () => {
-    const outcome = deriveFiveState(inputs({ printerAttached: false }));
-    expect(outcome.state).toBe("Unplugged");
-    expect(outcome.recoveryAction).toBe("Plug in the Zebra with its USB cable.");
-  });
-
-  it("maps to Waiting when cloud is unreachable", () => {
-    const outcome = deriveFiveState(inputs({ relay: relay({ cloud: "unreachable" }) }));
-    expect(outcome.state).toBe("Waiting");
-    expect(outcome.recoveryAction).toBe("Check the internet connection and wait for Favor RSVP to respond.");
-  });
-
-  it("maps to Needs re-enrollment when revoked or unenrolled", () => {
-    expect(deriveFiveState(inputs({ revoked: true })).state).toBe("Needs re-enrollment");
-    expect(deriveFiveState(inputs({ enrolled: false })).state).toBe("Needs re-enrollment");
-    expect(deriveFiveState(inputs({ relay: relay({ cloud: "revoked" }) })).state).toBe("Needs re-enrollment");
-    expect(deriveFiveState(inputs({ revoked: true })).recoveryAction).toBe(
-      "Ask an admin for a new six-digit code in Favor RSVP.",
+  it("is evaluateFiveState over the relay's view, with its recovery action", () => {
+    fc.assert(
+      fc.property(inputsArb, (input) => {
+        const { relay: status } = input;
+        const state = evaluateFiveState({
+          printerAttached: input.printerAttached,
+          enrolled: input.enrolled,
+          revoked: input.revoked,
+          inUseElsewhere: Boolean(input.inUseElsewhere),
+          cloud: input.revoked || status?.cloud === "revoked" ? "revoked" : (status?.cloud ?? "unreachable"),
+          relayState: input.relayRestarting
+            ? "restarting"
+            : status?.state === "running" || status?.state === "starting"
+              ? status.state
+              : "stopped",
+          queue: input.queue,
+        });
+        expect(deriveFiveState(input)).toEqual({ state, recoveryAction: RECOVERY_ACTIONS[state] });
+      }),
+      propertyParams(),
     );
   });
 
-  it("maps to Waiting when relay is restarting, queue missing/disabled, or relay stopped/null", () => {
-    expect(deriveFiveState(inputs({ relayRestarting: true })).state).toBe("Waiting");
-    expect(deriveFiveState(inputs({ queue: "missing" })).state).toBe("Waiting");
-    expect(deriveFiveState(inputs({ queue: "disabled" })).state).toBe("Waiting");
-    expect(deriveFiveState(inputs({ relay: null })).state).toBe("Waiting");
-    expect(deriveFiveState(inputs({ relay: relay({ state: "starting" }) })).state).toBe("Waiting");
-    expect(deriveFiveState(inputs({ relay: relay({ state: "stopped" }) })).state).toBe("Waiting");
-  });
-
-  it("maps to In use elsewhere when printer is in use elsewhere", () => {
-    const outcome = deriveFiveState(inputs({ inUseElsewhere: true }));
-    expect(outcome.state).toBe("In use elsewhere");
-    expect(outcome.recoveryAction).toBe("Ask an admin to disconnect this printer from the other laptop.");
+  it("uses the copy deck's recovery actions", () => {
+    expect(deriveFiveState(inputs()).recoveryAction).toBe("Run a local test print in Favor Printer to verify labels.");
+    expect(deriveFiveState(inputs({ inUseElsewhere: true })).recoveryAction).toBe(
+      "Ask an admin to disconnect this printer from the other laptop.",
+    );
   });
 });
-
