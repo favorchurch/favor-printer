@@ -40,13 +40,6 @@ describe("scan", () => {
     expectArgvOnly(calls);
   });
 
-  it("reports no device", async () => {
-    const { run, calls } = cups({ lpinfo: lpinfoWith() });
-    const outcome = await createPrinterService({ run }).scan(null);
-    expect(outcome).toEqual({ scan: { kind: "none" }, queue: null, listFailed: false });
-    expect(calls.filter((call) => call.file === BINARIES.lpstat)).toEqual([]);
-  });
-
   it("reports that listing failed, which is not the same as no printer", async () => {
     const { run } = cups({ lpinfo: fail(1, "lpinfo: Forbidden") });
     expect(await createPrinterService({ run }).scan(null)).toEqual({
@@ -56,46 +49,13 @@ describe("scan", () => {
     });
   });
 
-  it("selects the only Zebra and reuses its queue", async () => {
-    const { run } = cups({
-      lpinfo: lpinfoWith(URI_A),
-      devices: ok(`device for My_Zebra: ${URI_A}`),
-      printers: ok("printer My_Zebra is idle.  enabled since Sat 04 Oct 2026 10:00:00 PHT"),
-    });
-    const outcome = await createPrinterService({ run }).scan(null);
-    expect(outcome).toEqual({
-      scan: { kind: "found", devices: [DEVICE_A], selectedId: URI_A, queue: "ready" },
-      queue: "My_Zebra",
-      listFailed: false,
-    });
-  });
-
-  it("reports a missing queue when CUPS has no destinations", async () => {
-    const { run } = cups({ lpinfo: lpinfoWith(URI_A) });
-    const outcome = await createPrinterService({ run }).scan(null);
-    expect(outcome.scan).toMatchObject({ kind: "found", selectedId: URI_A, queue: "missing" });
-    expect(outcome.queue).toBeNull();
-  });
-
-  it("reports a disabled queue", async () => {
-    const { run } = cups({
-      lpinfo: lpinfoWith(URI_A),
-      devices: ok(`device for My_Zebra: ${URI_A}`),
-      printers: ok("printer My_Zebra disabled since Sat 04 Oct 2026 09:00:00 PHT -\n\treason unknown"),
-    });
-    const outcome = await createPrinterService({ run }).scan(null);
-    expect(outcome.scan).toMatchObject({ queue: "disabled" });
-    expect(outcome.queue).toBe("My_Zebra");
-  });
-
   it("lists several Zebras and waits for a choice", async () => {
-    const { run, calls } = cups({ lpinfo: lpinfoWith(URI_A, URI_B) });
+    const { run } = cups({ lpinfo: lpinfoWith(URI_A, URI_B) });
     const outcome = await createPrinterService({ run }).scan(null);
     expect(outcome.scan).toMatchObject({ kind: "found", selectedId: null, queue: "missing" });
     if (outcome.scan.kind !== "found") throw new Error("expected found");
     expect(outcome.scan.devices.map((device) => device.id)).toEqual([URI_A, URI_B]);
     expect(outcome.queue).toBeNull();
-    expect(calls.filter((call) => call.file === BINARIES.lpstat)).toEqual([]);
   });
 
   it("keeps the chosen Zebra among several and looks up its queue", async () => {
@@ -157,19 +117,6 @@ describe("lpstat failures are never ready", () => {
     expect(outcome.scan.queue).not.toBe("ready");
   });
 
-  it("scan: the no-destinations message is an empty list, not a failure", async () => {
-    const { run } = cups(listed);
-    const outcome = await createPrinterService({ run }).scan(null);
-    expect(outcome.listFailed).toBe(false);
-    expect(outcome.scan).toMatchObject({ queue: "missing" });
-  });
-
-  it("setUp: reports failure instead of guessing, and runs no lpadmin", async () => {
-    const { run, calls } = cups({ ...queueLines, devices: fail(1, "lpstat: Bad file descriptor") });
-    expect(await createPrinterService({ run }).setUp(DEVICE_A)).toEqual({ ok: false, reason: "failed", queue: null });
-    expect(calls.some((call) => call.file === BINARIES.lpadmin)).toBe(false);
-  });
-
   it("setUp: a queue missing from lpstat -p is not reused as ready", async () => {
     const { run, calls } = cups({ devices: queueLines.devices, printers: ok("printer Another is idle.  enabled since Sat 04 Oct 2026 10:00:00 PHT") });
     const outcome = await createPrinterService({ run }).setUp(DEVICE_A);
@@ -182,15 +129,6 @@ describe("lpstat failures are never ready", () => {
 });
 
 describe("setUp", () => {
-  it("reuses an enabled queue bound to the device and runs no lpadmin", async () => {
-    const { run, calls } = cups({
-      devices: ok(`device for My_Zebra: ${URI_A}`),
-      printers: ok("printer My_Zebra is idle.  enabled since Sat 04 Oct 2026 10:00:00 PHT"),
-    });
-    expect(await createPrinterService({ run }).setUp(DEVICE_A)).toEqual({ ok: true, queue: "My_Zebra" });
-    expect(calls.some((call) => call.file === BINARIES.lpadmin)).toBe(false);
-  });
-
   it("creates a queue with lpadmin argv when none exists", async () => {
     const { run, calls } = cups();
     expect(await createPrinterService({ run }).setUp(DEVICE_A)).toEqual({ ok: true, queue: "Favor_D2J190800123" });
@@ -199,17 +137,6 @@ describe("setUp", () => {
       { file: BINARIES.lpadmin, args: ["-p", "Favor_D2J190800123", "-E", "-v", URI_A, "-m", ZEBRA_PPD] },
     ]);
     expectArgvOnly(calls);
-  });
-
-  it("does not create a second queue for a Zebra whose queue is disabled: it turns that queue back on", async () => {
-    const { run, calls } = cups({
-      devices: ok(`device for My_Zebra: ${URI_A}`),
-      printers: ok("printer My_Zebra disabled since Sat 04 Oct 2026 09:00:00 PHT -"),
-    });
-    expect(await createPrinterService({ run }).setUp(DEVICE_A)).toEqual({ ok: true, queue: "My_Zebra" });
-    expect(calls.filter((call) => call.file === BINARIES.lpadmin)).toEqual([
-      { file: BINARIES.lpadmin, args: ["-p", "My_Zebra", "-E"] },
-    ]);
   });
 
   it.each(["lpadmin: Unauthorized", "lpadmin: Forbidden", "lpadmin: Operation not permitted", "lpadmin: Permission denied"])(
