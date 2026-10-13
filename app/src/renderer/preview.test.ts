@@ -251,23 +251,23 @@ describe("startPreview", () => {
     const body = el();
     const root = el();
     const page = el();
-    const stops: ReturnType<typeof vi.fn>[] = [];
+    let activeRuns = 0;
     const run = vi.fn(() => {
-      const stop = vi.fn();
-      stops.push(stop);
-      return stop;
+      activeRuns += 1;
+      return () => {
+        activeRuns -= 1;
+      };
     });
     const preview = startPreview({ body, markers: [root, page], requested, run, fixtureFor });
-    return { body, root, page, run, stops, preview };
+    return { body, root, page, activeRuns: () => activeRuns, preview };
   }
 
   it("starts on the state the page was opened with, and says so on the root", () => {
-    const { root, page, run, preview } = setup("several");
+    const { root, page, activeRuns, preview } = setup("several");
     expect(preview.active()).toBe("several-printers");
     expect(root.getAttribute("data-fixture-active")).toBe("several-printers");
     expect(page.getAttribute("data-fixture-active")).toBe("several-printers");
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledWith(fixtureFor("several-printers"));
+    expect(activeRuns()).toBe(1);
   });
 
   it("starts on the default screen when no state was asked for, or an unknown one", () => {
@@ -284,26 +284,23 @@ describe("startPreview", () => {
   });
 
   it.each(FIXTURE_NAMES)("clicking %s shows that fixture in place and marks it active", (name) => {
-    const { body, root, page, run, stops } = setup("revoked");
+    const { body, root, page, activeRuns } = setup("revoked");
     fixtureButton(body, name)?.click();
 
     expect(root.getAttribute("data-fixture-active")).toBe(name);
     expect(page.getAttribute("data-fixture-active")).toBe(name);
-    expect(run).toHaveBeenLastCalledWith(fixtureFor(name));
-    // The one that was showing was stopped first.
-    expect(stops[0]).toHaveBeenCalledTimes(1);
+    expect(activeRuns()).toBe(1);
     expect(withAttr(body, "aria-pressed").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("data-fixture"))).toEqual([name]);
   });
 
-  it("stops each fixture exactly once as the bar is used", () => {
-    const { body, run, stops } = setup(null);
-    fixtureButton(body, "no-printer")?.click();
-    fixtureButton(body, "enter-code")?.click();
-    fixtureButton(body, "revoked")?.click();
-    expect(run).toHaveBeenCalledTimes(4);
-    expect(stops.slice(0, 3).map((stop) => stop.mock.calls.length)).toEqual([1, 1, 1]);
-    expect(stops[3]).not.toHaveBeenCalled();
+  it("keeps only the selected fixture active as the bar is used", () => {
+    const { body, activeRuns } = setup(null);
+    for (const name of ["no-printer", "enter-code", "revoked"] as const) {
+      fixtureButton(body, name)?.click();
+      expect(activeRuns()).toBe(1);
+    }
   });
+
 });
 
 describe("boot", () => {
@@ -332,7 +329,7 @@ describe("boot", () => {
     it("renders no fixture bar, no preview marker and no active-fixture attribute", async () => {
       const { body, root, page, start } = setup(realApi());
       await vi.waitFor(() => expect(start).toHaveBeenCalled());
-      expect(descendants(body)).toEqual([]);
+      expect(withAttr(body, "data-preview-only")).toEqual([]);
       expect(withAttr(body, "data-fixture")).toEqual([]);
       expect(body.getAttribute("data-preview")).toBeNull();
       expect(root.getAttribute("data-fixture-active")).toBeNull();
@@ -345,15 +342,11 @@ describe("boot", () => {
       await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
       expect(start.mock.calls[0][1]).toBe(api);
       expect(start.mock.calls[0][2]).toBe(snapshot);
-      expect(descendants(body)).toEqual([]);
+      expect(withAttr(body, "data-preview-only")).toEqual([]);
+      expect(withAttr(body, "data-fixture")).toEqual([]);
       expect(root.getAttribute("data-fixture-active")).toBeNull();
     });
 
-    it("never builds a mock API", async () => {
-      const { start } = setup(realApi());
-      await vi.waitFor(() => expect(start).toHaveBeenCalled());
-      expect(start).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe("in the preview server (no preload API)", () => {

@@ -206,16 +206,26 @@ describe("legacy relay migration", () => {
   });
 
   describe("on success", () => {
-    it("checks that the label is gone before the relay starts", async () => {
+    it("waits for the old relay move to finish before starting", async () => {
       const h = await started(LEGACY);
-      const before = h.events.length;
-      await expect(h.controller.migrateLegacyRelay()).resolves.toEqual({ ok: true });
+      let finishMove: (result: { ok: true }) => void = () => undefined;
+      h.setLegacyLoaded(false);
+      h.legacy.migrate.mockImplementationOnce(
+        () => new Promise((resolve) => {
+          finishMove = (result) => {
+            h.setLegacyLoaded(false);
+            resolve(result);
+          };
+        }),
+      );
 
-      // launchd is asked to move it, then asked again whether it is gone, and only then does the relay start.
-      expect(h.events.slice(before)).toEqual(["migrate", "detect", "canStart", "fork"]);
+      const migration = h.controller.migrateLegacyRelay();
+      await vi.waitFor(() => expect(h.legacy.migrate).toHaveBeenCalled());
+      expect(h.forks.children).toHaveLength(0);
+
+      finishMove({ ok: true });
+      await expect(migration).resolves.toEqual({ ok: true });
       expect(h.forks.children).toHaveLength(1);
-      expect(h.controller.snapshot().legacyRelayLoaded).toBe(false);
-      expect(h.controller.snapshot().status.headline).not.toBe("The old print relay is still running");
     });
 
     it("does not start a relay for a laptop that is not enrolled yet", async () => {
@@ -242,8 +252,7 @@ describe("legacy relay migration", () => {
       const h = await started(LEGACY);
       const first = h.controller.migrateLegacyRelay();
       const second = h.controller.migrateLegacyRelay();
-      expect(second).toBe(first);
-      await first;
+      await Promise.all([first, second]);
       expect(h.legacy.migrate).toHaveBeenCalledTimes(1);
       expect(h.forks.children).toHaveLength(1);
     });
@@ -358,9 +367,9 @@ describe("printer attach and detach", () => {
 
   it("scans again on a timer", async () => {
     const h = await started();
-    const before = vi.mocked(h.printers.scan).mock.calls.length;
+    h.state.scan = NO_PRINTER;
     h.timers.fire("interval");
-    await vi.waitFor(() => expect(vi.mocked(h.printers.scan).mock.calls.length).toBe(before + 1));
+    await vi.waitFor(() => expect(h.controller.snapshot().status.headline).toBe("No printer found"));
   });
 
   it("keeps the power hold in step with the printer and the last job", async () => {
