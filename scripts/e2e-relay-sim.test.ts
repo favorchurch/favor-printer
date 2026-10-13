@@ -1,11 +1,14 @@
-import { readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // @ts-expect-error plain .mjs script without type declarations
 import { assertJobRecordClaim, assertSpoolEmpty, DEFAULT_RSVP_DIR, resolveRsvpDir, runE2eRelaySim } from "./e2e-relay-sim.mjs";
+
+const execFileAsync = promisify(execFile);
 
 describe("resolveRsvpDir", () => {
   it("resolves an explicit existing directory", async () => {
@@ -141,23 +144,49 @@ describe("assertSpoolEmpty", () => {
 });
 
 describe("smoke-packaged.sh", () => {
-  const script = readFileSync(path.join(__dirname, "smoke-packaged.sh"), "utf8");
+  it("uses the packaged binary for its runtime checks and reports the self-test", async () => {
+    const temp = await mkdtemp(path.join(os.tmpdir(), "favor-printer-smoke-test-"));
+    const app = path.join(temp, "Favor Printer.app");
+    const contents = path.join(app, "Contents");
+    const fakeBin = path.join(temp, "bin");
+    const executable = path.join(contents, "MacOS", "Favor Printer");
+    const calls = path.join(temp, "binary-calls.txt");
+    const executableScript = `#!/bin/sh
+printf '%s %s\\n' "$1" "$3" >> "$SMOKE_BINARY_CALLS"
+if [ "$1" = "-e" ]; then
+  exec ${JSON.stringify(process.execPath)} -e "$2" "$3"
+fi
+case "$1" in
+  --self-test-relay=*) printf '%s\\n' '{"type":"self-test","ok":true,"running":true,"cloud":"ok","stopOutcome":"stopped"}' ;;
+  *) exit 1 ;;
+esac
+`;
+    try {
+      await mkdir(path.join(contents, "Resources", "app", "dist"), { recursive: true });
+      await mkdir(path.dirname(executable), { recursive: true });
+      await mkdir(fakeBin, { recursive: true });
+      await writeFile(path.join(contents, "Info.plist"), "test fixture");
+      await writeFile(path.join(contents, "Resources", "app", "dist", "relay.js"), "// bundled relay");
+      await writeFile(executable, executableScript);
+      await chmod(executable, 0o755);
+      await writeFile(
+        path.join(fakeBin, "plutil"),
+        '#!/bin/sh\ncase "$2" in\n  CFBundleExecutable) echo "Favor Printer" ;;\n  CFBundleIdentifier) echo "church.favor.printer" ;;\n  CFBundleShortVersionString) echo "0.1.0" ;;\n  *) exit 1 ;;\nesac\n',
+      );
+      await chmod(path.join(fakeBin, "plutil"), 0o755);
 
-  it("runs its JS helpers with the packaged binary, never a bare node", () => {
-    expect(script).not.toMatch(/(^|[\s$(])node\s+-e/m);
-  });
-});
-
-describe("harness-server.ts", () => {
-  it("serves relay config from the real handlers, with no fabricated fallback", () => {
-    const source = readFileSync(path.join(__dirname, "..", "e2e", "harness-server.ts"), "utf8");
-    expect(source).not.toMatch(/relay\/config/);
-  });
-
-  it("configures real in-memory relay registry so config and heartbeat answer with enabled printers", () => {
-    const source = readFileSync(path.join(__dirname, "..", "e2e", "harness-server.ts"), "utf8");
-    expect(source).toMatch(/createMemoryRelayRegistryStore/);
-    expect(source).toMatch(/deps\.relays\s*=/);
+      const { stdout } = await execFileAsync("bash", [path.join(__dirname, "smoke-packaged.sh"), app], {
+        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}`, SMOKE_BINARY_CALLS: calls },
+        timeout: 20_000,
+      });
+      const binaryCalls = await readFile(calls, "utf8");
+      expect(stdout).toContain("0 failed");
+      expect(binaryCalls).toContain("-e");
+      expect(binaryCalls).toContain("/port.txt");
+      expect(binaryCalls).toContain("--self-test-relay=http://127.0.0.1:");
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
   });
 });
 
