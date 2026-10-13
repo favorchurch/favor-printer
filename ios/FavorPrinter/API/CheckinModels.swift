@@ -1,6 +1,8 @@
 import Foundation
 
 /// Wire types for the check-in endpoints in docs/native-api/v1.md. Fields not listed there are not decoded.
+/// Fields the server may leave out, and enum values it may add, decode to a safe default instead of failing the
+/// whole response, which matters most for answers that arrive after a write was already recorded.
 
 struct CheckinDefinition: Decodable, Sendable, Equatable, Identifiable {
     let definitionName: String
@@ -40,6 +42,26 @@ struct CheckinContact: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
+extension CheckinContact {
+    private enum Keys: String, CodingKey {
+        case contactId, personId, firstName, lastName, preferredName, age, gender, campusIds
+    }
+
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: Keys.self)
+        self.init(
+            contactId: try keys.decode(String.self, forKey: .contactId),
+            personId: try keys.decodeIfPresent(Int.self, forKey: .personId),
+            firstName: try keys.decode(String.self, forKey: .firstName),
+            lastName: try keys.decode(String.self, forKey: .lastName),
+            preferredName: try keys.decodeIfPresent(String.self, forKey: .preferredName),
+            age: try keys.decodeIfPresent(Int.self, forKey: .age),
+            gender: try keys.decodeIfPresent(String.self, forKey: .gender),
+            campusIds: try keys.decodeIfPresent([String].self, forKey: .campusIds) ?? []
+        )
+    }
+}
+
 /// Every success body carries the contract version, and the client refuses any other.
 protocol Versioned: Decodable, Sendable { var apiVersion: Int { get } }
 
@@ -71,7 +93,10 @@ enum CheckinOutcome: Decodable, Sendable, Equatable {
             default: throw DecodingError.dataCorruptedError(forKey: .outcome, in: data, debugDescription: "Unknown outcome")
             }
         } else {
-            self = .failed(code: try keys.decode(String.self, forKey: .code), message: try keys.decode(String.self, forKey: .message))
+            self = .failed(
+                code: try keys.decodeIfPresent(String.self, forKey: .code) ?? "unknown",
+                message: try keys.decodeIfPresent(String.self, forKey: .message) ?? "The check-in was not accepted."
+            )
         }
     }
 }
@@ -175,6 +200,21 @@ struct FamilyCheckinRequest: Encodable, Sendable, Equatable {
     var print: Print?
 }
 
+extension KidsFamilyResult.Family {
+    private enum Keys: String, CodingKey { case siblings, choices, selectedChoiceId, remember, remembered }
+
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: Keys.self)
+        self.init(
+            siblings: try keys.decode([KidsSibling].self, forKey: .siblings),
+            choices: try keys.decodeIfPresent([PickupPhoneChoice].self, forKey: .choices) ?? [],
+            selectedChoiceId: try keys.decodeIfPresent(Int.self, forKey: .selectedChoiceId),
+            remember: try keys.decodeIfPresent(Bool.self, forKey: .remember) ?? false,
+            remembered: try keys.decodeIfPresent(String.self, forKey: .remembered)
+        )
+    }
+}
+
 struct FamilyTargetOutcome: Decodable, Sendable, Equatable {
     let eventId: String
     let ok: Bool
@@ -183,11 +223,33 @@ struct FamilyTargetOutcome: Decodable, Sendable, Equatable {
 }
 
 struct FamilyChildOutcome: Decodable, Sendable, Equatable {
-    enum Status: String, Decodable, Sendable { case checkedIn = "checked-in", partial, failed }
+    enum Status: String, Decodable, Sendable {
+        case checkedIn = "checked-in", partial, failed
+        /// A status this app does not know. The child may or may not be checked in.
+        case unknown
+
+        init(from decoder: Decoder) throws {
+            self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+        }
+    }
     let childAliasId: Int
     let status: Status
     let attendanceId: Int?
     let targets: [FamilyTargetOutcome]
+}
+
+extension FamilyChildOutcome {
+    private enum Keys: String, CodingKey { case childAliasId, status, attendanceId, targets }
+
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: Keys.self)
+        self.init(
+            childAliasId: try keys.decode(Int.self, forKey: .childAliasId),
+            status: try keys.decode(Status.self, forKey: .status),
+            attendanceId: try keys.decodeIfPresent(Int.self, forKey: .attendanceId),
+            targets: try keys.decodeIfPresent([FamilyTargetOutcome].self, forKey: .targets) ?? []
+        )
+    }
 }
 
 enum FamilyPrintOutcome: Decodable, Sendable, Equatable {
@@ -221,6 +283,31 @@ struct FamilyCheckinResult: Decodable, Sendable, Equatable {
     let print: FamilyPrintOutcome
 }
 
+extension FamilyCheckinResult {
+    private enum Keys: String, CodingKey { case children, printAttendanceIds, pickup, print }
+
+    /// The check-in is already recorded when this decodes, so an unreadable print or pickup part must not
+    /// hide the children's results. An unreadable print part is reported as not queued.
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: Keys.self)
+        let print: FamilyPrintOutcome
+        do {
+            print = try keys.decodeIfPresent(FamilyPrintOutcome.self, forKey: .print) ?? .skipped
+        } catch {
+            print = .notQueued(
+                code: "unreadable", retry: true,
+                message: "The server's answer about the labels could not be read. Check the printer before printing again."
+            )
+        }
+        self.init(
+            children: try keys.decode([FamilyChildOutcome].self, forKey: .children),
+            printAttendanceIds: try keys.decodeIfPresent([Int].self, forKey: .printAttendanceIds) ?? [],
+            pickup: (try? keys.decodeIfPresent(Pickup.self, forKey: .pickup)) ?? Pickup(saved: false),
+            print: print
+        )
+    }
+}
+
 // MARK: - Printing
 
 enum PrinterHealth: String, Decodable, Sendable, Equatable {
@@ -229,6 +316,10 @@ enum PrinterHealth: String, Decodable, Sendable, Equatable {
     case unreachable
     case relayOffline = "relay_offline"
     case unknown
+
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
 }
 
 struct PairablePrinter: Decodable, Sendable, Equatable, Identifiable {
@@ -238,6 +329,22 @@ struct PairablePrinter: Decodable, Sendable, Equatable, Identifiable {
     let campusId: Int?
     let campusLabel: String
     let health: PrinterHealth
+}
+
+extension PairablePrinter {
+    private enum Keys: String, CodingKey { case id, name, laptopLabel, campusId, campusLabel, health }
+
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: Keys.self)
+        self.init(
+            id: try keys.decode(String.self, forKey: .id),
+            name: try keys.decode(String.self, forKey: .name),
+            laptopLabel: try keys.decodeIfPresent(String.self, forKey: .laptopLabel),
+            campusId: try keys.decodeIfPresent(Int.self, forKey: .campusId),
+            campusLabel: try keys.decodeIfPresent(String.self, forKey: .campusLabel) ?? "",
+            health: try keys.decodeIfPresent(PrinterHealth.self, forKey: .health) ?? .unknown
+        )
+    }
 }
 
 struct PrintEnqueueRequest: Encodable, Sendable, Equatable {
@@ -266,12 +373,16 @@ enum PrintEnqueueOutcome: Decodable, Sendable, Equatable {
         let keys = try decoder.container(keyedBy: Keys.self)
         let refused = try keys.decodeIfPresent([PrintRefusal].self, forKey: .refused) ?? []
         if try keys.decode(Bool.self, forKey: .ok) {
-            self = .queued(created: try keys.decode(Bool.self, forKey: .created), jobIds: try keys.decode([String].self, forKey: .jobIds), refused: refused)
+            self = .queued(
+                created: try keys.decodeIfPresent(Bool.self, forKey: .created) ?? true,
+                jobIds: try keys.decodeIfPresent([String].self, forKey: .jobIds) ?? [],
+                refused: refused
+            )
         } else {
             self = .failed(
-                code: try keys.decode(String.self, forKey: .code),
-                retry: try keys.decode(Bool.self, forKey: .retry),
-                message: try keys.decode(String.self, forKey: .message),
+                code: try keys.decodeIfPresent(String.self, forKey: .code) ?? "unknown",
+                retry: try keys.decodeIfPresent(Bool.self, forKey: .retry) ?? false,
+                message: try keys.decodeIfPresent(String.self, forKey: .message) ?? "The labels were not queued.",
                 refused: refused
             )
         }
@@ -295,6 +406,22 @@ struct PrintJob: Decodable, Sendable, Equatable, Identifiable {
     var isFinished: Bool { ["sent", "failed", "cancelled", "review"].contains(status) }
 }
 
+extension PrintJob {
+    private enum Keys: String, CodingKey { case id, status, reviewReason, kind, lastError, canReprint }
+
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: Keys.self)
+        self.init(
+            id: try keys.decode(String.self, forKey: .id),
+            status: try keys.decode(String.self, forKey: .status),
+            reviewReason: try keys.decodeIfPresent(String.self, forKey: .reviewReason),
+            kind: try keys.decodeIfPresent(String.self, forKey: .kind) ?? "print",
+            lastError: try keys.decodeIfPresent(String.self, forKey: .lastError),
+            canReprint: try keys.decodeIfPresent(Bool.self, forKey: .canReprint) ?? false
+        )
+    }
+}
+
 enum PrintStatus: Decodable, Sendable, Equatable {
     case off
     case unenrolled(chip: PrintChip)
@@ -309,11 +436,11 @@ enum PrintStatus: Decodable, Sendable, Equatable {
         case "off": self = .off
         case "unenrolled": self = .unenrolled(chip: try keys.decode(PrintChip.self, forKey: .chip))
         case "enrolled":
-            let printer = try keys.decode(PrinterRef.self, forKey: .printer)
+            let printer = try keys.decodeIfPresent(PrinterRef.self, forKey: .printer)
             self = .enrolled(
                 chip: try keys.decode(PrintChip.self, forKey: .chip),
-                printerName: try keys.decodeIfPresent(String.self, forKey: .printerName) ?? printer.name,
-                jobs: try keys.decode([PrintJob].self, forKey: .jobs)
+                printerName: try keys.decodeIfPresent(String.self, forKey: .printerName) ?? printer?.name ?? "Printer",
+                jobs: try keys.decodeIfPresent([PrintJob].self, forKey: .jobs) ?? []
             )
         default: throw DecodingError.dataCorruptedError(forKey: .state, in: keys, debugDescription: "Unknown print state")
         }

@@ -18,6 +18,10 @@ actor FakeCheckinAPI: CheckinAPI {
     var statusResults: [Result<PrintStatus, APIError>] = []
     /// Runs inside `contacts` before it answers, to hold a request in flight.
     var contactsGate: (@Sendable () async -> Void)?
+    /// Answers `contacts` per query when set, so overlapping searches can finish out of order.
+    var contactsHandler: (@Sendable (String) async -> [CheckinContact])?
+    /// Runs inside `checkIn` before it answers, to hold a request in flight.
+    var checkInGate: (@Sendable () async -> Void)?
     private(set) var calls: [String] = []
     private(set) var tokens: [String] = []
     private(set) var familyRequests: [FamilyCheckinRequest] = []
@@ -25,6 +29,8 @@ actor FakeCheckinAPI: CheckinAPI {
 
     func set(contacts: Result<[CheckinContact], APIError>) { contactsResult = contacts }
     func set(contactsGate gate: (@Sendable () async -> Void)?) { contactsGate = gate }
+    func set(contactsHandler handler: (@Sendable (String) async -> [CheckinContact])?) { contactsHandler = handler }
+    func set(checkInGate gate: (@Sendable () async -> Void)?) { checkInGate = gate }
     func set(checkIn: Result<CheckinOutcome, APIError>) { checkInResult = checkIn }
     func set(family: Result<KidsFamilyResult, APIError>) { familyResult = family }
     func set(familyCheckIn: Result<FamilyCheckinResult, APIError>) { familyCheckInResult = familyCheckIn }
@@ -39,12 +45,17 @@ actor FakeCheckinAPI: CheckinAPI {
     func contacts(token: String, campusId: Int, definitionName: String, eventId: String, query: String) async throws -> [CheckinContact] {
         record("contacts", token)
         if let contactsGate { await contactsGate() }
+        if let contactsHandler { return await contactsHandler(query) }
         return try contactsResult.get()
     }
     func family(token: String, campusId: Int, definitionName: String, eventId: String, anchorAliasId: Int) async throws -> KidsFamilyResult {
         record("family", token); return try familyResult.get()
     }
-    func checkIn(token: String, _ request: CheckinRequest) async throws -> CheckinOutcome { record("checkIn", token); return try checkInResult.get() }
+    func checkIn(token: String, _ request: CheckinRequest) async throws -> CheckinOutcome {
+        record("checkIn", token)
+        if let checkInGate { await checkInGate() }
+        return try checkInResult.get()
+    }
     func familyCheckIn(token: String, _ request: FamilyCheckinRequest) async throws -> FamilyCheckinResult {
         record("familyCheckIn", token); familyRequests.append(request); return try familyCheckInResult.get()
     }
@@ -401,5 +412,214 @@ struct CheckinFlowTests {
         model.query = "Ma"
         await model.search()
         #expect(model.results == [contact])
+    }
+
+    // MARK: double submit, stale answers, recovery
+
+    @Test func unknownOutcomeIsNotRetriedUntilTheVolunteerConfirms() async {
+        await session.refresh()
+        await api.set(checkIn: .failure(.transport))
+        let model = EventCheckinModel(service: service, target: target, contact: contact)
+        await model.checkIn()
+        #expect(!model.canSubmit)
+        await model.checkIn()
+        #expect(await api.calls.filter { $0 == "checkIn" }.count == 1)
+
+        model.confirmRetry()
+        #expect(model.phase == .ready)
+        await api.set(checkIn: .success(.checkedIn(attendanceId: 7)))
+        await model.checkIn()
+        #expect(model.phase == .done(attendanceId: 7))
+        #expect(await api.calls.filter { $0 == "checkIn" }.count == 2)
+    }
+
+    @Test func definiteFailureCanBeRetriedWithoutConfirming() async {
+        await session.refresh()
+        await api.set(checkIn: .failure(.server(status: 403, code: .occurrenceForbidden)))
+        let model = EventCheckinModel(service: service, target: target, contact: contact)
+        await model.checkIn()
+        #expect(model.canSubmit)
+        model.confirmRetry()
+        guard case .failed = model.phase else { Issue.record("confirmRetry must only act on an unknown outcome"); return }
+    }
+
+    @Test func unreadableAnswerToAWriteCountsAsMaybeRecorded() async {
+        for error in [APIError.invalidResponse, .unexpected(status: 502, code: nil), .transport] {
+            #expect(CheckinFailure.api(error).outcomeUnknown)
+        }
+        for error in [APIError.unexpected(status: 404, code: nil), .server(status: 403, code: .wrongCampus), .server(status: 503, code: .unavailable)] {
+            #expect(!CheckinFailure.api(error).outcomeUnknown)
+        }
+        #expect(!CheckinFailure.offline.outcomeUnknown)
+        await session.refresh()
+        await api.set(checkIn: .failure(.invalidResponse))
+        let model = EventCheckinModel(service: service, target: target, contact: contact)
+        await model.checkIn()
+        guard case .failed(_, let maybeRecorded) = model.phase else { Issue.record("expected failure"); return }
+        #expect(maybeRecorded)
+    }
+
+    @Test func reopeningTheScreenWhileACheckInIsInFlightSendsNothingNew() async {
+        await session.refresh()
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await api.set(checkInGate: { release.yield(); try? await Task.sleep(for: .milliseconds(200)) })
+        let first = EventCheckinModel(service: service, target: target, contact: contact)
+        let call = Task { await first.checkIn() }
+        for await _ in entered { break }
+
+        let reopened = EventCheckinModel(service: service, target: target, contact: contact)
+        await reopened.checkIn()
+        #expect(await api.calls.filter { $0 == "checkIn" }.count == 1)
+        guard case .refused = reopened.phase else { Issue.record("expected the second screen to say it is already sending"); return }
+
+        await call.value
+        #expect(first.phase == .done(attendanceId: 7))
+        await api.set(checkInGate: nil)
+        await reopened.checkIn()
+        #expect(reopened.phase == .done(attendanceId: 7))
+    }
+
+    @Test func familyCannotBeSubmittedTwiceOrWhileReloading() async {
+        await session.refresh()
+        await api.set(family: .success(family()))
+        await api.set(familyCheckIn: .success(FamilyCheckinResult(
+            children: [FamilyChildOutcome(childAliasId: 1, status: .checkedIn, attendanceId: 9, targets: [])],
+            printAttendanceIds: [9], pickup: .init(saved: true), print: .skipped
+        )))
+        let model = FamilyCheckinModel(service: service, target: target, contact: contact)
+        await model.load()
+        await model.submit()
+        await model.submit()
+        #expect(await api.familyRequests.count == 1)
+        guard case .done = model.phase else { Issue.record("expected done"); return }
+
+        await api.set(familyCheckIn: .failure(.transport))
+        let lost = FamilyCheckinModel(service: service, target: target, contact: contact)
+        await lost.load()
+        await lost.submit()
+        guard case .failed(_, true) = lost.phase else { Issue.record("expected an unknown outcome"); return }
+        let before = await api.familyRequests.count
+        await lost.submit()
+        #expect(await api.familyRequests.count == before)
+        #expect(lost.submitBlock != nil || lost.phase != .ready)
+    }
+
+    @Test func familyFailureReloadsToARecoverableForm() async {
+        await session.refresh()
+        await api.set(family: .success(family()))
+        await api.set(familyCheckIn: .failure(.transport))
+        let model = FamilyCheckinModel(service: service, target: target, contact: contact)
+        await model.load()
+        await model.submit()
+        await model.retryAfterFailure()
+        #expect(model.phase == .ready)
+        #expect(model.loadFailure == nil)
+        #expect(model.selectedAliasIds == [1])
+    }
+
+    @Test func slowEarlierSearchCannotOverwriteTheLaterOne() async {
+        await session.refresh()
+        let older = CheckinContact(contactId: "1", personId: nil, firstName: "Old", lastName: "Result", preferredName: nil, age: nil, gender: nil, campusIds: [])
+        let newer = CheckinContact(contactId: "2", personId: nil, firstName: "New", lastName: "Result", preferredName: nil, age: nil, gender: nil, campusIds: [])
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await api.set(contactsHandler: { query in
+            if query == "Ma" {
+                release.yield()
+                try? await Task.sleep(for: .milliseconds(200))
+                return [older]
+            }
+            return [newer]
+        })
+        let model = ContactSearchModel(service: service, target: target)
+        model.query = "Ma"
+        let slow = Task { await model.search() }
+        for await _ in entered { break }
+        #expect(model.isSearching)
+
+        model.query = "Mar"
+        #expect(model.canSearch)
+        await model.search()
+        #expect(model.results == [newer])
+        #expect(!model.isSearching)
+
+        await slow.value
+        #expect(model.results == [newer])
+        #expect(model.failure == nil)
+    }
+
+    @Test func newSearchClearsTheOldResultsBeforeTheAnswerArrives() async {
+        await session.refresh()
+        await api.set(contacts: .success([contact]))
+        let model = ContactSearchModel(service: service, target: target)
+        model.query = "Maria"
+        await model.search()
+        #expect(model.results == [contact])
+
+        let (entered, release) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await api.set(contactsGate: { release.yield(); try? await Task.sleep(for: .milliseconds(200)) })
+        model.query = "Mario"
+        let next = Task { await model.search() }
+        for await _ in entered { break }
+        #expect(model.results == nil)
+        await next.value
+    }
+
+    @Test func printingIsNotTrackedAfterARefusedOrFailedRequest() async {
+        await session.refresh()
+        let working = PrintJob(id: "j", status: "queued", reviewReason: nil, kind: "child", lastError: nil, canReprint: false)
+        await api.set(statuses: [.success(.enrolled(chip: .init(tone: "info", text: "x"), printerName: "P", jobs: [working]))])
+        await api.set(enqueue: .success(.failed(code: "not_enrolled", retry: false, message: "No printer is set up.", refused: [])))
+        let model = PrintModel(service: service, target: target, attendanceIds: [9], pollInterval: .milliseconds(1), maxPolls: 3)
+        model.printerId = "p1"
+        await model.enqueue()
+        await model.trackUntilSettled()
+        #expect(model.phase == .choosing)
+        #expect(await api.calls.filter { $0 == "status" }.isEmpty)
+        #expect(model.status == nil)
+    }
+
+    @Test func retryAfterALostPrintResponseReusesTheSameActionId() async throws {
+        await session.refresh()
+        await api.set(enqueue: .failure(.transport))
+        let model = PrintModel(service: service, target: target, attendanceIds: [9])
+        model.printerId = "p1"
+        await model.enqueue()
+        #expect(model.phase == .choosing)
+        #expect(model.enqueueMessage?.contains("Tap Print") == true)
+
+        await model.enqueue()
+        let requests = await api.enqueueRequests
+        #expect(requests.count == 2)
+        #expect(requests[0].actionId == requests[1].actionId)
+    }
+
+    @Test func refreshFetchesEvenWhenTheStatusLooksSettled() async {
+        await session.refresh()
+        let done = PrintJob(id: "j", status: "sent", reviewReason: nil, kind: "child", lastError: nil, canReprint: true)
+        await api.set(statuses: [.success(.enrolled(chip: .init(tone: "ok", text: "x"), printerName: "P", jobs: [done]))])
+        let model = PrintModel(service: service, target: target, attendanceIds: [9], alreadyQueuedOn: "p1", pollInterval: .milliseconds(1))
+        await model.trackUntilSettled()
+        let first = await api.calls.filter { $0 == "status" }.count
+        await model.trackUntilSettled()
+        #expect(await api.calls.filter { $0 == "status" }.count == first)
+
+        await model.refresh()
+        #expect(await api.calls.filter { $0 == "status" }.count == first + 1)
+    }
+
+    @Test func printFailureAfterCheckInKeepsTheCheckIn() async {
+        await session.refresh()
+        let checkIn = EventCheckinModel(service: service, target: target, contact: contact)
+        await checkIn.checkIn()
+        guard case .done(let attendanceId) = checkIn.phase else { Issue.record("expected done"); return }
+        #expect(await api.enqueueRequests.isEmpty)
+
+        await api.set(enqueue: .failure(.server(status: 503, code: .unavailable)))
+        let print = PrintModel(service: service, target: target, attendanceIds: [attendanceId])
+        print.printerId = "p1"
+        await print.enqueue()
+        #expect(print.enqueueMessage?.contains("unavailable") == true)
+        #expect(checkIn.phase == .done(attendanceId: 7))
+        #expect(await api.calls.filter { $0 == "checkIn" }.count == 1)
     }
 }

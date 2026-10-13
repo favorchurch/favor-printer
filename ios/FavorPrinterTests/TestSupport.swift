@@ -74,8 +74,8 @@ final class MockServer: @unchecked Sendable {
     var requests: [URLRequest] { lock.withLock { log } }
 
     init(_ handler: @escaping @Sendable (URLRequest) throws -> MockURLProtocol.Reply) {
-        MockURLProtocol.register(host: host) { [unowned self] request in
-            lock.withLock { log.append(request) }
+        MockURLProtocol.register(host: host) { [weak self] request in
+            self?.lock.withLock { self?.log.append(request) }
             return try handler(request)
         }
     }

@@ -20,8 +20,16 @@ enum CheckinFailure: Error, Sendable, Equatable {
         }
     }
 
-    /// The request may have reached the server before the connection failed.
-    var outcomeUnknown: Bool { self == .api(.transport) }
+    /// The request may have reached the server and been acted on even though no usable answer came back:
+    /// the connection dropped, the body was unreadable, or a gateway failed after forwarding it.
+    var outcomeUnknown: Bool {
+        guard case .api(let error) = self else { return false }
+        switch error {
+        case .transport, .invalidResponse: return true
+        case .unexpected(let status, _): return status >= 500
+        default: return false
+        }
+    }
 }
 
 @MainActor
@@ -38,9 +46,10 @@ final class NetworkMonitor: Connectivity {
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
             let online = path.status == .satisfied
-            Task { @MainActor in self?.isOnline = online }
+            // Delivered on the main queue, so updates apply in the order the system reported them.
+            MainActor.assumeIsolated { self?.isOnline = online }
         }
-        monitor.start(queue: DispatchQueue(label: "church.favor.printer.network"))
+        monitor.start(queue: .main)
     }
 
     deinit { monitor.cancel() }
@@ -53,6 +62,7 @@ final class CheckinService {
     let session: DeviceSession
     let api: any CheckinAPI
     let connectivity: any Connectivity
+    private var activeKeys: Set<String> = []
 
     init(session: DeviceSession, api: any CheckinAPI, connectivity: any Connectivity) {
         self.session = session
@@ -61,6 +71,12 @@ final class CheckinService {
     }
 
     var isOnline: Bool { connectivity.isOnline }
+
+    /// Marks a write as in flight. False when the same write is already being sent, even from a screen
+    /// the volunteer has since left and reopened, so a second tap never becomes a second request.
+    func claim(_ key: String) -> Bool { activeKeys.insert(key).inserted }
+
+    func release(_ key: String) { activeKeys.remove(key) }
 
     func call<T: Sendable>(_ operation: (any CheckinAPI, String, Int) async throws -> T) async throws -> T {
         guard connectivity.isOnline else { throw CheckinFailure.offline }
