@@ -1,6 +1,7 @@
 import XCTest
 
 /// Drives the real app against the in-process mock backend (`-FavorUITestMock`, Debug builds only).
+@MainActor
 final class CheckinFlowUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false

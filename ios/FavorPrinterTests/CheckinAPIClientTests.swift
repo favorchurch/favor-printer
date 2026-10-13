@@ -205,4 +205,73 @@ struct CheckinAPIClientTests {
         defer { withExtendedLifetime(s3) {} }
         await #expect(throws: APIError.invalidResponse) { _ = try await bad.definitions(token: token, campusId: 1) }
     }
+
+    // MARK: tolerant decoding
+
+    @Test func unknownAndMissingFieldsStillDecode() async throws {
+        let body = #"{"apiVersion":1,"extra":{"a":1},"contacts":[{"contactId":"1","firstName":"A","lastName":"B","surprise":true}]}"#
+        let (contactClient, server) = try client { _ in .json(200, body) }
+        defer { withExtendedLifetime(server) {} }
+        let contacts = try await contactClient.contacts(token: token, campusId: 1, definitionName: "g", eventId: "1", query: "ab")
+        #expect(contacts.first?.campusIds == [])
+        #expect(contacts.first?.age == nil)
+
+        let printers = #"{"apiVersion":1,"printers":[{"id":"p","name":"N","health":"brand_new_state","campusLabel":null}]}"#
+        let (printerClient, printerServer) = try client { _ in .json(200, printers) }
+        defer { withExtendedLifetime(printerServer) {} }
+        let list = try await printerClient.printers(token: token, campusId: 1, definitionName: "g", eventId: "1")
+        #expect(list.first?.health == .unknown)
+    }
+
+    @Test func familyCheckInKeepsChildResultsWhenOtherPartsAreUnknownOrUnreadable() async throws {
+        let body = #"{"apiVersion":1,"result":{"children":[{"childAliasId":1,"status":"waitlisted"},{"childAliasId":2,"status":"checked-in","attendanceId":5,"targets":[]}],"print":{"status":"paused"},"pickup":"nope"}}"#
+        let (client, server) = try client { _ in .json(200, body) }
+        defer { withExtendedLifetime(server) {} }
+        let result = try await client.familyCheckIn(token: token, FamilyCheckinRequest(
+            campusId: 1, definitionName: "g", eventId: "1", anchorAliasId: 1, targetEventIds: ["1"], childAliasIds: [1, 2]
+        ))
+        #expect(result.children.map(\.status) == [.unknown, .checkedIn])
+        #expect(result.printAttendanceIds == [])
+        #expect(result.pickup.saved == false)
+        guard case .notQueued(_, let retry, let message) = result.print else { Issue.record("expected not queued"); return }
+        #expect(retry)
+        #expect(!message.isEmpty)
+    }
+
+    @Test func familyCheckInWithoutAPrintPartIsSkipped() async throws {
+        let body = #"{"apiVersion":1,"result":{"children":[],"printAttendanceIds":[],"pickup":{"saved":true}}}"#
+        let (client, server) = try client { _ in .json(200, body) }
+        defer { withExtendedLifetime(server) {} }
+        let result = try await client.familyCheckIn(token: token, FamilyCheckinRequest(
+            campusId: 1, definitionName: "g", eventId: "1", anchorAliasId: 1, targetEventIds: ["1"], childAliasIds: [1]
+        ))
+        #expect(result.print == .skipped)
+        #expect(result.pickup.saved)
+    }
+
+    @Test func familyAndStatusDecodeWithOptionalPartsOmitted() async throws {
+        let family = #"{"apiVersion":1,"result":{"found":true,"siblings":[{"eligible":true,"personAliasId":3,"displayName":"A","checkedIn":false}]}}"#
+        let (familyClient, familyServer) = try client { _ in .json(200, family) }
+        defer { withExtendedLifetime(familyServer) {} }
+        guard case .found(let found) = try await familyClient.family(token: token, campusId: 1, definitionName: "g", eventId: "1", anchorAliasId: 3)
+        else { Issue.record("expected a family"); return }
+        #expect(found.choices.isEmpty)
+        #expect(!found.remember)
+
+        let status = #"{"apiVersion":1,"result":{"state":"enrolled","chip":{"tone":"ok","text":"Ready"},"jobs":[{"id":"j","status":"sent"}]}}"#
+        let (statusClient, statusServer) = try client { _ in .json(200, status) }
+        defer { withExtendedLifetime(statusServer) {} }
+        let printed = try await statusClient.printStatus(token: token, campusId: 1, definitionName: "g", eventId: "1", printerId: "p", attendanceIds: [1])
+        guard case .enrolled(_, let name, let jobs) = printed else { Issue.record("expected enrolled"); return }
+        #expect(name == "Printer")
+        #expect(jobs.first?.canReprint == false)
+    }
+
+    @Test func refusalWithoutCodeOrMessageIsStillARefusal() async throws {
+        let (client, server) = try client { _ in .json(200, #"{"apiVersion":1,"result":{"ok":false}}"#) }
+        defer { withExtendedLifetime(server) {} }
+        let outcome = try await client.checkIn(token: token, CheckinRequest(campusId: 1, definitionName: "g", eventId: "1", contactId: "2"))
+        guard case .failed(_, let message) = outcome else { Issue.record("expected a refusal"); return }
+        #expect(!message.isEmpty)
+    }
 }

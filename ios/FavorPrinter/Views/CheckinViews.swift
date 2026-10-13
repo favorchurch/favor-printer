@@ -109,6 +109,7 @@ struct OccurrencesView: View {
                 if occurrences.failure != nil {
                     Button("Try again") { Task { await load() } }
                         .accessibilityLabel("Try loading services again")
+                        .accessibilityIdentifier("retry-occurrences")
                 }
             }
         }
@@ -233,8 +234,11 @@ struct ContactView: View {
         case .failed(let message, let maybeRecorded):
             Text(message).foregroundStyle(.red).accessibilityIdentifier("failure")
             if maybeRecorded {
-                Text("This check-in may have been recorded. Search for \(contact.firstName) again to confirm before trying again.")
+                Text("This check-in may have been recorded. Check that \(contact.firstName) is not already checked in before sending it again.")
                     .accessibilityIdentifier("maybe-recorded")
+                Button("Send check-in again") { model.confirmRetry() }
+                    .accessibilityLabel("Send the check-in for \(contact.displayName) again")
+                    .accessibilityIdentifier("retry-check-in")
             }
         }
     }
@@ -260,7 +264,9 @@ struct FamilyCheckinView: View {
             case .loading:
                 if let failure = model.loadFailure {
                     FailureText(failure: failure)
-                    Button("Try again") { Task { await model.load() } }.accessibilityLabel("Try loading the family again")
+                    Button("Try again") { Task { await model.load() } }
+                        .accessibilityLabel("Try loading the family again")
+                        .accessibilityIdentifier("retry-family")
                 } else {
                     ProgressView().accessibilityLabel("Loading family")
                 }
@@ -276,7 +282,9 @@ struct FamilyCheckinView: View {
                     Text("These check-ins may have been recorded. Reload the family to see who is checked in before trying again.")
                         .accessibilityIdentifier("maybe-recorded")
                 }
-                Button("Reload family") { Task { await model.retryAfterFailure() } }.accessibilityLabel("Reload family")
+                Button("Reload family") { Task { await model.retryAfterFailure() } }
+                    .accessibilityLabel("Reload family")
+                    .accessibilityIdentifier("reload-family")
             }
         }
         .navigationTitle("Family")
@@ -286,7 +294,8 @@ struct FamilyCheckinView: View {
     @ViewBuilder private var formSections: some View {
         if let family = model.family {
             Section("Children") {
-                ForEach(family.siblings) { sibling in
+                // Offsets, not ids: two ineligible siblings can share a name and age.
+                ForEach(Array(family.siblings.enumerated()), id: \.offset) { _, sibling in
                     if let alias = sibling.selectableAliasId {
                         Toggle(sibling.displayName, isOn: Binding(
                             get: { model.selectedAliasIds.contains(alias) },
@@ -312,6 +321,7 @@ struct FamilyCheckinView: View {
                     .accessibilityIdentifier("pickup-picker")
                     Toggle("Remember for next time", isOn: $model.rememberPickup)
                         .accessibilityLabel("Remember this pickup phone")
+                        .accessibilityIdentifier("remember-pickup")
                 }
             }
             Section("Labels") {
@@ -347,6 +357,9 @@ struct FamilyCheckinView: View {
                 switch child.status {
                 case .checkedIn: Label("\(name) checked in", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                 case .partial: Label("\(name) checked in to some services only", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                case .unknown:
+                    Label("\(name): the result was not clear. Reload the family to see who is checked in.", systemImage: "questionmark.circle")
+                        .foregroundStyle(.orange)
                 case .failed:
                     Label("\(name) was not checked in\(child.targets.first?.message.map { ": \($0)" } ?? "")", systemImage: "xmark.circle")
                         .foregroundStyle(.red)
@@ -414,9 +427,8 @@ struct PrintView: View {
             }
         }
         .navigationTitle("Print")
-        .task {
-            if model.phase == .tracking { await model.trackUntilSettled() } else { await model.loadPrinters() }
-        }
+        .task { await model.start() }
+        .onDisappear { model.stop() }
     }
 
     @ViewBuilder private var chooseSections: some View {
@@ -443,7 +455,7 @@ struct PrintView: View {
             FailureText(failure: model.printersFailure)
         }
         Section {
-            Button("Print") { Task { await model.enqueue(); await model.trackUntilSettled() } }
+            Button("Print") { Task { await model.enqueueAndTrack() } }
                 .disabled(!model.canEnqueue)
                 .accessibilityLabel("Print")
                 .accessibilityIdentifier("print-button")
@@ -473,7 +485,7 @@ struct PrintView: View {
             }
             FailureText(failure: model.statusFailure)
             if let message = model.enqueueMessage { Text(message).accessibilityIdentifier("enqueue-note") }
-            Button("Refresh status") { Task { await model.trackUntilSettled() } }
+            Button("Refresh status") { Task { await model.refresh() } }
                 .disabled(model.isRefreshing || !service.isOnline)
                 .accessibilityLabel("Refresh print status")
                 .accessibilityIdentifier("refresh-print-status")
