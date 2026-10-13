@@ -1,6 +1,6 @@
 {
   "name": "favor-printer",
-  "version": "0.2.0",
+  "version": "0.3.0-beta.1",
   "private": true,
   "description": "Menu-bar app that turns a USB Zebra printer into a Favor RSVP check-in printer",
   "author": "Favor Church <techteam@favor.church>",
