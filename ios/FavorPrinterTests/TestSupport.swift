@@ -86,6 +86,13 @@ final class MockServer: @unchecked Sendable {
     func client() throws -> DeviceAPIClient {
         try DeviceAPIClient(baseURL: baseURL, session: DeviceAPIClient.makeSession(protocolClasses: [MockURLProtocol.self]))
     }
+
+    func relayClient(relayId: String = "relay-test", token: String = "relay-token") throws -> RelayAPIClient {
+        try RelayAPIClient(
+            baseURL: baseURL, relayId: relayId, token: token,
+            session: RelayAPIClient.makeSession(protocolClasses: [MockURLProtocol.self])
+        )
+    }
 }
 
 extension MockURLProtocol.Reply {
@@ -94,6 +101,9 @@ extension MockURLProtocol.Reply {
     }
 
     static func error(_ status: Int, _ code: String) -> Self { .json(status, #"{"error":"\#(code)"}"#) }
+    static func error(_ status: Int, _ code: String, reason: String) -> Self {
+        .json(status, #"{"error":"\#(code)","reason":"\#(reason)"}"#)
+    }
 }
 
 enum Fixture {
