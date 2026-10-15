@@ -22,6 +22,7 @@
 import {
   RelayAuthError,
   RelayNetworkError,
+  RelayPrinterHandedOverError,
   type RelayApiClient,
 } from "./apiClient";
 import type { PrinterTarget, ReportOutcome } from "./protocol";
@@ -46,6 +47,8 @@ export type RelayLogger = (
  */
 export type RelaySignal =
   | { kind: "claimed" }
+  /** The cloud moved these printers to another host. This relay stopped claiming them. */
+  | { kind: "handedOver"; printerIds: string[] }
   /** An outcome was recorded for a job (before it reaches the cloud). */
   | { kind: "outcome"; outcome: ReportOutcome }
   | { kind: "inFlight"; value: boolean };
@@ -344,7 +347,24 @@ export class Relay {
 
   private get printerIds() {
     const { printerIds } = this.options;
-    return typeof printerIds === "function" ? printerIds() : printerIds;
+    const all = typeof printerIds === "function" ? printerIds() : printerIds;
+    return all.filter((id) => !this.handedOver.has(id));
+  }
+
+  /** Printers the cloud told us moved to another host. Never claimed again until the list is refreshed. */
+  private readonly handedOver = new Set<string>();
+
+  /** The cloud's printer list was just re-read: it is the authority on what this relay serves. */
+  forgetHandedOver() {
+    this.handedOver.clear();
+  }
+
+  private markHandedOver(ids: string[]) {
+    const fresh = ids.filter((id) => !this.handedOver.has(id));
+    if (fresh.length === 0) return;
+    for (const id of fresh) this.handedOver.add(id);
+    this.log("warn", "printers moved to another host; no longer claiming them", { printerIds: fresh });
+    this.options.signal?.({ kind: "handedOver", printerIds: fresh });
   }
 
   private async runTick() {
@@ -390,10 +410,19 @@ export class Relay {
     // Paused or stopped while the spool was being read: do not ask for work.
     if (!this.accepting) return;
 
-    const { jobs, rejectedPrinterIds } = await this.options.api.claim(
-      printerIds,
-      Math.min(this.claimLimit, room),
-    );
+    let answer;
+    try {
+      answer = await this.options.api.claim(printerIds, Math.min(this.claimLimit, room));
+    } catch (error) {
+      // Terminal for these printers, not a failure of the cloud: stop asking for them and keep the rest.
+      if (error instanceof RelayPrinterHandedOverError) {
+        this.markHandedOver(error.printerIds);
+        return;
+      }
+      throw error;
+    }
+    const { jobs, rejectedPrinterIds } = answer;
+    if (answer.handedOverPrinterIds?.length) this.markHandedOver(answer.handedOverPrinterIds);
     if (rejectedPrinterIds.length > 0) {
       this.log("warn", "cloud does not assign these printers to this relay", {
         rejectedPrinterIds,

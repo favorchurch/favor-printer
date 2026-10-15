@@ -58,6 +58,9 @@ export function deriveStatus(inputs: StatusInputs): StatusSummary {
   if (relay.cloud === "unreachable") {
     return amber("Cannot reach Favor RSVP", "Printing resumes when the internet is back.");
   }
+  if (relay.handedOverPrinterIds.length > 0) {
+    return amber("Printer moved to another host", "Ask an RSVP admin if this laptop should print again.");
+  }
   if (inputs.paused || relay.state === "paused") {
     return amber("Printing is paused", "Choose Resume printing in the menu.");
   }

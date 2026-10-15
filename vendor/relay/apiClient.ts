@@ -4,11 +4,13 @@
  * Failure classes matter to the caller:
  *   RelayNetworkError  cloud unreachable or 5xx: keep local state, retry later
  *   RelayAuthError     401: credentials rejected or revoked, keep local state
+ *   RelayPrinterHandedOverError  403 on claim: those printers moved to another host (terminal, no retry)
  *   "stale" results    the cloud no longer recognises this claim: drop the entry
  */
 
 import type {
   ClaimResponse,
+  HandedOverResponse,
   HeartbeatRequest,
   HeartbeatResponse,
   RelayConfigResponse,
@@ -29,6 +31,17 @@ export class RelayAuthError extends Error {
   constructor() {
     super("cloud rejected the relay credentials (401)");
     this.name = "RelayAuthError";
+  }
+}
+
+/**
+ * A claim answered 403 `printer_handed_over`: an admin moved these printers to another host. The
+ * relay stays enrolled and keeps serving its other printers. Retrying the claim cannot help.
+ */
+export class RelayPrinterHandedOverError extends Error {
+  constructor(readonly printerIds: string[]) {
+    super(`printers handed over to another host: ${printerIds.join(", ")}`);
+    this.name = "RelayPrinterHandedOverError";
   }
 }
 
@@ -76,6 +89,10 @@ export class RelayApiClient {
 
   async claim(printerIds: string[], limit: number): Promise<ClaimResponse> {
     const response = await this.post("/claim", { printerIds, limit });
+    if (response.status === 403) {
+      const handedOver = await readHandedOver(response);
+      if (handedOver) throw new RelayPrinterHandedOverError(handedOver);
+    }
     if (!response.ok) throw new RelayNetworkError(`claim answered ${response.status}`);
     return (await response.json()) as ClaimResponse;
   }
@@ -132,5 +149,17 @@ export class RelayApiClient {
 
   report(jobId: string, claimToken: string, outcome: ReportOutcome, error?: string) {
     return this.jobCall(`/jobs/${jobId}/report`, { claimToken, outcome, error });
+  }
+}
+
+/** The printer ids of a typed `printer_handed_over` 403, or null for any other body. */
+async function readHandedOver(response: Response): Promise<string[] | null> {
+  try {
+    const body = (await response.json()) as Partial<HandedOverResponse> | null;
+    if (body?.reason !== "printer_handed_over" || !Array.isArray(body.printerIds)) return null;
+    const ids = body.printerIds.filter((id): id is string => typeof id === "string");
+    return ids.length > 0 ? ids : null;
+  } catch {
+    return null;
   }
 }
