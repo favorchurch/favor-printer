@@ -1,0 +1,29 @@
+#ifndef FavorZplDriver_h
+#define FavorZplDriver_h
+
+#include <Availability.h>
+#include <DriverKit/IOService.iig>
+
+// Claims the USB printer-class interface of a Zebra ZD421 and moves raw bytes over its bulk endpoints.
+// Raw ZPL goes straight through, like `lp -o raw` on the Mac. The app talks to it through FavorZplUserClient.
+class FavorZplDriver : public IOService
+{
+public:
+	virtual bool init() override;
+	virtual void free() override;
+	virtual kern_return_t Start(IOService *provider) override;
+	virtual kern_return_t Stop(IOService *provider) override;
+	virtual kern_return_t NewUserClient(uint32_t type, IOUserClient **userClient) override;
+
+	// serial receives up to kFavorZplMaxSerialBytes bytes (UTF-8, no terminator); serialLength is how many.
+	virtual void GetStatus(uint32_t *stage, int32_t *error, uint32_t *bulkOutAddress, uint32_t *bulkInAddress,
+	                       uint8_t *serial, uint32_t *serialLength) LOCALONLY;
+
+	// Returns an error only when no USB I/O was attempted. A USB failure comes back in ioReturn so that
+	// transferred stays accurate.
+	virtual kern_return_t SendRaw(const void *bytes, uint32_t length, uint32_t *transferred, int32_t *ioReturn) LOCALONLY;
+	virtual kern_return_t ReadBulkIn(uint32_t timeoutMs, uint8_t *buffer, uint32_t capacity, uint32_t *bytesRead,
+	                                 int32_t *ioReturn) LOCALONLY;
+};
+
+#endif

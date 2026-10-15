@@ -42,9 +42,23 @@ targets:
     platform: iOS
     sources:
       - path: FavorPrinter
+        excludes:
+          - FavorPrinter.entitlements
+    dependencies:
+      # The dext is embedded where installd looks for it on iOS: <App>.app/SystemExtensions. DriverExtensions/
+      # installs but is ignored.
+      - target: FavorPrinterDriver
+        embed: true
+        codeSign: true
+        copy:
+          destination: productsDirectory
+          subpath: $(SYSTEM_EXTENSIONS_FOLDER_PATH)
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: FavorPrinter/FavorPrinter.entitlements
+        OTHER_LDFLAGS: ["$(inherited)", "-framework", "IOKit"]
+        SWIFT_OBJC_BRIDGING_HEADER: FavorPrinter/Bridging-Header.h
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         CODE_SIGN_STYLE: Automatic
         CURRENT_PROJECT_VERSION: 1
@@ -63,6 +77,34 @@ targets:
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         TARGETED_DEVICE_FAMILY: "2"
+
+  FavorPrinterDriver:
+    type: driver-extension
+    platform: iOS
+    sources:
+      - path: FavorPrinterDriver
+        excludes:
+          - Info.plist
+          - FavorPrinterDriver.entitlements
+    settings:
+      base:
+        # The simulator cannot load a dext and no DriverKit profile exists for it, so a simulator destination builds
+        # the dext unsigned. TARGET_DEVICE_PLATFORM_NAME is empty for generic device destinations, hence the empty default.
+        CODE_SIGNING_ALLOWED: "$(DEXT_SIGNING_ALLOWED_$(TARGET_DEVICE_PLATFORM_NAME))"
+        DEXT_SIGNING_ALLOWED_: "YES"
+        DEXT_SIGNING_ALLOWED_iphoneos: "YES"
+        DEXT_SIGNING_ALLOWED_iphonesimulator: "NO"
+        CODE_SIGN_ENTITLEMENTS: FavorPrinterDriver/FavorPrinterDriver.entitlements
+        CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: 1
+        DEVELOPMENT_TEAM: 3JJ4492TV8
+        DRIVERKIT_DEPLOYMENT_TARGET: "22.0"
+        INFOPLIST_FILE: FavorPrinterDriver/Info.plist
+        MARKETING_VERSION: 0.1.0
+        OTHER_LDFLAGS: ["-framework", "DriverKit", "-framework", "USBDriverKit"]
+        PRODUCT_BUNDLE_IDENTIFIER: church.favor.printer.ios.driver
+        SDKROOT: driverkit
+        SUPPORTED_PLATFORMS: driverkit
 
   FavorPrinterTests:
     type: bundle.unit-test

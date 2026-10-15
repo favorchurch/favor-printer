@@ -1,0 +1,415 @@
+import Foundation
+import Testing
+@testable import FavorPrinter
+
+// No test here touches IOKit or hardware: the transport runs against `ScriptedDext`, and the mapping is pure.
+
+/// Stands in for the dext. `handler` answers each user-client call and every call is recorded.
+final class ScriptedDext: DextBackend, @unchecked Sendable {
+    struct Call: Equatable {
+        var selector: Int
+        var scalarInput: [UInt64]
+        var structInput: [UInt8]
+    }
+
+    private let lock = NSLock()
+    private var recorded: [Call] = []
+    private var openedCount = 0
+    private var closedCount = 0
+    private let mode: Mode
+    private let visible: Bool
+    let handler: @Sendable (Call) -> DextReply
+
+    enum Mode {
+        case connected
+        case noService
+        case openFailed(Int32)
+    }
+
+    init(
+        printerVisible: Bool = false,
+        mode: Mode = .connected,
+        handler: @escaping @Sendable (Call) -> DextReply = { _ in DextReply(code: 0, scalars: [], data: []) }
+    ) {
+        visible = printerVisible
+        self.mode = mode
+        self.handler = handler
+    }
+
+    var calls: [Call] { lock.withLock { recorded } }
+    var opened: Int { lock.withLock { openedCount } }
+    var closed: Int { lock.withLock { closedCount } }
+
+    func connect() -> DextConnectResult {
+        switch mode {
+        case .connected:
+            lock.withLock { openedCount += 1 }
+            return .connected(ScriptedConnection(dext: self))
+        case .noService:
+            return .noService
+        case .openFailed(let code):
+            return .openFailed(code: code)
+        }
+    }
+
+    func printerVisible() -> Bool { visible }
+
+    fileprivate func record(_ call: Call) { lock.withLock { recorded.append(call) } }
+    fileprivate func recordClose() { lock.withLock { closedCount += 1 } }
+
+    /// A send reply: the dext accepted `written` bytes and the USB result was `usb`.
+    static func sendReply(written: Int, usb: Int32 = 0) -> DextReply {
+        DextReply(code: 0, scalars: [UInt64(written), UInt64(UInt32(bitPattern: usb))], data: [])
+    }
+}
+
+struct ScriptedConnection: DextConnection {
+    let dext: ScriptedDext
+
+    func call(selector: Int, scalarInput: [UInt64], structInput: [UInt8], scalarOutputCount: Int, structOutputCapacity: Int) -> DextReply {
+        let call = ScriptedDext.Call(selector: selector, scalarInput: scalarInput, structInput: structInput)
+        dext.record(call)
+        return dext.handler(call)
+    }
+
+    func close() { dext.recordClose() }
+}
+
+struct FakeUsbTransportTests {
+    @Test func sendSucceedsWithTheByteCountAndRecordsThePayload() async {
+        let fake = FakeUsbTransport()
+        let zpl = Data("^XA^FDFAVOR HOST TEST^FS^XZ".utf8)
+
+        let result = await fake.send(zpl)
+
+        #expect(result == .success(zpl.count))
+        #expect(await fake.writes == [zpl])
+    }
+
+    @Test func scriptedSendResultsAreConsumedInOrderThenDefaultToSuccess() async {
+        let fake = FakeUsbTransport()
+        await fake.enqueueSend(.failure(.notAttached), .success(1))
+
+        let first = await fake.send(Data("a".utf8))
+        let second = await fake.send(Data("bb".utf8))
+        let third = await fake.send(Data("ccc".utf8))
+
+        #expect(first == .failure(.notAttached))
+        #expect(second == .success(1))
+        #expect(third == .success(3))
+    }
+
+    @Test func aFailedSendIsStillRecordedBecauseBytesMayHaveGoneOut() async {
+        let fake = FakeUsbTransport()
+        await fake.enqueueSend(.failure(.writeFailed(code: IOReturnCode.timeout, bytesWritten: 4)))
+        let zpl = Data("^XA^XZ".utf8)
+
+        _ = await fake.send(zpl)
+
+        #expect(await fake.writes == [zpl])
+    }
+
+    @Test func readStatusAnswersScriptedResultsAndTimesOutWhenTheScriptIsEmpty() async {
+        let fake = FakeUsbTransport()
+        let reply = Data([0x02] + Array("030,0,0".utf8) + [0x03])
+        await fake.enqueueRead(.success(reply))
+
+        #expect(await fake.readStatus() == .success(reply))
+        #expect(await fake.readStatus() == .failure(.timeout))
+        #expect(await fake.readCalls == 2)
+    }
+
+    @Test func statusIsScriptableAndDefaultsToAReadyPrinter() async {
+        let fake = FakeUsbTransport()
+        #expect(await fake.status().driver == .running)
+
+        let unplugged = UsbPrinterStatus(driver: .unknown)
+        await fake.setStatus(unplugged)
+
+        let status = await fake.status()
+        #expect(status == unplugged)
+        #expect(status.printerAttached == nil)
+        #expect(await fake.statusCalls == 2)
+    }
+}
+
+struct IOReturnMappingTests {
+    private let detached = [IOReturnCode.noDevice, IOReturnCode.notAttached, IOReturnCode.offline]
+
+    @Test func ioReturnCodesMatchIOKitHeader() {
+        #expect(UInt32(bitPattern: IOReturnCode.noDevice) == 0xE000_02C0)
+        #expect(UInt32(bitPattern: IOReturnCode.timeout) == 0xE000_02D6)
+        #expect(UInt32(bitPattern: IOReturnCode.offline) == 0xE000_02D7)
+        #expect(UInt32(bitPattern: IOReturnCode.notReady) == 0xE000_02D8)
+        #expect(UInt32(bitPattern: IOReturnCode.notAttached) == 0xE000_02D9)
+        #expect(UInt32(bitPattern: IOReturnCode.notFound) == 0xE000_02F0)
+        #expect(UInt32(bitPattern: IOReturnCode.usbTransactionTimeout) == 0xE000_4051)
+    }
+
+    @Test func openFailureThatMeansTheDeviceIsGoneIsNotAttached() {
+        for code in detached {
+            #expect(UsbTransportError.forOpen(code: code) == .notAttached)
+        }
+    }
+
+    @Test func otherOpenFailuresKeepTheirCode() {
+        let denied = Int32(bitPattern: 0xE000_02E2)
+        #expect(UsbTransportError.forOpen(code: denied) == .openFailed(code: denied))
+        #expect(UsbTransportError.forOpen(code: IOReturnCode.notReady) == .openFailed(code: IOReturnCode.notReady))
+    }
+
+    @Test func fullWriteSucceedsWithTheCount() {
+        let result = UsbTransportError.writeOutcome(callCode: 0, driverCode: 0, written: 99, expected: 99)
+        #expect(result == .success(99))
+    }
+
+    @Test func writeThatAcceptedFewerBytesIsAShortWrite() {
+        let result = UsbTransportError.writeOutcome(callCode: 0, driverCode: 0, written: 40, expected: 99)
+        #expect(result == .failure(.shortWrite(written: 40, expected: 99)))
+    }
+
+    @Test func usbFailureKeepsTheBytesAlreadyWritten() {
+        let result = UsbTransportError.writeOutcome(
+            callCode: 0, driverCode: IOReturnCode.usbTransactionTimeout, written: 16384, expected: 40000
+        )
+        #expect(result == .failure(.writeFailed(code: IOReturnCode.usbTransactionTimeout, bytesWritten: 16384)))
+    }
+
+    @Test func detachBeforeAnyByteIsNotAttachedButAfterSomeBytesItKeepsTheCount() {
+        for code in detached {
+            let early = UsbTransportError.writeOutcome(callCode: 0, driverCode: code, written: 0, expected: 10)
+            let late = UsbTransportError.writeOutcome(callCode: 0, driverCode: code, written: 4, expected: 10)
+            #expect(early == .failure(.notAttached))
+            #expect(late == .failure(.writeFailed(code: code, bytesWritten: 4)))
+        }
+    }
+
+    @Test func aFailedCallWinsOverTheDriverCodeAndKeepsEarlierChunks() {
+        let result = UsbTransportError.writeOutcome(
+            callCode: IOReturnCode.notReady, driverCode: IOReturnCode.timeout, written: 262_144, expected: 300_000
+        )
+        #expect(result == .failure(.writeFailed(code: IOReturnCode.notReady, bytesWritten: 262_144)))
+    }
+
+    @Test func readMapsTimeoutsDetachAndOtherFailures() {
+        let reply = Data([1, 2, 3])
+        #expect(UsbTransportError.readOutcome(callCode: 0, driverCode: 0, data: reply) == .success(reply))
+        #expect(UsbTransportError.readOutcome(callCode: 0, driverCode: 0, data: Data()) == .success(Data()))
+        for code in [IOReturnCode.timeout, IOReturnCode.usbTransactionTimeout] {
+            #expect(UsbTransportError.readOutcome(callCode: 0, driverCode: code, data: Data()) == .failure(.timeout))
+            #expect(UsbTransportError.readOutcome(callCode: code, driverCode: 0, data: Data()) == .failure(.timeout))
+        }
+        for code in detached {
+            #expect(UsbTransportError.readOutcome(callCode: code, driverCode: 0, data: Data()) == .failure(.notAttached))
+        }
+        #expect(
+            UsbTransportError.readOutcome(callCode: IOReturnCode.notFound, driverCode: 0, data: Data())
+                == .failure(.readFailed(code: IOReturnCode.notFound))
+        )
+    }
+
+    @Test func availabilityIsDerivedFromServiceUserClientAndRegistry() {
+        func derive(_ service: Bool, _ opens: Bool, _ visible: Bool) -> DriverAvailability {
+            .derive(serviceMatched: service, userClientOpens: opens, printerVisible: visible)
+        }
+        #expect(derive(true, true, false) == .running)
+        #expect(derive(true, true, true) == .running)
+        #expect(derive(false, false, true) == .printerPresentDriverNotRunning)
+        #expect(derive(true, false, false) == .printerPresentDriverNotRunning)
+        #expect(derive(true, false, true) == .printerPresentDriverNotRunning)
+        #expect(derive(false, false, false) == .unknown)
+    }
+}
+
+struct DriverKitUsbTransportTests {
+    private func statusReply(stage: UInt64 = 8, error: Int32 = 0, out: UInt64 = 0x01, bulkIn: UInt64 = 0x81, serial: [UInt8] = []) -> DextReply {
+        DextReply(code: 0, scalars: [stage, UInt64(UInt32(bitPattern: error)), out, bulkIn], data: serial)
+    }
+
+    // MARK: status
+
+    @Test func runningStatusReportsStageEndpointsAndSerial() async {
+        let dext = ScriptedDext { _ in statusReply(serial: Array("D2J123456".utf8)) }
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status == UsbPrinterStatus(
+            driver: .running, printerAttached: true, stage: 8, lastError: nil,
+            bulkOutAddress: 0x01, bulkInAddress: 0x81, usbSerial: "D2J123456"
+        ))
+        #expect(dext.calls.map(\.selector) == [kFavorZplSelectorStatus])
+        #expect(dext.closed == dext.opened)
+    }
+
+    @Test func statusKeepsADextErrorAndOmitsMissingEndpointsAndSerial() async {
+        let failure = IOReturnCode.notFound
+        let dext = ScriptedDext { _ in statusReply(stage: 6, error: failure, out: 0, bulkIn: 0, serial: [0, 0, 0]) }
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status.driver == .running)
+        #expect(status.stage == 6)
+        #expect(status.lastError == failure)
+        #expect(status.bulkOutAddress == nil)
+        #expect(status.bulkInAddress == nil)
+        #expect(status.usbSerial == nil)
+    }
+
+    @Test func statusIsUnknownWithNoServiceAndAnUnseenPrinter() async {
+        let dext = ScriptedDext(printerVisible: false, mode: .noService)
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status == UsbPrinterStatus(driver: .unknown))
+        #expect(status.printerAttached == nil)
+    }
+
+    @Test func statusSaysPrinterPresentDriverNotRunningWhenOnlyTheRegistryShowsIt() async {
+        let dext = ScriptedDext(printerVisible: true, mode: .noService)
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status.driver == .printerPresentDriverNotRunning)
+        #expect(status.printerAttached == true)
+        #expect(status.stage == nil)
+    }
+
+    @Test func statusWithAServiceThatWillNotOpenReportsTheOpenCode() async {
+        let code = Int32(bitPattern: 0xE000_02E2)
+        let dext = ScriptedDext(mode: .openFailed(code))
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status.driver == .printerPresentDriverNotRunning)
+        #expect(status.printerAttached == true)
+        #expect(status.lastError == code)
+    }
+
+    // MARK: send
+
+    @Test func sendWritesTheBytesThroughTheSendSelectorAndCloses() async {
+        let zpl = Data("^XA^FO50,50^FDFAVOR HOST TEST^FS^XZ".utf8)
+        let dext = ScriptedDext { _ in ScriptedDext.sendReply(written: zpl.count) }
+
+        let result = await DriverKitUsbTransport(backend: dext).send(zpl)
+
+        #expect(result == .success(zpl.count))
+        #expect(dext.calls.map(\.selector) == [kFavorZplSelectorSendRaw])
+        #expect(dext.calls.first?.structInput == [UInt8](zpl))
+        #expect(dext.opened == 1)
+        #expect(dext.closed == 1)
+    }
+
+    @Test func emptySendSucceedsWithoutOpeningTheDriver() async {
+        let dext = ScriptedDext()
+        let result = await DriverKitUsbTransport(backend: dext).send(Data())
+
+        #expect(result == .success(0))
+        #expect(dext.opened == 0)
+    }
+
+    @Test func eachSendOpensAFreshConnection() async {
+        let dext = ScriptedDext { call in ScriptedDext.sendReply(written: call.structInput.count) }
+        let transport = DriverKitUsbTransport(backend: dext)
+
+        _ = await transport.send(Data("a".utf8))
+        _ = await transport.send(Data("b".utf8))
+
+        #expect(dext.opened == 2)
+        #expect(dext.closed == 2)
+    }
+
+    @Test func payloadLargerThanTheABILimitIsSplitInOrderAndSumsTheBytes() async {
+        let limit = Int(kFavorZplMaxSendBytes)
+        let zpl = Data((0..<(limit * 2 + 100)).map { UInt8(truncatingIfNeeded: $0) })
+        let dext = ScriptedDext { call in ScriptedDext.sendReply(written: call.structInput.count) }
+
+        let result = await DriverKitUsbTransport(backend: dext).send(zpl)
+
+        #expect(result == .success(zpl.count))
+        #expect(dext.calls.map(\.structInput.count) == [limit, limit, 100])
+        #expect(dext.calls.flatMap(\.structInput) == [UInt8](zpl))
+    }
+
+    @Test func failureInALaterChunkReportsEveryByteAlreadyWrittenAndStops() async {
+        let limit = Int(kFavorZplMaxSendBytes)
+        let zpl = Data(repeating: 0x41, count: limit + 50)
+        let dext = ScriptedDext { call in
+            call.structInput.count == limit
+                ? ScriptedDext.sendReply(written: limit)
+                : ScriptedDext.sendReply(written: 10, usb: IOReturnCode.usbTransactionTimeout)
+        }
+
+        let result = await DriverKitUsbTransport(backend: dext).send(zpl)
+
+        #expect(result == .failure(.writeFailed(code: IOReturnCode.usbTransactionTimeout, bytesWritten: limit + 10)))
+        #expect(dext.calls.count == 2)
+    }
+
+    @Test func dextAcceptingFewerBytesWithoutAnErrorIsAShortWrite() async {
+        let dext = ScriptedDext { _ in ScriptedDext.sendReply(written: 3) }
+        let result = await DriverKitUsbTransport(backend: dext).send(Data(repeating: 0x41, count: 10))
+
+        #expect(result == .failure(.shortWrite(written: 3, expected: 10)))
+        #expect(dext.calls.count == 1)
+    }
+
+    @Test func failedUserClientCallKeepsTheCodeWithNothingWrittenForThatChunk() async {
+        let dext = ScriptedDext { _ in DextReply(code: IOReturnCode.notReady, scalars: [0, 0], data: []) }
+        let result = await DriverKitUsbTransport(backend: dext).send(Data("^XA^XZ".utf8))
+
+        #expect(result == .failure(.writeFailed(code: IOReturnCode.notReady, bytesWritten: 0)))
+    }
+
+    @Test func sendWithoutADextServiceBlamesTheDriverOnlyWhenThePrinterIsVisible() async {
+        let zpl = Data("^XA^XZ".utf8)
+        let driverOff = ScriptedDext(printerVisible: true, mode: .noService)
+        let unplugged = ScriptedDext(printerVisible: false, mode: .noService)
+
+        #expect(await DriverKitUsbTransport(backend: driverOff).send(zpl) == .failure(.driverNotFound))
+        #expect(await DriverKitUsbTransport(backend: unplugged).send(zpl) == .failure(.notAttached))
+    }
+
+    @Test func sendWhenTheUserClientWillNotOpenMapsTheOpenCode() async {
+        let code = Int32(bitPattern: 0xE000_02E2)
+        let gone = ScriptedDext(mode: .openFailed(IOReturnCode.noDevice))
+        let refused = ScriptedDext(mode: .openFailed(code))
+        let zpl = Data("^XA^XZ".utf8)
+
+        #expect(await DriverKitUsbTransport(backend: gone).send(zpl) == .failure(.notAttached))
+        #expect(await DriverKitUsbTransport(backend: refused).send(zpl) == .failure(.openFailed(code: code)))
+    }
+
+    // MARK: read status
+
+    @Test func readStatusReturnsExactlyTheBytesTheDextReportedAndPassesTheTimeout() async {
+        let answer = Array("030,0,0,0,000,0,0,0,000,0,0,0".utf8)
+        let dext = ScriptedDext { _ in
+            // The kernel may hand back the whole buffer: only the dext's byte count counts.
+            DextReply(code: 0, scalars: [UInt64(answer.count), 0], data: answer + [UInt8](repeating: 0, count: 20))
+        }
+
+        let result = await DriverKitUsbTransport(backend: dext, readTimeoutMs: 750).readStatus()
+
+        #expect(result == .success(Data(answer)))
+        #expect(dext.calls == [.init(selector: kFavorZplSelectorReadStatus, scalarInput: [750], structInput: [])])
+    }
+
+    @Test func readTimeoutFromTheDextIsATimeout() async {
+        let dext = ScriptedDext { _ in
+            DextReply(code: 0, scalars: [0, UInt64(UInt32(bitPattern: IOReturnCode.usbTransactionTimeout))], data: [])
+        }
+        let result = await DriverKitUsbTransport(backend: dext).readStatus()
+
+        #expect(result == .failure(.timeout))
+    }
+
+    @Test func missingBulkInEndpointIsATypedReadFailure() async {
+        let dext = ScriptedDext { _ in DextReply(code: IOReturnCode.notFound, scalars: [0, 0], data: []) }
+        let result = await DriverKitUsbTransport(backend: dext).readStatus()
+
+        #expect(result == .failure(.readFailed(code: IOReturnCode.notFound)))
+    }
+
+    @Test func readWithNoDextServiceIsTyped() async {
+        let dext = ScriptedDext(printerVisible: true, mode: .noService)
+        let result = await DriverKitUsbTransport(backend: dext).readStatus()
+
+        #expect(result == .failure(.driverNotFound))
+    }
+}

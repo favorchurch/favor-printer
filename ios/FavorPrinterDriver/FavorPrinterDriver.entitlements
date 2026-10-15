@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.driverkit</key>
+	<true/>
+	<!-- idVendor must be the STRING "*" to match the development profile; the integer 2655 makes installd reject
+	     the app (0xe8008015). Distribution (TestFlight/App Store) needs Apple to approve Zebra's vendor ID
+	     0x0A5F for this team. That request has not been made. -->
+	<key>com.apple.developer.driverkit.transport.usb</key>
+	<array>
+		<dict>
+			<key>idVendor</key>
+			<string>*</string>
+		</dict>
+	</array>
+	<key>com.apple.developer.driverkit.allow-third-party-userclients</key>
+	<true/>
+</dict>
+</plist>
