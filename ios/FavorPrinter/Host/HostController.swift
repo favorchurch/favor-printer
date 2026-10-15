@@ -288,6 +288,9 @@ final class HostController {
         status.driver = reading.driver
         status.printerAttached = reading.printerAttached
         status.printerReady = reading.driver == .running && reading.printerAttached == true
+#if DEBUG
+        status.driverDiagnostic = reading.debugDiagnostic
+#endif
     }
 
     // MARK: Enrollment

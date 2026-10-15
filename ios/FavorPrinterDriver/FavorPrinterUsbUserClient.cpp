@@ -101,6 +101,7 @@ static kern_return_t StatusSelector(FavorPrinterUsbDriver *driver, IOUserClientM
 	arguments->scalarOutput[kFavorZplStatusError] = (uint32_t)error;
 	arguments->scalarOutput[kFavorZplStatusBulkOutAddress] = bulkOut;
 	arguments->scalarOutput[kFavorZplStatusBulkInAddress] = bulkIn;
+	arguments->scalarOutput[kFavorZplStatusDriverMagic] = kFavorZplDriverMagic;
 	arguments->scalarOutput[kFavorZplStatusABIVersion] = kFavorZplABIVersion;
 	SetStructureOutput(arguments, serial, serialLength);
 	return kIOReturnSuccess;

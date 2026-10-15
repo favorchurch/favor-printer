@@ -80,11 +80,14 @@ The dext registers its service first and never fails after that, so the app can 
 `readFailed`, not a crash. `status()` reports `DriverAvailability`: `.running` (service matched and its user client opens),
 `.printerPresentDriverNotRunning` (the IORegistry shows VID 0x0A5F PID 389 but there is no working dext service) or
 `.unknown` (neither; whether the driver is enabled cannot be inferred).
-Only a service whose `IOUserServerName` (else `CFBundleIdentifier`) is `church.favor.printer.ios.driver` counts as our driver.
-A dext from another bundle, even one with our class name, is never opened. When it holds the printer and ours is not
-running, `status()` is `.printerPresentDriverNotRunning` with `foreignDriver` set, never `.running`.
-The status selector also returns an ABI version (`kFavorZplABIVersion`). Every send and read checks it first and fails with
-`UsbTransportError.abiMismatch` before sending anything when it differs. Bump it when a selector, scalar layout or limit changes. The IORegistry lookup is best effort, so
+The app enumerates `IOUserService` entries and, as a fallback, their children under the matching USB interface; it
+does not require registry identity properties to be present. It opens each candidate and asks the status selector
+for the fixed `FVPR` magic and ABI version. Only a matching magic and `kFavorZplABIVersion` identify this dext.
+Registry identity properties are retained as diagnostic hints only. A candidate with a different answer is closed
+and reported as a foreign driver; every rejected connection is closed. A matching magic with a different ABI keeps
+the typed `UsbTransportError.abiMismatch`, and sends or reads nothing. Bump the ABI version when a selector, scalar
+layout or limit changes. DEBUG builds expose each candidate's class, open result, magic, ABI and stage in the host
+screen's Printer diagnostics section. The IORegistry lookup is best effort, so
 `printerAttached` is `true` or `nil`, never `false`. Its result on a real iPad is recorded at the hardware gate.
 
 `DriverKitUsbTransport` opens a fresh user client for every call, so a replug or a driver reload needs no reconnect logic.
