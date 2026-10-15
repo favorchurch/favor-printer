@@ -387,6 +387,15 @@ final class HostController {
 #if DEBUG
             keepsRunning = backgroundExperimentEnabled
 #endif
+            if !keepsRunning, keepAlivePreference?.isEnabled == true {
+                // Keep-alive audio holds the app running, so the loop stays up and keeps sending "active" beats.
+                // If the audio does not start, fall through to the paused beat exactly as without keep-alive.
+                startKeepAliveAudio()
+                if isKeepAliveAudioActive {
+                    schedule { await self.reconcile() }
+                    return
+                }
+            }
             if !keepsRunning {
                 // The beat is prepared in the lifecycle queue ahead of the stop, so a stop cannot win the race.
                 let taskId = beginPausedBeatTask()
@@ -715,6 +724,12 @@ final class HostController {
                 recordAudioEvent("audio resumed")
             } catch {
                 recordAudioEvent("audio resume failed")
+                if !isForeground, !isBackgroundExperimentRunning {
+                    // The audio is gone and the loop is about to stop: report "paused" like a plain background.
+                    stopKeepAliveAudio()
+                    let taskId = beginPausedBeatTask()
+                    schedule { await self.pausedBeatThenReconcile(taskId) }
+                }
             }
         }
     }
