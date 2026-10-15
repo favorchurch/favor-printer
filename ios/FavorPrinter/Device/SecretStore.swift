@@ -21,6 +21,34 @@ struct KeychainSecretStore: SecretStore {
         self.account = account
     }
 
+    private var item: KeychainCredentialItem { KeychainCredentialItem(service: service, account: account) }
+
+    func read() throws -> String? { try item.read() }
+    func write(_ secret: String) throws { try item.write(secret) }
+    func delete() throws { try item.delete() }
+}
+
+/// Holds the cloud relay credential independently from the check-in bearer.
+struct KeychainHostCredentialStore: SecretStore {
+    let service: String
+    let account: String
+
+    init(service: String = "church.favor.printer.relay", account: String = "bearer") {
+        self.service = service
+        self.account = account
+    }
+
+    private var item: KeychainCredentialItem { KeychainCredentialItem(service: service, account: account) }
+
+    func read() throws -> String? { try item.read() }
+    func write(_ secret: String) throws { try item.write(secret) }
+    func delete() throws { try item.delete() }
+}
+
+private struct KeychainCredentialItem {
+    let service: String
+    let account: String
+
     private var identity: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
