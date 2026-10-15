@@ -670,6 +670,20 @@ private func makeController(
 }
 
 @MainActor
+struct HostControllerPrinterStatusTests {
+    @Test func refreshPrinterShowsTheDriverWhileNotEnrolledAndTheLoopIsIdle() async throws {
+        let transport = FakeUsbTransport(status: UsbPrinterStatus(driver: .printerPresentDriverNotRunning, printerAttached: true))
+        let controller = try makeController(secrets: InMemorySecretStore(), relay: FakeRelay(), directory: TempDirectory(), transport: transport)
+        #expect(controller.status.driver == nil)
+        await controller.refreshPrinter()
+        #expect(controller.status.driver == .printerPresentDriverNotRunning)
+        #expect(controller.status.printerAttached == true)
+        #expect(controller.status.printerReady == false)
+        #expect(controller.isLoopRunning == false)
+    }
+}
+
+@MainActor
 struct HostControllerEnrollmentTests {
     @Test func enrollSavesTheCredentialThenFetchesConfigAndLogsNoToken() async throws {
         let server = relayServer()
