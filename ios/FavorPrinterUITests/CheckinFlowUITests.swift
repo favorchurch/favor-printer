@@ -23,12 +23,15 @@ final class CheckinFlowUITests: XCTestCase {
     /// unlabelled inner element inside a labelled row (Toggle, Button), and the keyboard's own keys are
     /// not ours, so a control counts as labelled when it or an enclosing control of the same kind is.
     private func assertControlsLabelled(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        // System UI the app does not own: the software keyboard (and the prediction bar above it), or, with a
+        // hardware keyboard attached, only the input assistant bar (typing predictions) at the screen bottom.
         let keyboard = app.keyboards.firstMatch
-        // The prediction bar sits just above the keyboard, so cover it too.
-        let keyboardFrame = keyboard.exists ? keyboard.frame.insetBy(dx: 0, dy: -80) : .null
+        let assistant = app.otherElements["inputAssistantView"]
+        let systemFrames = [keyboard.exists ? keyboard.frame.insetBy(dx: 0, dy: -80) : nil,
+                            assistant.exists ? assistant.frame : nil].compactMap { $0 }
         for query in [app.buttons, app.textFields, app.switches, app.popUpButtons] {
             let controls = query.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
-            for control in controls where control.label.isEmpty && !keyboardFrame.intersects(control.frame) {
+            for control in controls where control.label.isEmpty && !systemFrames.contains(where: { $0.intersects(control.frame) }) {
                 let enclosed = controls.contains { !$0.label.isEmpty && $0.frame.contains(control.frame) }
                 XCTAssertTrue(enclosed, "unlabelled control: \(control.debugDescription)", file: file, line: line)
             }

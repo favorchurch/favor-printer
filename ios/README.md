@@ -59,10 +59,15 @@ Override locally with an untracked `Config/Local.xcconfig`, for example
 
 ## Build and test
 
+The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+(`brew install xcodegen`) and is not committed. Run `xcodegen generate` first and again after adding, removing
+or renaming files or changing build settings. Edit `project.yml`, never the generated project.
+
 Xcode is not the active developer directory on this machine, so set `DEVELOPER_DIR`:
 
 ```sh
 cd ios
+xcodegen generate
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
 # unit tests and the XCUITest on the simulator
