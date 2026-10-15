@@ -20,6 +20,18 @@ export type ClaimedJob = PrinterTarget & {
 export type ClaimResponse = {
   jobs: ClaimedJob[];
   rejectedPrinterIds: string[];
+  /** Additive: the rejected ids this relay once served and an admin handed over to another host. */
+  handedOverPrinterIds?: string[];
+};
+
+/**
+ * Answer (403) to a claim whose requested printers were all handed over to another host. The relay
+ * stays enrolled and keeps its other printers: drop these printers and do not retry the claim.
+ */
+export type HandedOverResponse = {
+  error: "forbidden";
+  reason: "printer_handed_over";
+  printerIds: string[];
 };
 
 export type PrinterProbe = {
@@ -40,6 +52,10 @@ export type HeartbeatRequest = {
   appVersion?: string;
   osVersion?: string;
   printerAttached?: boolean;
+  /** Optional. Absent from older clients; unknown values are ignored by the server. */
+  hostKind?: "mac" | "ipad";
+  /** Optional. "paused" is the last beat an iPad host sends when it goes to the background. Absent means active. */
+  lifecycle?: "active" | "paused";
 };
 
 export type HeartbeatResponse = {
@@ -79,6 +95,8 @@ export type RelayEnrollResponse = {
    * from an older cloud. Null when the printer has no campus.
    */
   printer: { id: string; name: string; usbSerial: string | null; campusId?: number | null };
+  /** Additive: set when this enrollment moved the printer off another host (that host's kind and label, never its id). */
+  handedOverFrom?: { hostKind: "mac" | "ipad" | null; label: string | null };
 };
 
 /**
@@ -94,7 +112,9 @@ export type RelayEnrollConflictReason =
   | "serial_other_campus"
   | "serial_duplicate_has_jobs"
   | "serial_in_use"
-  | "printer_name_taken";
+  | "printer_name_taken"
+  /** The printer's current host is live. The admin must confirm a handover and issue a new code. */
+  | "host_active";
 
 /** Answer of POST /api/printing/relay/enroll with status 409 and `error: "printer_conflict"`. */
 export type RelayEnrollConflictResponse = {

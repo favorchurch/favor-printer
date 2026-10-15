@@ -118,6 +118,7 @@ const ERROR_CODES: Record<RelayErrorCode, true> = {
   invalid_options: true,
   send_failed: true,
   send_ambiguous: true,
+  printer_handed_over: true,
   unexpected: true,
 };
 /**
@@ -153,6 +154,9 @@ export function sanitizeRelayStatus(raw: unknown): RelayStatus | null {
     cloud: raw.cloud,
     printerIds: Array.isArray(raw.printerIds)
       ? raw.printerIds.filter((id): id is string => typeof id === "string" && PRINTER_ID.test(id))
+      : [],
+    handedOverPrinterIds: Array.isArray(raw.handedOverPrinterIds)
+      ? raw.handedOverPrinterIds.filter((id): id is string => typeof id === "string" && PRINTER_ID.test(id))
       : [],
     inFlight: raw.inFlight === true,
     counts: { claimed: count(counts.claimed), sent: count(counts.sent), failed: count(counts.failed), ambiguous: count(counts.ambiguous) },

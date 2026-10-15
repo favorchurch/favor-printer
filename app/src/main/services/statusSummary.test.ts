@@ -10,6 +10,7 @@ const relay = (overrides: Partial<RelayStatus> = {}): RelayStatus => ({
   state: "running",
   cloud: "ok",
   printerIds: ["printer-1"],
+  handedOverPrinterIds: [],
   inFlight: false,
   counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
   lastJobAt: null,
@@ -48,6 +49,12 @@ describe("deriveStatus copy", () => {
   it("warns on green when the last label is in doubt, and when it failed", () => {
     expect(deriveStatus(inputs({ relay: relay({ lastError: "send_ambiguous" }) })).detail).toMatch(/label stock/i);
     expect(deriveStatus(inputs({ relay: relay({ lastError: "send_failed" }) })).detail).toMatch(/failed/i);
+  });
+
+  it("says the printer moved when the relay was handed over", () => {
+    const summary = deriveStatus(inputs({ relay: relay({ handedOverPrinterIds: ["printer-1"], printerIds: [] }) }));
+    expect(summary.color).toBe("amber");
+    expect(summary.headline).toBe("Printer moved to another host");
   });
 
   it("mentions a ready update", () => {

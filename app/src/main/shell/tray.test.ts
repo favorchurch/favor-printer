@@ -195,6 +195,7 @@ describe("menu for each status", () => {
     state: "running",
     cloud: "ok",
     printerIds: ["printer-1"],
+    handedOverPrinterIds: [],
     inFlight: false,
     counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
     lastJobAt: null,

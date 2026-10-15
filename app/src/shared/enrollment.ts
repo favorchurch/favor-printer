@@ -13,6 +13,7 @@ export const ENROLL_CONFLICT_REASONS = [
   "serial_duplicate_has_jobs",
   "serial_in_use",
   "printer_name_taken",
+  "host_active",
 ] as const;
 
 /** `unknown` stands for a conflict the cloud did not explain, or explained with a reason this app does not know. */
@@ -62,6 +63,7 @@ export const ENROLL_CONFLICT_COPY: Record<EnrollConflictReason, string> = {
   serial_duplicate_has_jobs: "RSVP has this Zebra listed twice and one has labels waiting. Ask an admin to tidy it up, then enter the code again.",
   serial_in_use: "This Zebra is already connected to another laptop. Ask an admin to disconnect it there, then enter the code again.",
   printer_name_taken: "Another printer in RSVP already has this name. Ask an admin to rename one, then enter the code again.",
+  host_active: "This printer is active on another host. Ask an RSVP admin to confirm a handover, then use the new code.",
   unknown: "Favor RSVP could not connect this printer. Nothing was changed. Ask an admin for help.",
 };
 

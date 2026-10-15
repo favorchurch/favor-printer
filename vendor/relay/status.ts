@@ -15,6 +15,8 @@ export type RelayErrorCode =
   | "credentials_rejected"
   | "config_unavailable"
   | "config_invalid"
+  /** A printer was moved to another host. The relay keeps serving its others. */
+  | "printer_handed_over"
   | "spool_locked"
   | "invalid_options"
   | "send_failed"
@@ -32,6 +34,8 @@ export type RelayStatus = {
   state: RelayState;
   cloud: CloudState;
   printerIds: string[];
+  /** Printers an admin moved to another host since the last config refresh. Not claimed any more. */
+  handedOverPrinterIds: string[];
   inFlight: boolean;
   /** Since this relay started. */
   counts: RelayCounts;
@@ -58,6 +62,7 @@ export function createStatusTracker(
     state: "stopped",
     cloud: "unreachable",
     printerIds: [],
+    handedOverPrinterIds: [],
     inFlight: false,
     counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
     lastJobAt: null,
@@ -69,6 +74,7 @@ export function createStatusTracker(
   const copy = (): RelayStatus => ({
     ...status,
     printerIds: [...status.printerIds],
+    handedOverPrinterIds: [...status.handedOverPrinterIds],
     counts: { ...status.counts },
   });
 
@@ -101,7 +107,22 @@ export function createStatusTracker(
     },
     printerIds(ids: string[]) {
       update((s) => {
-        s.printerIds = [...ids];
+        s.printerIds = ids.filter((id) => !s.handedOverPrinterIds.includes(id));
+      });
+    },
+    /** Printers the cloud says moved to another host. A new config list replaces this. */
+    handedOver(ids: string[]) {
+      update((s) => {
+        s.handedOverPrinterIds = [...new Set([...s.handedOverPrinterIds, ...ids])];
+        s.printerIds = s.printerIds.filter((id) => !ids.includes(id));
+        s.lastError = "printer_handed_over";
+      });
+    },
+    /** The cloud's printer list was re-read, so it replaces what we inferred from handover answers. */
+    clearHandedOver() {
+      update((s) => {
+        s.handedOverPrinterIds = [];
+        if (s.lastError === "printer_handed_over") s.lastError = null;
       });
     },
     inFlight(value: boolean) {

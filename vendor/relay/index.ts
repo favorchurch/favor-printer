@@ -179,6 +179,7 @@ export function createEmbeddedRelay(options: EmbeddedRelayOptions): EmbeddedRela
     },
     signal: (signal) => {
       if (signal.kind === "claimed") status.claimed();
+      else if (signal.kind === "handedOver") status.handedOver(signal.printerIds);
       else if (signal.kind === "outcome") status.outcome(signal.outcome);
       else status.inFlight(signal.value);
     },
@@ -203,6 +204,9 @@ export function createEmbeddedRelay(options: EmbeddedRelayOptions): EmbeddedRela
         status.error("config_invalid");
       } else {
         printerIds = ids;
+        // The cloud's list is the authority: a printer handed back to this host is claimed again.
+        relay.forgetHandedOver();
+        status.clearHandedOver();
       }
     } catch (error) {
       // Offline or rejected: keep the last known list unless the cloud said no

@@ -218,10 +218,17 @@ describe("enroll printer conflicts", () => {
     expect(Object.keys(toProtocol).sort()).toEqual([...ENROLL_CONFLICT_REASONS].sort());
   });
 
+  it("reads host_active and tells the volunteer to get a handover and a new code", async () => {
+    expect(await conflict({ error: "printer_conflict", reason: "host_active" })).toMatchObject({ reason: "printer_conflict", conflict: "host_active" });
+    expect(ENROLL_CONFLICT_COPY.host_active).toBe(
+      "This printer is active on another host. Ask an RSVP admin to confirm a handover, then use the new code.",
+    );
+  });
+
   it("has operator copy per reason that says what to do and names no printer or serial", () => {
     for (const reason of [...ENROLL_CONFLICT_REASONS, "unknown"] as const) {
       const copy = ENROLL_CONFLICT_COPY[reason];
-      expect(copy).toMatch(/ask an admin|plug in/i);
+      expect(copy).toMatch(/ask an (rsvp )?admin|plug in/i);
       expect(copy).not.toMatch(/\d|serial number/i);
       expect(enrollFailureCopy({ ok: false, reason: "printer_conflict", conflict: reason })).toBe(copy);
     }

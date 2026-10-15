@@ -466,10 +466,19 @@ describe("sanitizeRelayStatus", () => {
     expect(sanitizeRelayStatus(status)).toEqual(status);
   });
 
+  it("defaults handedOverPrinterIds to [] for an older child and keeps only valid ids", () => {
+    const older: Record<string, unknown> = { ...relayStatus() };
+    delete older.handedOverPrinterIds;
+    expect(sanitizeRelayStatus(older)?.handedOverPrinterIds).toEqual([]);
+    const out = sanitizeRelayStatus({ ...relayStatus(), handedOverPrinterIds: ["printer-2", "Jane Q. Attendee", 5], lastError: "printer_handed_over" });
+    expect(out?.handedOverPrinterIds).toEqual(["printer-2"]);
+    expect(out?.lastError).toBe("printer_handed_over");
+  });
+
   it("drops fields it does not know", () => {
     const out = sanitizeRelayStatus({ ...relayStatus(), attendeeName: "Jane Q. Attendee", zpl: "^XA^XZ", securityCode: "483920" });
     expect(Object.keys(out ?? {}).sort()).toEqual(
-      ["cloud", "counts", "inFlight", "lastError", "lastHeartbeatAt", "lastJobAt", "printerIds", "state"].sort(),
+      ["cloud", "counts", "handedOverPrinterIds", "inFlight", "lastError", "lastHeartbeatAt", "lastJobAt", "printerIds", "state"].sort(),
     );
   });
 
@@ -494,6 +503,7 @@ describe("sanitizeRelayStatus", () => {
       state: "running",
       cloud: "ok",
       printerIds: ["printer-1"],
+      handedOverPrinterIds: [],
       inFlight: false,
       counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
       lastJobAt: null,
