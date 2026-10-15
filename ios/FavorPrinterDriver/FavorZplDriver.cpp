@@ -176,8 +176,10 @@ kern_return_t IMPL(FavorZplDriver, Stop)
 		IOSleep(10);
 	}
 	if (!drained) {
-		// A transfer is still using the pipes. Leaking them beats freeing them under it: the interface is going away anyway.
+		// A transfer is still using the pipes. Leaking the pipe and interface references beats freeing them under it.
+		// Closing the interface still ends the transfer and lets the provider terminate.
 		LOG("stop: transfer did not finish, leaving pipes in place");
+		if (ivars->interface != nullptr) ivars->interface->Close(this, 0);
 		return Stop(provider, SUPERDISPATCH);
 	}
 	OSSafeReleaseNULL(ivars->outPipe);
@@ -225,7 +227,14 @@ kern_return_t FavorZplDriver::SendRaw(const void *bytes, uint32_t length, uint32
 		*ioReturn = kIOReturnNoDevice;
 		return kIOReturnSuccess;
 	}
-	if (ivars->outPipe == nullptr) return kIOReturnNotReady;
+	if (ivars->outPipe == nullptr) {
+		// Stop closes the gate before it nulls the pipes, so a closed gate here means Stop got in between.
+		if (FavorZplGateIsClosed(&ivars->gate)) {
+			*ioReturn = kIOReturnNoDevice;
+			return kIOReturnSuccess;
+		}
+		return kIOReturnNotReady;
+	}
 	if (!FavorZplGateTryAcquire(&ivars->gate)) return kIOReturnBusy;
 	ScopedGate gate(&ivars->gate);
 
@@ -269,7 +278,13 @@ kern_return_t FavorZplDriver::ReadBulkIn(uint32_t timeoutMs, uint8_t *out, uint3
 		*ioReturn = kIOReturnNoDevice;
 		return kIOReturnSuccess;
 	}
-	if (ivars->inPipe == nullptr) return kIOReturnNotFound;
+	if (ivars->inPipe == nullptr) {
+		if (FavorZplGateIsClosed(&ivars->gate)) {
+			*ioReturn = kIOReturnNoDevice;
+			return kIOReturnSuccess;
+		}
+		return kIOReturnNotFound;
+	}
 	if (!FavorZplGateTryAcquire(&ivars->gate)) return kIOReturnBusy;
 	ScopedGate gate(&ivars->gate);
 

@@ -671,6 +671,18 @@ struct TransferGateTests {
         #expect(FavorZplGateIsClosed(&gate))
     }
 
+    @Test func aClosedGateWithATransferInFlightIsNotDrainedUntilItIsReleased() {
+        var gate = FavorZplGate()
+        #expect(FavorZplGateTryAcquire(&gate))
+        FavorZplGateClose(&gate)
+
+        #expect(FavorZplGateIsClosed(&gate))
+        #expect(!FavorZplGateTryDrain(&gate))
+        #expect(!FavorZplGateTryAcquire(&gate))
+        FavorZplGateRelease(&gate)
+        #expect(FavorZplGateTryDrain(&gate))
+    }
+
     @Test func aGateIsOpenUntilItIsClosed() {
         var gate = FavorZplGate()
         #expect(!FavorZplGateIsClosed(&gate))
