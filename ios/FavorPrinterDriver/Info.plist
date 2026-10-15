@@ -22,7 +22,7 @@
 	<dict>
 		<!-- Matches the ZD421 printer interface: idVendor 0x0A5F (2655), idProduct 389. The key set must be one
 		     Apple lists for IOUSBHostInterface; idVendor + bInterfaceClass never matched. -->
-		<key>FavorZplDriver</key>
+		<key>FavorPrinterUsbDriver</key>
 		<dict>
 			<key>CFBundleIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
@@ -33,7 +33,7 @@
 			<key>IOProviderClass</key>
 			<string>IOUSBHostInterface</string>
 			<key>IOUserClass</key>
-			<string>FavorZplDriver</string>
+			<string>FavorPrinterUsbDriver</string>
 			<key>IOUserServerName</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>UserClientProperties</key>
@@ -41,7 +41,7 @@
 				<key>IOClass</key>
 				<string>IOUserUserClient</string>
 				<key>IOUserClass</key>
-				<string>FavorZplUserClient</string>
+				<string>FavorPrinterUsbUserClient</string>
 			</dict>
 			<key>bConfigurationValue</key>
 			<integer>1</integer>

@@ -4,38 +4,38 @@
 #include <DriverKit/IOMemoryDescriptor.h>
 #include <DriverKit/IOMemoryMap.h>
 #include <DriverKit/OSData.h>
-#include "FavorZplDriver.h"
-#include "FavorZplUserClient.h"
+#include "FavorPrinterUsbDriver.h"
+#include "FavorPrinterUsbUserClient.h"
 #include "FavorZplUserClientABI.h"
 
-struct FavorZplUserClient_IVars {
-	FavorZplDriver *driver = nullptr;
+struct FavorPrinterUsbUserClient_IVars {
+	FavorPrinterUsbDriver *driver = nullptr;
 };
 
-bool FavorZplUserClient::init()
+bool FavorPrinterUsbUserClient::init()
 {
 	if (!super::init()) return false;
-	ivars = IONewZero(FavorZplUserClient_IVars, 1);
+	ivars = IONewZero(FavorPrinterUsbUserClient_IVars, 1);
 	return ivars != nullptr;
 }
 
-void FavorZplUserClient::free()
+void FavorPrinterUsbUserClient::free()
 {
-	IOSafeDeleteNULL(ivars, FavorZplUserClient_IVars, 1);
+	IOSafeDeleteNULL(ivars, FavorPrinterUsbUserClient_IVars, 1);
 	super::free();
 }
 
-kern_return_t IMPL(FavorZplUserClient, Start)
+kern_return_t IMPL(FavorPrinterUsbUserClient, Start)
 {
 	kern_return_t ret = Start(provider, SUPERDISPATCH);
 	if (ret != kIOReturnSuccess) return ret;
-	ivars->driver = OSDynamicCast(FavorZplDriver, provider);
+	ivars->driver = OSDynamicCast(FavorPrinterUsbDriver, provider);
 	if (ivars->driver == nullptr) return kIOReturnBadArgument;
 	ivars->driver->retain();
 	return kIOReturnSuccess;
 }
 
-kern_return_t IMPL(FavorZplUserClient, Stop)
+kern_return_t IMPL(FavorPrinterUsbUserClient, Stop)
 {
 	OSSafeReleaseNULL(ivars->driver);
 	return Stop(provider, SUPERDISPATCH);
@@ -54,7 +54,7 @@ static void SetStructureOutput(IOUserClientMethodArguments *arguments, const uin
 	arguments->structureOutput = OSData::withBytes(bytes, length);
 }
 
-static kern_return_t SendRawSelector(FavorZplDriver *driver, IOUserClientMethodArguments *arguments)
+static kern_return_t SendRawSelector(FavorPrinterUsbDriver *driver, IOUserClientMethodArguments *arguments)
 {
 	if (!HasScalarOutput(arguments, kFavorZplSendResultCount)) return kIOReturnBadArgument;
 
@@ -90,7 +90,7 @@ static kern_return_t SendRawSelector(FavorZplDriver *driver, IOUserClientMethodA
 	return ret;
 }
 
-static kern_return_t StatusSelector(FavorZplDriver *driver, IOUserClientMethodArguments *arguments)
+static kern_return_t StatusSelector(FavorPrinterUsbDriver *driver, IOUserClientMethodArguments *arguments)
 {
 	if (!HasScalarOutput(arguments, kFavorZplStatusFieldCount)) return kIOReturnBadArgument;
 	uint32_t stage = 0, bulkOut = 0, bulkIn = 0, serialLength = 0;
@@ -101,11 +101,12 @@ static kern_return_t StatusSelector(FavorZplDriver *driver, IOUserClientMethodAr
 	arguments->scalarOutput[kFavorZplStatusError] = (uint32_t)error;
 	arguments->scalarOutput[kFavorZplStatusBulkOutAddress] = bulkOut;
 	arguments->scalarOutput[kFavorZplStatusBulkInAddress] = bulkIn;
+	arguments->scalarOutput[kFavorZplStatusABIVersion] = kFavorZplABIVersion;
 	SetStructureOutput(arguments, serial, serialLength);
 	return kIOReturnSuccess;
 }
 
-static kern_return_t ReadStatusSelector(FavorZplDriver *driver, IOUserClientMethodArguments *arguments)
+static kern_return_t ReadStatusSelector(FavorPrinterUsbDriver *driver, IOUserClientMethodArguments *arguments)
 {
 	if (!HasScalarOutput(arguments, kFavorZplReadResultCount)) return kIOReturnBadArgument;
 	if (arguments->scalarInput == nullptr || arguments->scalarInputCount < 1) return kIOReturnBadArgument;
@@ -126,7 +127,7 @@ static kern_return_t ReadStatusSelector(FavorZplDriver *driver, IOUserClientMeth
 	return kIOReturnSuccess;
 }
 
-kern_return_t FavorZplUserClient::ExternalMethod(uint64_t selector,
+kern_return_t FavorPrinterUsbUserClient::ExternalMethod(uint64_t selector,
                                                  IOUserClientMethodArguments *arguments,
                                                  const IOUserClientMethodDispatch *dispatch,
                                                  OSObject *target,

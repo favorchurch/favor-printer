@@ -10,12 +10,12 @@
 #include <USBDriverKit/IOUSBHostPipe.h>
 #include <USBDriverKit/AppleUSBDescriptorParsing.h>
 #include <USBDriverKit/USBDriverKitDefs.h>
-#include "FavorZplDriver.h"
+#include "FavorPrinterUsbDriver.h"
 #include "FavorZplUserClientABI.h"
 #include "FavorZplTransferGate.h"
 
 // Only sizes and IOReturn codes are logged, never the bytes moved.
-#define LOG(fmt, ...) os_log(OS_LOG_DEFAULT, "FavorZplDriver: " fmt, ##__VA_ARGS__)
+#define LOG(fmt, ...) os_log(OS_LOG_DEFAULT, "FavorPrinterUsbDriver: " fmt, ##__VA_ARGS__)
 
 namespace {
 constexpr uint32_t kWriteChunkBytes = 16 * 1024;
@@ -27,7 +27,7 @@ constexpr uint32_t kStopWaitMs = kWriteTimeoutMs + 1000;
 constexpr uint32_t kStopStepMs = 10;
 }
 
-struct FavorZplDriver_IVars {
+struct FavorPrinterUsbDriver_IVars {
 	IOUSBHostInterface *interface = nullptr;
 	IOUSBHostPipe *outPipe = nullptr;
 	IOUSBHostPipe *inPipe = nullptr;
@@ -76,26 +76,26 @@ static void ReadSerial(IOUSBHostInterface *interface, uint8_t *serial, uint32_t 
 // One wait step of Stop: abort whatever is in flight, then give it a moment to return.
 static void AbortTransfers(void *context)
 {
-	auto *ivars = static_cast<FavorZplDriver_IVars *>(context);
+	auto *ivars = static_cast<FavorPrinterUsbDriver_IVars *>(context);
 	if (ivars->outPipe != nullptr) ivars->outPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
 	if (ivars->inPipe != nullptr) ivars->inPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
 	IOSleep(kStopStepMs);
 }
 
-bool FavorZplDriver::init()
+bool FavorPrinterUsbDriver::init()
 {
 	if (!super::init()) return false;
-	ivars = IONewZero(FavorZplDriver_IVars, 1);
+	ivars = IONewZero(FavorPrinterUsbDriver_IVars, 1);
 	return ivars != nullptr;
 }
 
-void FavorZplDriver::free()
+void FavorPrinterUsbDriver::free()
 {
-	IOSafeDeleteNULL(ivars, FavorZplDriver_IVars, 1);
+	IOSafeDeleteNULL(ivars, FavorPrinterUsbDriver_IVars, 1);
 	super::free();
 }
 
-kern_return_t IMPL(FavorZplDriver, Start)
+kern_return_t IMPL(FavorPrinterUsbDriver, Start)
 {
 	kern_return_t ret = Start(provider, SUPERDISPATCH);
 	ivars->stage = kFavorZplStageSuperStart;
@@ -175,7 +175,7 @@ kern_return_t IMPL(FavorZplDriver, Start)
 	return kIOReturnSuccess;
 }
 
-kern_return_t IMPL(FavorZplDriver, Stop)
+kern_return_t IMPL(FavorPrinterUsbDriver, Stop)
 {
 	LOG("stopped");
 	// Close the gate so no transfer starts, abort the one in flight, and wait for it to leave before the pipes go.
@@ -196,7 +196,7 @@ kern_return_t IMPL(FavorZplDriver, Stop)
 	return Stop(provider, SUPERDISPATCH);
 }
 
-kern_return_t FavorZplDriver::NewUserClient_Impl(uint32_t type, IOUserClient **userClient)
+kern_return_t FavorPrinterUsbDriver::NewUserClient_Impl(uint32_t type, IOUserClient **userClient)
 {
 	IOService *client = nullptr;
 	kern_return_t ret = Create(this, "UserClientProperties", &client);
@@ -208,7 +208,7 @@ kern_return_t FavorZplDriver::NewUserClient_Impl(uint32_t type, IOUserClient **u
 	return *userClient != nullptr ? kIOReturnSuccess : kIOReturnError;
 }
 
-void FavorZplDriver::GetStatus(uint32_t *stage, int32_t *error, uint32_t *bulkOutAddress, uint32_t *bulkInAddress,
+void FavorPrinterUsbDriver::GetStatus(uint32_t *stage, int32_t *error, uint32_t *bulkOutAddress, uint32_t *bulkInAddress,
                                uint8_t *serial, uint32_t *serialLength)
 {
 	// Status takes no gate (it must answer during a transfer), so it reads what Start published with acquire loads.
@@ -221,7 +221,7 @@ void FavorZplDriver::GetStatus(uint32_t *stage, int32_t *error, uint32_t *bulkOu
 	memcpy(serial, ivars->serial, length);
 }
 
-kern_return_t FavorZplDriver::SendRaw(const void *bytes, uint32_t length, uint32_t *transferred, int32_t *ioReturn)
+kern_return_t FavorPrinterUsbDriver::SendRaw(const void *bytes, uint32_t length, uint32_t *transferred, int32_t *ioReturn)
 {
 	*transferred = 0;
 	*ioReturn = kIOReturnSuccess;
@@ -273,7 +273,7 @@ kern_return_t FavorZplDriver::SendRaw(const void *bytes, uint32_t length, uint32
 	return kIOReturnSuccess;
 }
 
-kern_return_t FavorZplDriver::ReadBulkIn(uint32_t timeoutMs, uint8_t *out, uint32_t capacity, uint32_t *bytesRead,
+kern_return_t FavorPrinterUsbDriver::ReadBulkIn(uint32_t timeoutMs, uint8_t *out, uint32_t capacity, uint32_t *bytesRead,
                                          int32_t *ioReturn)
 {
 	*bytesRead = 0;

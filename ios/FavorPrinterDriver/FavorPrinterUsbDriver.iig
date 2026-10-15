@@ -1,12 +1,12 @@
-#ifndef FavorZplDriver_h
-#define FavorZplDriver_h
+#ifndef FavorPrinterUsbDriver_h
+#define FavorPrinterUsbDriver_h
 
 #include <Availability.h>
 #include <DriverKit/IOService.iig>
 
 // Claims the USB printer-class interface of a Zebra ZD421 and moves raw bytes over its bulk endpoints.
-// Raw ZPL goes straight through, like `lp -o raw` on the Mac. The app talks to it through FavorZplUserClient.
-class FavorZplDriver : public IOService
+// Raw ZPL goes straight through, like `lp -o raw` on the Mac. The app talks to it through FavorPrinterUsbUserClient.
+class FavorPrinterUsbDriver : public IOService
 {
 public:
 	virtual bool init() override;

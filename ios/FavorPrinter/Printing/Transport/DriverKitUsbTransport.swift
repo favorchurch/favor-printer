@@ -42,23 +42,35 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
             defer { connection.close() }
             return Self.runningStatus(from: connection)
         case .noService:
-            let driver = DriverAvailability.derive(serviceMatched: false, userClientOpens: false, printerVisible: backend.printerVisible())
-            return UsbPrinterStatus(driver: driver, printerAttached: driver == .unknown ? nil : true)
+            let visible = backend.printerVisible()
+            let driver = DriverAvailability.derive(serviceMatched: false, userClientOpens: false, printerVisible: visible)
+            return UsbPrinterStatus(
+                driver: driver, printerAttached: driver == .unknown ? nil : true,
+                foreignDriver: visible && backend.foreignDriverPresent()
+            )
         case .openFailed(let code):
             return UsbPrinterStatus(driver: .printerPresentDriverNotRunning, printerAttached: true, lastError: code)
         }
     }
 
-    private static func runningStatus(from connection: DextConnection) -> UsbPrinterStatus {
-        var status = UsbPrinterStatus(driver: .running, printerAttached: true)
-        let reply = connection.call(
+    private static func statusReply(from connection: DextConnection) -> DextReply {
+        connection.call(
             selector: kFavorZplSelectorStatus,
             scalarOutputCount: Int(kFavorZplStatusFieldCount), structOutputCapacity: Int(kFavorZplMaxSerialBytes)
         ).requiring(scalars: Int(kFavorZplStatusFieldCount))
+    }
+
+    private static func runningStatus(from connection: DextConnection) -> UsbPrinterStatus {
+        var status = UsbPrinterStatus(driver: .running, printerAttached: true)
+        let reply = statusReply(from: connection)
         guard reply.code == IOReturnCode.success else {
             status.lastError = reply.code
             return status
         }
+        let version = UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusABIVersion)])
+        status.abiVersion = version
+        // A dext speaking another ABI cannot be used, so it is not "running" however alive it is.
+        if version != UInt32(kFavorZplABIVersion) { status.driver = .printerPresentDriverNotRunning }
         status.stage = UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusStage)])
         let error = Int32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusError)])
         status.lastError = error == IOReturnCode.success ? nil : error
@@ -126,10 +138,24 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
         }
     }
 
+    /// Refuses before any send or read when the dext does not speak this app's ABI.
+    private static func abiMismatch(on connection: DextConnection) -> UsbTransportError? {
+        let expected = UInt32(kFavorZplABIVersion)
+        let reply = statusReply(from: connection)
+        if reply.code == IOReturnCode.badArgument { return .abiMismatch(expected: expected, actual: nil) }
+        guard reply.code == IOReturnCode.success else { return .forOpen(code: reply.code) }
+        let actual = UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusABIVersion)])
+        return actual == expected ? nil : .abiMismatch(expected: expected, actual: actual)
+    }
+
     private func withConnection<T>(_ body: (DextConnection) -> Result<T, UsbTransportError>) -> Result<T, UsbTransportError> {
         switch backend.connect() {
         case .connected(let connection):
             defer { connection.close() }
+            if let mismatch = Self.abiMismatch(on: connection) {
+                log.error("refusing to use the driver: \(String(describing: mismatch), privacy: .public)")
+                return .failure(mismatch)
+            }
             return body(connection)
         case .noService:
             // With the printer visible the driver is off or not loaded. Otherwise assume the printer is unplugged.

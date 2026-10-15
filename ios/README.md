@@ -59,7 +59,7 @@ unique service name per test and delete it afterwards.
   `DriverKitUsbTransport` (IOKit user client to the dext), `FakeUsbTransport` and the IOReturn mapping.
 - `FavorPrinter/Host/` the host side: `HostController` (enrollment, credential, scene phase), `HostLoop` (claim, send,
   report), `HostSpool` (the on-disk job spool), `HostCredentialStore` and the DEBUG-only `FakeRelay`.
-- `FavorPrinterDriver/` the DriverKit extension, `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
+- `FavorPrinterDriver/` the DriverKit extension (`FavorPrinterUsbDriver`, `FavorPrinterUsbUserClient`), `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
   `FavorZplTransferGate.h` (one-transfer-at-a-time gate and the Stop ordering, plain C so Swift tests can run it).
 - `FavorPrinterUITests/` the XCUITest.
 - `Config/` xcconfig files and the Info.plist fragment holding `RSVPBaseURL`.
@@ -79,7 +79,12 @@ The dext registers its service first and never fails after that, so the app can 
 (8 is ready). A printer with no bulk IN endpoint still prints; reading status then fails with a typed
 `readFailed`, not a crash. `status()` reports `DriverAvailability`: `.running` (service matched and its user client opens),
 `.printerPresentDriverNotRunning` (the IORegistry shows VID 0x0A5F PID 389 but there is no working dext service) or
-`.unknown` (neither; whether the driver is enabled cannot be inferred). The IORegistry lookup is best effort, so
+`.unknown` (neither; whether the driver is enabled cannot be inferred).
+Only a service whose `IOUserServerName` (else `CFBundleIdentifier`) is `church.favor.printer.ios.driver` counts as our driver.
+A dext from another bundle, even one with our class name, is never opened. When it holds the printer and ours is not
+running, `status()` is `.printerPresentDriverNotRunning` with `foreignDriver` set, never `.running`.
+The status selector also returns an ABI version (`kFavorZplABIVersion`). Every send and read checks it first and fails with
+`UsbTransportError.abiMismatch` before sending anything when it differs. Bump it when a selector, scalar layout or limit changes. The IORegistry lookup is best effort, so
 `printerAttached` is `true` or `nil`, never `false`. Its result on a real iPad is recorded at the hardware gate.
 
 `DriverKitUsbTransport` opens a fresh user client for every call, so a replug or a driver reload needs no reconnect logic.
@@ -102,6 +107,10 @@ Tests run it against a scripted backend (`UsbTransportTests.swift`); none touche
   `"*"`. That request has not been made, so only development-signed device builds work today.
 - The app needs `com.apple.developer.driverkit.communicates-with-drivers` (`FavorPrinter.entitlements`) and the dext
   needs `com.apple.developer.driverkit` and `allow-third-party-userclients`.
+- Remove every other dext that matches VID 0x0A5F PID 389 (e.g. the spike app) before testing. Its toggle being off did not
+  stop it matching on iPadOS 18.6.2. The spike's dext (`church.favor.printer.spike.driver`) once held the printer while the
+  app opened its user client by class name, showed "Driver: Running" and failed every send with `kIOReturnNotReady`.
+  The production dext classes are named `FavorPrinterUsbDriver` / `FavorPrinterUsbUserClient`, and the app matches on bundle id.
 - Turn the driver on in Settings > Favor Printer > Drivers (iPadOS 18), then unplug and replug the printer. The dext is
   matched when the USB interface appears, so enabling it with the printer already attached does nothing until a replug.
 - The Info.plist has exactly one personality, keyed `idVendor` + `idProduct` + `bConfigurationValue` + `bInterfaceNumber`.
@@ -183,7 +192,8 @@ the host is running or paused, spool depth, the last job outcome with its time a
 `driver`, `lastJobOutcome`, `lastJobAt` and `lastError` for this. The last error is one of the loop's fixed phrases,
 never ZPL, label text, a name or a job id. Not enrolled, it offers a one-time code field and an Enroll button
 (`HostController.enroll(code:)`, with the 409 conflict reason shown); enrolled, it shows an Unenroll control that asks
-first. A DEBUG build on the fake relay also shows "Print synthetic test label". Every DEBUG build shows "Read printer status
+first. A DEBUG build on the fake relay also shows "Print synthetic test label" and "Print large synthetic label" (an uncompressed ~200 KB `^GFA` graphic that goes out as
+several send calls, for unplugging the printer mid-send). Every DEBUG build shows "Read printer status
 (~HS)" under "Printer diagnostics": it pauses the loop (waiting for a send already writing), sends `~HS`, reads the
 answer, shows the byte count and its printable ASCII or the typed error, and resumes the loop, so the read never shares
 the wire with a job. Release builds compile neither.

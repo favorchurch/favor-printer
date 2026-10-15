@@ -20,6 +20,8 @@ enum DriverAvailability: Sendable, Equatable {
 
     /// The one place the three states are derived. `printerVisible` is a best-effort IORegistry lookup.
     /// A matched service whose user client will not open counts as not running: the printer is certainly there.
+    /// `serviceMatched` is about our dext only: a driver from another bundle never counts, so a foreign dext holding the
+    /// printer shows up as `.printerPresentDriverNotRunning`, never `.running`.
     static func derive(serviceMatched: Bool, userClientOpens: Bool, printerVisible: Bool) -> DriverAvailability {
         if serviceMatched && userClientOpens { return .running }
         if serviceMatched || printerVisible { return .printerPresentDriverNotRunning }
@@ -39,6 +41,10 @@ struct UsbPrinterStatus: Sendable, Equatable {
     var bulkOutAddress: UInt8?
     var bulkInAddress: UInt8?
     var usbSerial: String?
+    /// ABI version the dext reported, nil when it could not be queried.
+    var abiVersion: UInt32?
+    /// A dext from another bundle is attached for the printer and ours is not running. The spike app's dext does this.
+    var foreignDriver: Bool
 
     init(
         driver: DriverAvailability,
@@ -47,7 +53,9 @@ struct UsbPrinterStatus: Sendable, Equatable {
         lastError: Int32? = nil,
         bulkOutAddress: UInt8? = nil,
         bulkInAddress: UInt8? = nil,
-        usbSerial: String? = nil
+        usbSerial: String? = nil,
+        abiVersion: UInt32? = nil,
+        foreignDriver: Bool = false
     ) {
         self.driver = driver
         self.printerAttached = printerAttached
@@ -56,6 +64,8 @@ struct UsbPrinterStatus: Sendable, Equatable {
         self.bulkOutAddress = bulkOutAddress
         self.bulkInAddress = bulkInAddress
         self.usbSerial = usbSerial
+        self.abiVersion = abiVersion
+        self.foreignDriver = foreignDriver
     }
 }
 
@@ -70,4 +80,6 @@ enum UsbTransportError: Error, Sendable, Equatable {
     case shortWrite(written: Int, expected: Int)
     case timeout
     case readFailed(code: Int32)
+    /// The dext's user-client ABI is not the one this app was built for (`actual` is nil when it did not say). Nothing was sent.
+    case abiMismatch(expected: UInt32, actual: UInt32?)
 }

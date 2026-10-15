@@ -6,6 +6,8 @@ protocol DextBackend: Sendable {
     func connect() -> DextConnectResult
     /// Best effort: whether the ZD421 shows up in the IORegistry at all, driver or not.
     func printerVisible() -> Bool
+    /// Best effort: whether a dext from another bundle (e.g. the spike app's) is attached for this printer.
+    func foreignDriverPresent() -> Bool
 }
 
 enum DextConnectResult {
@@ -64,8 +66,11 @@ extension DextConnection {
 /// The IOKit calls that create, find and end handles. Injectable so a test can count what happens to each handle.
 /// `IOConnectCallMethod` stays direct: it neither creates nor ends a handle.
 struct IOKitHandleOps: Sendable {
-    /// Every dext instance. Only the USB-matched printer personality exists, so this is zero or one.
+    /// Every dext instance that could be ours or hold the printer: our class name or the printer's VID/PID, from any
+    /// bundle. Callers tell them apart with `driverIdentity`.
     var driverServices: @Sendable () -> [io_service_t]
+    /// The bundle identifier of the dext behind a service: `IOUserServerName`, else `CFBundleIdentifier`.
+    var driverIdentity: @Sendable (io_service_t) -> String?
     /// Printer entries in the IORegistry (device or interface, VID 0x0A5F PID 389), driver or not.
     var printerServices: @Sendable () -> [io_service_t]
     /// `IOServiceOpen`: the result code and, on success, the connection handle.
@@ -77,9 +82,16 @@ struct IOKitHandleOps: Sendable {
 
     static let live = IOKitHandleOps(
         driverServices: {
-            let match = IOServiceMatching("IOUserService") as NSMutableDictionary
-            match["IOPropertyMatch"] = ["IOUserClass": "FavorZplDriver"]
-            return IOKitHandleOps.services(matching: match)
+            let byClass = IOServiceMatching("IOUserService") as NSMutableDictionary
+            byClass["IOPropertyMatch"] = ["IOUserClass": IOKitDextBackend.driverClassName]
+            let byPrinter = IOServiceMatching("IOUserService") as NSMutableDictionary
+            byPrinter["IOPropertyMatch"] = [
+                "idVendor": IOKitDextBackend.printerVendorID, "idProduct": IOKitDextBackend.printerProductID,
+            ]
+            return IOKitHandleOps.distinct([byClass, byPrinter].flatMap(IOKitHandleOps.services(matching:)))
+        },
+        driverIdentity: { service in
+            IOKitHandleOps.identity(of: { IORegistryEntryCreateCFProperty(service, $0 as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String })
         },
         printerServices: {
             ["IOUSBHostDevice", "IOUSBHostInterface"].flatMap { className -> [io_service_t] in
@@ -98,6 +110,26 @@ struct IOKitHandleOps: Sendable {
         release: { _ = IOObjectRelease($0) },
         close: { _ = IOServiceClose($0) }
     )
+
+    /// `IOUserServerName`, else `CFBundleIdentifier`, from whatever reads a string property.
+    static func identity(of property: (String) -> String?) -> String? {
+        for key in ["IOUserServerName", "CFBundleIdentifier"] {
+            if let value = property(key) { return value }
+        }
+        return nil
+    }
+
+    /// One handle per registry entry: the class and VID/PID queries can both find the same dext.
+    private static func distinct(_ services: [io_service_t]) -> [io_service_t] {
+        var seen = Set<UInt64>()
+        return services.filter { service in
+            var entryID: UInt64 = 0
+            guard IORegistryEntryGetRegistryEntryID(service, &entryID) == KERN_SUCCESS else { return true }
+            if seen.insert(entryID).inserted { return true }
+            IOObjectRelease(service)
+            return false
+        }
+    }
 
     private static func services(matching match: NSMutableDictionary) -> [io_service_t] {
         var iterator: io_iterator_t = 0
@@ -119,15 +151,21 @@ struct IOKitHandleOps: Sendable {
 struct IOKitDextBackend: DextBackend {
     static let printerVendorID = 0x0A5F
     static let printerProductID = 389
+    /// The production dext's `IOUserClass`. No other bundle (the spike's was `FavorZplDriver`) uses it.
+    static let driverClassName = "FavorPrinterUsbDriver"
+    /// The production dext's bundle identifier, the only identity this backend opens.
+    static let driverBundleID = "church.favor.printer.ios.driver"
 
     var ops = IOKitHandleOps.live
 
     func connect() -> DextConnectResult {
         let services = ops.driverServices()
         defer { services.forEach(ops.release) }
-        guard !services.isEmpty else { return .noService }
+        // A service with our class name from another bundle is somebody else's driver: never open its user client.
+        let ours = services.filter { ops.driverIdentity($0) == Self.driverBundleID }
+        guard !ours.isEmpty else { return .noService }
         var failure = IOReturnCode.notFound
-        for service in services {
+        for service in ours {
             let opened = ops.open(service)
             if opened.code == KERN_SUCCESS {
                 return .connected(IOKitDextConnection(connection: opened.connection, closeHandle: ops.close))
@@ -141,6 +179,12 @@ struct IOKitDextBackend: DextBackend {
         let found = ops.printerServices()
         found.forEach(ops.release)
         return !found.isEmpty
+    }
+
+    func foreignDriverPresent() -> Bool {
+        let services = ops.driverServices()
+        defer { services.forEach(ops.release) }
+        return services.contains { ops.driverIdentity($0) != Self.driverBundleID }
     }
 }
 
