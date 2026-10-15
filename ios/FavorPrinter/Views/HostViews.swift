@@ -46,6 +46,9 @@ struct HostStatusView: View {
                     Button("Print synthetic test label") { Task { await host.printSyntheticTestLabel() } }
                         .accessibilityLabel("Print synthetic test label")
                         .accessibilityIdentifier("host-synthetic-label")
+                    Button("Print large synthetic label") { Task { await host.printLargeSyntheticTestLabel() } }
+                        .accessibilityLabel("Print large synthetic label")
+                        .accessibilityIdentifier("host-synthetic-label-large")
                 }
             }
             #endif

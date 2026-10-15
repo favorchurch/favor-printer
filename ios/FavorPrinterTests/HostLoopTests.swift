@@ -1025,6 +1025,38 @@ struct HostRelaySelectionTests {
         #expect(try #require(secrets.current).contains("stored-secret-token"))
     }
 
+    @Test func theLargeSyntheticLabelIsAnUncompressedGraphicOfAboutTwoHundredKilobytes() throws {
+        let zpl = HostController.largeSyntheticLabelZPL
+        #expect(zpl.utf8.count > 190_000 && zpl.utf8.count < 210_000)
+        #expect(zpl.hasPrefix("^XA") && zpl.hasSuffix("^XZ"))
+        let match = try #require(zpl.firstMatch(of: /\^GFA,(\d+),(\d+),(\d+),([0-9A-F]+)\^FS/))
+        let total = try #require(Int(match.1)), expected = try #require(Int(match.2)), rowBytes = try #require(Int(match.3))
+        let hex = match.4
+        #expect(total == expected && total % rowBytes == 0)
+        #expect(hex.utf8.count == total * 2)
+        #expect(total > Int(kFavorZplMaxSendBytes) / 4)
+    }
+
+    @Test func theLargeSyntheticLabelGoesThroughTheNormalJobPathToThePrinter() async throws {
+        let transport = FakeUsbTransport()
+        let (controller, _) = try makeController(server: relayServer(), secrets: storedCredential(), arguments: ["-FavorHostFakeRelay"], transport: transport)
+        await controller.printLargeSyntheticTestLabel()
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+
+        #expect(await eventually { await transport.writes.contains { $0.count == HostController.largeSyntheticLabelZPL.utf8.count } })
+        #expect(await eventually { await controller.fakeRelay?.reports.map(\.outcome) == [.sent, .sent] })
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+    }
+
+    @Test func theLargeSyntheticLabelDoesNothingAgainstTheRealRelay() async throws {
+        let relay = FakeRelay()
+        let controller = try makeController(secrets: storedCredential(), relay: relay, directory: TempDirectory())
+        await controller.printLargeSyntheticTestLabel()
+        #expect(await relay.pendingCount == 0)
+    }
+
     @Test func fakeRelayJobsNeverMixWithTheRealSpool() async throws {
         let real = TempDirectory()
         let server = relayServer()

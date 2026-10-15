@@ -1,10 +1,10 @@
-#ifndef FavorZplUserClient_h
-#define FavorZplUserClient_h
+#ifndef FavorPrinterUsbUserClient_h
+#define FavorPrinterUsbUserClient_h
 
 #include <Availability.h>
 #include <DriverKit/IOUserClient.iig>
 
-class FavorZplUserClient : public IOUserClient
+class FavorPrinterUsbUserClient : public IOUserClient
 {
 public:
 	virtual bool init() override;

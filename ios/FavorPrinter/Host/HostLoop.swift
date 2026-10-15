@@ -381,6 +381,9 @@ actor HostLoop {
             return (.failed, "printer not attached")
         case .failure(.openFailed(let code)):
             return (.failed, "could not open the printer driver (\(code))")
+        case .failure(.abiMismatch):
+            // Refused before any write, so nothing reached the printer.
+            return (.failed, "printer driver version mismatch")
         case .failure(.writeFailed(let code, let bytes)):
             return (.ambiguous, "write failed (\(code)) after \(bytes) of \(expected) bytes")
         case .failure(.shortWrite(let written, let total)):

@@ -237,6 +237,27 @@ final class HostController {
     func printSyntheticTestLabel() async {
         await fakeRelay?.enqueue(zpl: "^XA^FO40,40^A0N,48,48^FDFavor synthetic test^FS^XZ", label: "Synthetic test")
     }
+
+    /// Queues the large synthetic label on the fake relay: the normal job path, but a payload that needs several send
+    /// calls, for unplugging the printer mid-send. Does nothing against the real relay.
+    func printLargeSyntheticTestLabel() async {
+        await fakeRelay?.enqueue(zpl: Self.largeSyntheticLabelZPL, label: "Large synthetic test")
+    }
+
+    /// An 800 x 1000 dot `^GFA` graphic: a frame with a stripe every 50 rows, about 200 KB of ZPL (100,000 graphic
+    /// bytes as hex). Uncompressed on purpose, so the payload is as large as it looks.
+    nonisolated static let largeSyntheticLabelZPL: String = {
+        let rowBytes = 100, rows = 1000
+        let solid = String(repeating: "FF", count: rowBytes)
+        let stripe = String(repeating: "AA", count: rowBytes)
+        let edges = "80" + String(repeating: "00", count: rowBytes - 2) + "01"
+        var graphic = ""
+        graphic.reserveCapacity(rowBytes * rows * 2)
+        for row in 0..<rows {
+            graphic += row == 0 || row == rows - 1 ? solid : (row % 50 == 0 ? stripe : edges)
+        }
+        return "^XA^FO0,0^GFA,\(rowBytes * rows),\(rowBytes * rows),\(rowBytes),\(graphic)^FS^XZ"
+    }()
     #endif
 
     // MARK: Scene phase

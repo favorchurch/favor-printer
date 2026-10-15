@@ -16,7 +16,8 @@ enum {
 	kFavorZplSelectorSendRaw = 0,
 
 	// no input.
-	// scalar out: FavorZplStatusField layout (kFavorZplStatusFieldCount scalars).
+	// scalar out: FavorZplStatusField layout (kFavorZplStatusFieldCount scalars). It includes the ABI version, which the
+	// app checks against kFavorZplABIVersion before it sends or reads anything.
 	// struct out: the device serial string as UTF-8 bytes, 0...kFavorZplMaxSerialBytes (empty when the
 	// descriptor has none).
 	kFavorZplSelectorStatus = 1,
@@ -39,7 +40,13 @@ enum {
 	kFavorZplStatusError = 1,
 	kFavorZplStatusBulkOutAddress = 2,
 	kFavorZplStatusBulkInAddress = 3,   // 0 when the interface has no usable bulk IN endpoint
-	kFavorZplStatusFieldCount = 4,
+	kFavorZplStatusABIVersion = 4,
+	kFavorZplStatusFieldCount = 5,
+};
+
+// Bump when a selector, scalar layout or size limit changes. A dext that predates the field leaves it 0.
+enum {
+	kFavorZplABIVersion = 1,
 };
 
 enum {
