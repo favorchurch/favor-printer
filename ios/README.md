@@ -93,6 +93,8 @@ name per test and delete it afterwards.
 - `FavorPrinter/Views/` SwiftUI screens for each state and for the check-in flow.
 - `FavorPrinter/Printing/Transport/` `UsbPrinterTransport` (raw ZPL in, bytes written or a typed `UsbTransportError` out),
   `DriverKitUsbTransport` (IOKit user client to the dext), `FakeUsbTransport` and the IOReturn mapping.
+- `FavorPrinter/Host/` the host side: `HostController` (enrollment, credential, scene phase), `HostLoop` (claim, send,
+  report), `HostSpool` (the on-disk job spool), `HostCredentialStore` and the DEBUG-only `FakeRelay`.
 - `FavorPrinterDriver/` the DriverKit extension, `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
   `FavorZplTransferGate.h` (one-transfer-at-a-time gate and the Stop ordering, plain C so Swift tests can run it).
 - `FavorPrinterUITests/` the XCUITest.
@@ -148,3 +150,78 @@ Tests run it against a scripted backend (`UsbTransportTests.swift`); none touche
   a simulator destination builds the dext unsigned (`CODE_SIGNING_ALLOWED` is keyed on `TARGET_DEVICE_PLATFORM_NAME` in
   `project.yml`) and the simulator unit tests still run. Check the device build with
   `xcodebuild build -scheme FavorPrinter -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO`.
+
+## Host mode: print jobs from the cloud relay
+
+The iPad can act as the venue relay for its USB printer: it claims print jobs from the cloud relay API
+(`/api/printing/relay/*`), writes each one to the printer through the dext and reports the outcome. The host code is
+in `FavorPrinter/Host/`. It is foreground-only (see below), so it is for an iPad that stays open on the app.
+
+### Semantics
+
+- **Enrollment.** `HostController.enroll(code:)` redeems a one-time code at the configured RSVPBaseURL together with the
+  attached printer's USB serial. It needs the dext running and a serial, otherwise it fails with `printerNotReady`
+  before any request. The returned relay id and token are saved as one Keychain item (`HostCredentialStore`, service
+  `church.favor.printer.relay`, separate from the check-in bearer) and never logged. Then `config()` is fetched.
+  A 409 `printer_conflict` surfaces its reason; any failed enroll stores nothing and leaves an earlier credential alone.
+  `unenroll()` stops the loop and deletes only the host item: not the check-in bearer and not the spool. A job left
+  in the spool keeps its label text on disk until the next enrollment, where the cloud refuses it as stale and it is dropped.
+  Enrolling against production needs separate approval; no test does it.
+- **Spool.** One JSON file per unreported job in `Application Support/FavorPrinter/HostSpool`, written to a temp file,
+  synced and renamed into place, so a crash leaves the old or the new entry and never a torn one. Stages are
+  `claimed`, `sending` and `report`. Only `claimed` holds the ZPL and label; later stages drop them (`SpoolEntry` cannot
+  represent anything else). Spool depth is the number of files, and it is what the heartbeat reports.
+- **Sending.** A claimed job is marked `sending` in the spool before the cloud is told and before any byte goes to the
+  transport. If the cloud answers `sending` with an error, the job goes back to `claimed` (nothing was written). If it
+  answers stale (given away or expired), the entry is dropped and nothing is printed.
+- **Outcomes.** `sent` for a clean full write. `failed` only when the transport proves nothing was written (driver not
+  found, printer not attached, user client would not open). A partial write, a short write, a timeout or any other
+  failure after a write began is `ambiguous`, and so is any job found in `sending` at launch: it is reported
+  `ambiguous` and never sent again. The outcome is written to the spool before it is reported.
+- **Reports** are retried every cycle until the cloud answers. A stale answer drops the entry. A 401 (`auth`) stops the
+  loop, shows an error and keeps the credential and the spool; going to the background and back does not retry it,
+  `retryAfterAuthError()` does.
+- **Heartbeat** sends `printerAttached`, `spoolDepth`, `appVersion` and `osVersion` every 15 s. The loop claims only
+  when the printer is attached and the driver extension answers, only for printers the cloud lists as enabled, and
+  never holds more than 20 jobs.
+
+### Foreground only
+
+There are no background tasks, push wakeups or background modes. `HostController.scenePhaseChanged(_:)` stops the loop
+on `.background` (waiting for a send already writing, never cutting it short) and starts it again on `.active`;
+`.inactive` changes nothing. While the app is not in the foreground nothing is claimed or sent, jobs wait at the cloud,
+and a claimed job whose lease runs out is dropped when the loop resumes. The view must call `scenePhaseChanged` for the
+current phase when it appears, since the loop starts only once the app is known to be active.
+
+### Fake relay and fake transport (DEBUG)
+
+Two independent DEBUG-only launch arguments:
+
+- `-FavorHostFakeRelay` runs the host against `FakeRelay`, an in-process relay with one demo label. It forces the fake
+  even when a real host credential is stored, never reads that credential, builds no HTTP client (so nothing can reach
+  the network) and refuses `enroll(code:)`. Its spool is a separate directory (`HostSpoolFake`), so fake jobs never mix
+  with real ones. It does not change the printer: the synthetic label goes through the real `DriverKitUsbTransport`, the
+  dext and the printer, which is what the hardware gate tests.
+- `-FavorHostFakeTransport` swaps the printer for `FakeUsbTransport` (bytes are only recorded in memory). It exists for
+  simulator UI tests, which have no dext, and is never implied by the relay argument. It combines with either relay mode.
+
+| Arguments | Relay | Printer |
+| --- | --- | --- |
+| none | cloud relay if a credential is stored, else not enrolled | DriverKit |
+| `-FavorHostFakeRelay` | `FakeRelay` | DriverKit |
+| `-FavorHostFakeTransport` | as with none | `FakeUsbTransport` |
+| both | `FakeRelay` | `FakeUsbTransport` |
+
+Without `-FavorHostFakeRelay` a stored credential selects the real relay and none means not enrolled. `FakeRelay` and
+`FakeUsbTransport` selection exist only in DEBUG; both arguments are ignored in Release.
+
+### Tests
+
+`HostLoopTests.swift` has example tests for the spool, the loop, enrollment, scene phase and relay selection, all
+against fakes and the `URLProtocol` mock. `HostLoopModelTests.swift` drives seeded random command sequences (enqueue
+jobs, printer success, failure, partial write or timeout, relay network error, stale or auth, unplug and replug, and a
+crash and restart at any call boundary) against a reference model. Each step checks: no job is sent twice, every job
+that reached `sending` is reported `sent`, `failed` or `ambiguous` exactly once, unknown outcomes are `ambiguous`,
+the spool holds ZPL only in `claimed` entries, and spool depth equals the jobs still owed a report. A failure prints
+its seed: rerun it with `HOST_MODEL_SEED=<seed>` (on a simulator pass `TEST_RUNNER_HOST_MODEL_SEED=<seed>`), and raise
+the depth with `HOST_MODEL_SEEDS` and `HOST_MODEL_STEPS`.
