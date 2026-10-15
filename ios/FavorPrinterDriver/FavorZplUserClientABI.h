@@ -89,6 +89,11 @@ static inline bool FavorZplGateTryAcquire(FavorZplGate *gate)
 	return true;
 }
 
+static inline bool FavorZplGateIsClosed(const FavorZplGate *gate)
+{
+	return __atomic_load_n(&gate->closed, __ATOMIC_ACQUIRE) != 0;
+}
+
 static inline void FavorZplGateRelease(FavorZplGate *gate)
 {
 	__atomic_store_n(&gate->busy, 0, __ATOMIC_RELEASE);

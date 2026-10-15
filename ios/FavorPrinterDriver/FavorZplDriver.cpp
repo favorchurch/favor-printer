@@ -91,7 +91,8 @@ kern_return_t IMPL(FavorZplDriver, Start)
 	ivars->error = ret;
 	if (ret != kIOReturnSuccess) return ret;
 
-	// Hold the gate until set-up is done, so a client that finds the service early cannot touch half-built state.
+	// Hold the gate until set-up is done, so a client that finds the service early cannot start a transfer on
+	// half-built state. Status reads take no gate and rely on the release stores below.
 	FavorZplGateTryAcquire(&ivars->gate);
 	ScopedGate setUp(&ivars->gate);
 
@@ -151,13 +152,15 @@ kern_return_t IMPL(FavorZplDriver, Start)
 	ivars->error = ret;
 	LOG("started, bulk OUT 0x%x bulk IN 0x%x, CopyPipe ret=0x%x", outAddress, inAddress, ret);
 	if (ret != kIOReturnSuccess) return kIOReturnSuccess;
-	ivars->stage = kFavorZplStageReady;
+	__atomic_store_n(&ivars->stage, kFavorZplStageReady, __ATOMIC_RELEASE);
 
 	// Optional extras. A printer without a usable bulk IN endpoint still prints.
 	if (inAddress != 0 && ivars->interface->CopyPipe(inAddress, &ivars->inPipe) == kIOReturnSuccess) {
-		ivars->inAddress = inAddress;
+		__atomic_store_n(&ivars->inAddress, (uint32_t)inAddress, __ATOMIC_RELEASE);
 	}
-	ReadSerial(ivars->interface, ivars->serial, &ivars->serialLength);
+	uint32_t serialLength = 0;
+	ReadSerial(ivars->interface, ivars->serial, &serialLength);
+	__atomic_store_n(&ivars->serialLength, serialLength, __ATOMIC_RELEASE);
 	return kIOReturnSuccess;
 }
 
@@ -166,10 +169,16 @@ kern_return_t IMPL(FavorZplDriver, Stop)
 	LOG("stopped");
 	// Close the gate so no transfer starts, abort the one in flight, and wait for it to leave before the pipes go.
 	FavorZplGateClose(&ivars->gate);
-	for (uint32_t waited = 0; !FavorZplGateTryDrain(&ivars->gate) && waited < kStopWaitMs; waited += 10) {
+	bool drained = false;
+	for (uint32_t waited = 0; !(drained = FavorZplGateTryDrain(&ivars->gate)) && waited < kStopWaitMs; waited += 10) {
 		if (ivars->outPipe != nullptr) ivars->outPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
 		if (ivars->inPipe != nullptr) ivars->inPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
 		IOSleep(10);
+	}
+	if (!drained) {
+		// A transfer is still using the pipes. Leaking them beats freeing them under it: the interface is going away anyway.
+		LOG("stop: transfer did not finish, leaving pipes in place");
+		return Stop(provider, SUPERDISPATCH);
 	}
 	OSSafeReleaseNULL(ivars->outPipe);
 	OSSafeReleaseNULL(ivars->inPipe);
@@ -195,12 +204,14 @@ kern_return_t FavorZplDriver::NewUserClient_Impl(uint32_t type, IOUserClient **u
 void FavorZplDriver::GetStatus(uint32_t *stage, int32_t *error, uint32_t *bulkOutAddress, uint32_t *bulkInAddress,
                                uint8_t *serial, uint32_t *serialLength)
 {
-	*stage = ivars->stage;
+	// Status takes no gate (it must answer during a transfer), so it reads what Start published with acquire loads.
+	uint32_t length = __atomic_load_n(&ivars->serialLength, __ATOMIC_ACQUIRE);
+	*stage = __atomic_load_n(&ivars->stage, __ATOMIC_ACQUIRE);
 	*error = ivars->error;
 	*bulkOutAddress = ivars->outAddress;
-	*bulkInAddress = ivars->inAddress;
-	*serialLength = ivars->serialLength;
-	memcpy(serial, ivars->serial, ivars->serialLength);
+	*bulkInAddress = __atomic_load_n(&ivars->inAddress, __ATOMIC_ACQUIRE);
+	*serialLength = length;
+	memcpy(serial, ivars->serial, length);
 }
 
 kern_return_t FavorZplDriver::SendRaw(const void *bytes, uint32_t length, uint32_t *transferred, int32_t *ioReturn)
@@ -209,9 +220,14 @@ kern_return_t FavorZplDriver::SendRaw(const void *bytes, uint32_t length, uint32
 	*ioReturn = kIOReturnSuccess;
 	if (bytes == nullptr || length == 0) return kIOReturnBadArgument;
 	if (length > kFavorZplMaxSendBytes) return kIOReturnMessageTooLarge;
+	// Before the pipe exists (start-up, or a failed start) nothing was attempted. After Stop the printer is gone.
+	if (FavorZplGateIsClosed(&ivars->gate)) {
+		*ioReturn = kIOReturnNoDevice;
+		return kIOReturnSuccess;
+	}
+	if (ivars->outPipe == nullptr) return kIOReturnNotReady;
 	if (!FavorZplGateTryAcquire(&ivars->gate)) return kIOReturnBusy;
 	ScopedGate gate(&ivars->gate);
-	if (ivars->outPipe == nullptr) return kIOReturnNotReady;
 
 	uint32_t capacity = length < kWriteChunkBytes ? length : kWriteChunkBytes;
 	IOBufferMemoryDescriptor *buffer = nullptr;
@@ -249,9 +265,13 @@ kern_return_t FavorZplDriver::ReadBulkIn(uint32_t timeoutMs, uint8_t *out, uint3
 	*bytesRead = 0;
 	*ioReturn = kIOReturnSuccess;
 	if (out == nullptr || capacity == 0) return kIOReturnBadArgument;
+	if (FavorZplGateIsClosed(&ivars->gate)) {
+		*ioReturn = kIOReturnNoDevice;
+		return kIOReturnSuccess;
+	}
+	if (ivars->inPipe == nullptr) return kIOReturnNotFound;
 	if (!FavorZplGateTryAcquire(&ivars->gate)) return kIOReturnBusy;
 	ScopedGate gate(&ivars->gate);
-	if (ivars->inPipe == nullptr) return kIOReturnNotFound;
 
 	IOBufferMemoryDescriptor *buffer = nullptr;
 	kern_return_t ret = IOBufferMemoryDescriptor::Create(kIOMemoryDirectionIn, capacity, 0, &buffer);

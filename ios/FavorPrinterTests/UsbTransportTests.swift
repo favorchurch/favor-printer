@@ -668,6 +668,29 @@ struct TransferGateTests {
 
         #expect(!FavorZplGateTryAcquire(&gate))
         #expect(!FavorZplGateTryAcquire(&gate))
+        #expect(FavorZplGateIsClosed(&gate))
+    }
+
+    @Test func aGateIsOpenUntilItIsClosed() {
+        var gate = FavorZplGate()
+        #expect(!FavorZplGateIsClosed(&gate))
+        FavorZplGateClose(&gate)
+        #expect(FavorZplGateIsClosed(&gate))
+    }
+
+    @Test func aTransferInFlightDoesNotCloseTheGate() {
+        var gate = FavorZplGate()
+        #expect(FavorZplGateTryAcquire(&gate))
+        #expect(!FavorZplGateIsClosed(&gate))
+    }
+
+    @Test func aDextReportedNoDeviceWithNothingWrittenIsNotAttached() async {
+        // What the dext answers once Stop has closed its gate.
+        let dext = ScriptedDext { _ in ScriptedDext.sendReply(written: 0, usb: IOReturnCode.noDevice) }
+        let read = ScriptedDext { _ in DextReply(code: 0, scalars: [0, UInt64(UInt32(bitPattern: IOReturnCode.noDevice))], data: []) }
+
+        #expect(await DriverKitUsbTransport(backend: dext).send(Data("^XA^XZ".utf8)) == .failure(.notAttached))
+        #expect(await DriverKitUsbTransport(backend: read).readStatus() == .failure(.notAttached))
     }
 
     @Test func stopWaitsForTheTransferInFlightThenOwnsTheGate() {
