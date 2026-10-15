@@ -48,7 +48,9 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
                 printerAttached: candidatesFound || visible ? true : nil,
                 foreignDriver: foreign
             )
+#if DEBUG
             status.debugDiagnostic = diagnostic
+#endif
             if let mismatch {
                 status.abiVersion = mismatch.actual
                 status.lastError = IOReturnCode.badArgument
@@ -70,7 +72,9 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
 
     private static func runningStatus(from reply: DextReply, diagnostic: String?) -> UsbPrinterStatus {
         var status = UsbPrinterStatus(driver: .running, printerAttached: true)
+#if DEBUG
         status.debugDiagnostic = diagnostic
+#endif
         let version = UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusABIVersion)])
         status.abiVersion = version
         // A dext speaking another ABI cannot be used, so it is not "running" however alive it is.
