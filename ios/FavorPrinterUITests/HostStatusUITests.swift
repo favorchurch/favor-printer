@@ -10,11 +10,8 @@ final class HostStatusUITests: XCTestCase {
 
     private func openHost(_ extra: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-FavorUITestMock", "-FavorUITestApproved"] + extra
+        app.launchArguments = ["-FavorUITestMock"] + extra
         app.launch()
-        let open = app.buttons["open-host"]
-        XCTAssertTrue(open.waitForExistence(timeout: 10))
-        open.tap()
         XCTAssertTrue(app.staticTexts["host-enrollment"].waitForExistence(timeout: 10))
         return app
     }

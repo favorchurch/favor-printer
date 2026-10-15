@@ -83,10 +83,6 @@ final class MockServer: @unchecked Sendable {
 
     deinit { MockURLProtocol.unregister(host: host) }
 
-    func client() throws -> DeviceAPIClient {
-        try DeviceAPIClient(baseURL: baseURL, session: DeviceAPIClient.makeSession(protocolClasses: [MockURLProtocol.self]))
-    }
-
     func relayClient(relayId: String = "relay-test", token: String = "relay-token") throws -> RelayAPIClient {
         try RelayAPIClient(
             baseURL: baseURL, relayId: relayId, token: token,
@@ -103,34 +99,6 @@ extension MockURLProtocol.Reply {
     static func error(_ status: Int, _ code: String) -> Self { .json(status, #"{"error":"\#(code)"}"#) }
     static func error(_ status: Int, _ code: String, reason: String) -> Self {
         .json(status, #"{"error":"\#(code)","reason":"\#(reason)"}"#)
-    }
-}
-
-enum Fixture {
-    static let token = "checkin_device_" + String(repeating: "a", count: 43)
-    static let id = "3c026625-4597-4787-a36c-871f1d052ab6"
-
-    static func grant(status: String = "pending", campusId: Int = 1, label: String = "Manila Kids iPad 2") -> String {
-        let approved = status == "pending" ? "null" : #""2026-10-12T09:03:00.000Z""#
-        let revoked = status == "revoked" ? #""2026-10-12T10:00:00.000Z""# : "null"
-        return #"{"id":"\#(id)","campusId":\#(campusId),"label":"\#(label)","status":"\#(status)","createdAt":"2026-10-12T09:00:00.000Z","approvedAt":\#(approved),"revokedAt":\#(revoked)}"#
-    }
-
-    static func registered(campusId: Int = 1, token: String = Fixture.token) -> String {
-        #"{"apiVersion":1,"grant":\#(grant(campusId: campusId)),"token":"\#(token)"}"#
-    }
-
-    static func statusBody(_ status: String, apiVersion: Int = 1) -> String {
-        #"{"apiVersion":\#(apiVersion),"grant":\#(grant(status: status))}"#
-    }
-
-    static func deviceGrant(_ status: DeviceStatus = .pending) -> DeviceGrant {
-        DeviceGrant(
-            id: id, campusId: 1, label: "Manila Kids iPad 2", status: status,
-            createdAt: Date(timeIntervalSince1970: 1_790_000_000),
-            approvedAt: status == .pending ? nil : Date(timeIntervalSince1970: 1_790_000_100),
-            revokedAt: status == .revoked ? Date(timeIntervalSince1970: 1_790_000_200) : nil
-        )
     }
 }
 
@@ -154,39 +122,6 @@ final class InMemorySecretStore: SecretStore, @unchecked Sendable {
     func delete() throws {
         if failDeletes { throw KeychainError(status: -25300) }
         lock.withLock { value = nil }
-    }
-}
-
-final class InMemoryRecordStore: DeviceRecordStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var record: DeviceRecord?
-
-    init(_ record: DeviceRecord? = nil) { self.record = record }
-
-    func load() -> DeviceRecord? { lock.withLock { record } }
-    func save(_ record: DeviceRecord) { lock.withLock { self.record = record } }
-    func clear() { lock.withLock { record = nil } }
-}
-
-actor FakeDeviceAPI: DeviceAPI {
-    var registerResult: Result<DeviceRegistration, APIError> = .failure(.transport)
-    var statusResult: Result<DeviceGrant, APIError> = .failure(.transport)
-    private(set) var statusTokens: [String] = []
-    /// Runs inside `status` before it answers, to hold a request in flight.
-    var statusGate: (@Sendable () async -> Void)?
-
-    func setRegister(_ result: Result<DeviceRegistration, APIError>) { registerResult = result }
-    func setGate(_ gate: (@Sendable () async -> Void)?) { statusGate = gate }
-    func setStatus(_ result: Result<DeviceGrant, APIError>) { statusResult = result }
-
-    func register(campusId: Int, label: String) async throws -> DeviceRegistration {
-        try registerResult.get()
-    }
-
-    func status(token: String) async throws -> DeviceGrant {
-        statusTokens.append(token)
-        if let statusGate { await statusGate() }
-        return try statusResult.get()
     }
 }
 

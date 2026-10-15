@@ -209,6 +209,26 @@ final class HostController {
     }
 
     #if DEBUG
+    private(set) var isReadingPrinterStatus = false
+
+    /// DEBUG only. Sends `~HS` and reads the answer, to see what the printer says over bulk IN. The loop is paused for
+    /// the read and resumed after, so the probe never shares the wire with a job: pausing waits for a send already
+    /// writing, and no new one starts until the probe is done. It runs in the lifecycle queue with enrollment and scene
+    /// changes. A second request while one is running is refused.
+    func readPrinterStatus() async -> PrinterStatusReading {
+        guard !isReadingPrinterStatus else { return .busy }
+        isReadingPrinterStatus = true
+        defer { isReadingPrinterStatus = false }
+        return await schedule { await self.performReadPrinterStatus() }.value
+    }
+
+    private func performReadPrinterStatus() async -> PrinterStatusReading {
+        await stopLoop()
+        let reading = await PrinterStatusReading.read(from: transport)
+        await reconcile()
+        return reading
+    }
+
     var fakeRelay: FakeRelay? {
         if case .fake(let relay) = backend { relay } else { nil }
     }
@@ -260,7 +280,7 @@ final class HostController {
         await schedule { await self.performEnroll(code: code) }.value
     }
 
-    /// Stops the loop and deletes the host credential, nothing else: not the check-in bearer and not the spool. A job
+    /// Stops the loop and deletes the host credential, nothing else: not the spool. A job
     /// still waiting in the spool is refused as stale by the cloud on its next enrollment and dropped.
     func unenroll() async {
         await schedule { await self.performUnenroll() }.value
