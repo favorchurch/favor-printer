@@ -409,6 +409,36 @@ struct HostLoopTests {
         #expect(await rig.relay.reports.map(\.outcome) == [.failed])
     }
 
+    @Test func statusCarriesDriverAndTheLastJobOutcomeWithoutAnyPayload() async throws {
+        let rig = try HostRig()
+        _ = await rig.loop.tick()
+        var status = await rig.loop.currentStatus
+        #expect(status.driver == .running)
+        #expect(status.lastJobOutcome == nil && status.lastJobAt == nil && status.lastError == nil)
+
+        await rig.relay.enqueue(zpl: zpl(for: "a"), label: "Maria Santos", id: "a")
+        _ = await rig.loop.tick()
+        status = await rig.loop.currentStatus
+        #expect(status.lastJobOutcome == .sent)
+        #expect(status.lastJobAt != nil)
+        #expect(status.lastError == nil)
+
+        await rig.transport.enqueueSend(.failure(.timeout))
+        await rig.relay.enqueue(zpl: zpl(for: "b"), label: "Jose Santos", id: "b")
+        _ = await rig.loop.tick()
+        status = await rig.loop.currentStatus
+        #expect(status.lastJobOutcome == .ambiguous)
+        #expect(status.lastError == "write timed out; outcome unknown")
+        let shown = String(describing: status)
+        #expect(!shown.contains(zplMarker("b")) && !shown.contains("Santos") && !shown.contains("\"b\""))
+    }
+
+    @Test func statusReportsADriverThatIsNotRunning() async throws {
+        let rig = try HostRig(transport: FakeUsbTransport(status: UsbPrinterStatus(driver: .printerPresentDriverNotRunning)))
+        _ = await rig.loop.tick()
+        #expect(await rig.loop.currentStatus.driver == .printerPresentDriverNotRunning)
+    }
+
     @Test func aRefusedCredentialStopsTheCycleAndKeepsEverything() async throws {
         let rig = try HostRig()
         let leased = try #require(await rig.relay.claimJobs(zpl: zpl(for: "a"), id: "a"))

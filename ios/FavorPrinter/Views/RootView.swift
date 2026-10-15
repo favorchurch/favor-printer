@@ -3,6 +3,8 @@ import SwiftUI
 struct RootView: View {
     let session: DeviceSession
     let service: CheckinService
+    let host: HostController?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -21,7 +23,17 @@ struct RootView: View {
                 }
             }
             .navigationTitle("Favor Printer")
+            .toolbar {
+                if let host {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink("Printer host") { HostStatusView(host: host) }
+                            .accessibilityLabel("Printer host status")
+                            .accessibilityIdentifier("open-host")
+                    }
+                }
+            }
         }
+        .onChange(of: scenePhase, initial: true) { _, phase in host?.scenePhaseChanged(phase) }
     }
 }
 

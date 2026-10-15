@@ -202,6 +202,19 @@ separate directory (`HostSpoolFake`), so fake jobs never mix with real ones. Wit
 selects the real relay and none means not enrolled. `FakeRelay` is compiled only in DEBUG and the argument is ignored
 in Release.
 
+### Printer Host screen
+
+The toolbar of the root screen has a "Printer host" link (`Views/HostViews.swift`) that works in every check-in state.
+It shows the printer and driver state (`DriverAvailability`: running; printer seen but driver not running, with the
+Settings > Favor Printer > Drivers hint and "replug after enabling"; unknown, "attach the printer to check"), whether
+the host is running or paused, spool depth, the last job outcome with its time and the last error. `HostStatus` carries
+`driver`, `lastJobOutcome`, `lastJobAt` and `lastError` for this. The last error is one of the loop's fixed phrases,
+never ZPL, label text, a name or a job id. Not enrolled, it offers a one-time code field and an Enroll button
+(`HostController.enroll(code:)`, with the 409 conflict reason shown); enrolled, it shows an Unenroll control that asks
+first. A DEBUG build on the fake relay also shows "Print synthetic test label"; Release builds do not compile it.
+`HostStatusUITests` drives the screen with `-FavorUITestMock` plus either `-FavorHostFakeRelay` or the mocked enroll
+call (code `CONFLICT` is refused with a conflict; `-FavorUITestDriverOff` fakes a printer without a running driver).
+
 ### Tests
 
 `HostLoopTests.swift` has example tests for the spool, the loop, enrollment, scene phase and relay selection, all
