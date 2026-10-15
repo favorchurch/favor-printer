@@ -121,6 +121,11 @@ The dext registers its service first and never fails after that, so the app can 
 
 `DriverKitUsbTransport` opens a fresh user client for every call, so a replug or a driver reload needs no reconnect logic.
 It maps every IOKit failure to a `UsbTransportError`, keeps the byte count of a partial write and never logs ZPL.
+A payload over 256 KiB goes out as several send calls. The dext's transfer gate keeps one transfer at a time but is
+released between chunks, so use a single `DriverKitUsbTransport` per app. The dext does not authenticate its callers:
+any app holding `communicates-with-drivers` can open it (`allow-third-party-userclients` is required for the app to
+reach it at all), so treat the printer as shared with other entitled apps on the device. On `Stop` the dext closes the
+gate, aborts in-flight transfers and waits (at most 6 s) before releasing the pipes.
 Tests run it against a scripted backend (`UsbTransportTests.swift`); none touches IOKit or a printer.
 
 ### Gotchas (each one failed silently in the spike, issue #23)

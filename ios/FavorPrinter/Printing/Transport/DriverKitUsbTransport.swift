@@ -54,9 +54,9 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
         let reply = connection.call(
             selector: kFavorZplSelectorStatus,
             scalarOutputCount: Int(kFavorZplStatusFieldCount), structOutputCapacity: Int(kFavorZplMaxSerialBytes)
-        )
-        guard reply.code == IOReturnCode.success, reply.scalars.count >= Int(kFavorZplStatusFieldCount) else {
-            status.lastError = reply.code == IOReturnCode.success ? nil : reply.code
+        ).requiring(scalars: Int(kFavorZplStatusFieldCount))
+        guard reply.code == IOReturnCode.success else {
+            status.lastError = reply.code
             return status
         }
         status.stage = UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusStage)])
@@ -84,9 +84,11 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
                 let chunk = [UInt8](zpl[start..<(start + min(expected - written, Int(kFavorZplMaxSendBytes)))])
                 let reply = connection.call(
                     selector: kFavorZplSelectorSendRaw, structInput: chunk, scalarOutputCount: Int(kFavorZplSendResultCount)
-                )
-                let answered = reply.code == IOReturnCode.success && reply.scalars.count >= Int(kFavorZplSendResultCount)
-                let chunkWritten = answered ? Int(reply.scalars[Int(kFavorZplSendResultBytesWritten)]) : 0
+                ).requiring(scalars: Int(kFavorZplSendResultCount))
+                let answered = reply.code == IOReturnCode.success
+                // The dext cannot have accepted more than it was offered.
+                let chunkWritten = answered
+                    ? min(Int(clamping: reply.scalars[Int(kFavorZplSendResultBytesWritten)]), chunk.count) : 0
                 let driverCode = answered
                     ? Int32(truncatingIfNeeded: reply.scalars[Int(kFavorZplSendResultIOReturn)]) : IOReturnCode.success
                 if answered && driverCode == IOReturnCode.success && chunkWritten >= chunk.count {
@@ -107,12 +109,13 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
             let reply = connection.call(
                 selector: kFavorZplSelectorReadStatus, scalarInput: [readTimeoutMs],
                 scalarOutputCount: Int(kFavorZplReadResultCount), structOutputCapacity: Int(kFavorZplMaxReadBytes)
-            )
-            let answered = reply.code == IOReturnCode.success && reply.scalars.count >= Int(kFavorZplReadResultCount)
+            ).requiring(scalars: Int(kFavorZplReadResultCount))
+            let answered = reply.code == IOReturnCode.success
             let driverCode = answered
                 ? Int32(truncatingIfNeeded: reply.scalars[Int(kFavorZplReadResultIOReturn)]) : IOReturnCode.success
             // Trust the dext's byte count over the returned output size, which the kernel may leave untouched.
-            let bytesRead = answered ? Int(reply.scalars[Int(kFavorZplReadResultBytesRead)]) : 0
+            let bytesRead = answered
+                ? min(Int(clamping: reply.scalars[Int(kFavorZplReadResultBytesRead)]), Int(kFavorZplMaxReadBytes)) : 0
             let outcome = UsbTransportError.readOutcome(
                 callCode: reply.code, driverCode: driverCode, data: Data(reply.data.prefix(bytesRead))
             )

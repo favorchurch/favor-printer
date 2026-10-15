@@ -7,6 +7,7 @@ enum IOReturnCode {
 
     static let success: Int32 = 0
     static let noDevice = common(0x2c0)
+    static let badArgument = common(0x2c2)
     static let offline = common(0x2d7)
     static let notAttached = common(0x2d9)
     static let timeout = common(0x2d6)
@@ -33,12 +34,18 @@ extension UsbTransportError {
 
     /// Result of one send. `callCode` is `IOConnectCallMethod`'s return, `driverCode` the USB result the dext
     /// reports next to `written`. `written` counts every byte accepted so far, including earlier chunks of the
-    /// same payload. A detach after some bytes went out stays `writeFailed` so that the byte count survives.
+    /// same payload.
+    ///
+    /// `.notAttached` is only returned when the dext itself reported the detach with nothing written. A failed
+    /// call says nothing about the chunk in flight (the dext may have sent bytes before it went away), so it
+    /// stays `writeFailed` and the caller must not assume nothing reached the printer.
     static func writeOutcome(callCode: Int32, driverCode: Int32, written: Int, expected: Int) -> Result<Int, UsbTransportError> {
-        let code = callCode != IOReturnCode.success ? callCode : driverCode
-        if code != IOReturnCode.success {
-            if isDetached(code) && written == 0 { return .failure(.notAttached) }
-            return .failure(.writeFailed(code: code, bytesWritten: written))
+        if callCode != IOReturnCode.success {
+            return .failure(.writeFailed(code: callCode, bytesWritten: written))
+        }
+        if driverCode != IOReturnCode.success {
+            if isDetached(driverCode) && written == 0 { return .failure(.notAttached) }
+            return .failure(.writeFailed(code: driverCode, bytesWritten: written))
         }
         return written >= expected ? .success(written) : .failure(.shortWrite(written: written, expected: expected))
     }

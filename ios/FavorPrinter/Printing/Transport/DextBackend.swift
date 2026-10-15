@@ -22,6 +22,13 @@ struct DextReply {
     var scalars: [UInt64]
     /// Structure output as returned. Its length is not trustworthy: callers trim with a scalar byte count or a NUL.
     var data: [UInt8]
+
+    /// A reply that claims success but carries fewer scalars than the ABI promises is a dext/app mismatch.
+    /// Report it as a failed call instead of letting callers index past the end.
+    func requiring(scalars count: Int) -> DextReply {
+        guard code == IOReturnCode.success, scalars.count < count else { return self }
+        return DextReply(code: IOReturnCode.badArgument, scalars: [], data: [])
+    }
 }
 
 protocol DextConnection {
@@ -111,5 +118,6 @@ private struct IOKitDextConnection: DextConnection {
 
     func close() {
         IOServiceClose(connection)
+        IOObjectRelease(connection)
     }
 }
