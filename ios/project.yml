@@ -64,7 +64,6 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_FILE: Config/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Favor Printer
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
@@ -77,6 +76,12 @@ targets:
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         TARGETED_DEVICE_FAMILY: "2"
+      configs:
+        # UIBackgroundModes `audio` (DEBUG keep-alive experiment) exists only in Debug.
+        Debug:
+          INFOPLIST_FILE: Config/Info-Debug.plist
+        Release:
+          INFOPLIST_FILE: Config/Info.plist
 
   FavorPrinterDriver:
     type: driver-extension

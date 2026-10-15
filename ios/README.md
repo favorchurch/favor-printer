@@ -182,6 +182,13 @@ queued every 20 seconds while backgrounded. The DEBUG-only Background experiment
 background job outcomes and heartbeat time in UserDefaults so the observations remain visible after relaunch. It stores
 no labels or ZPL. The flag is ignored in Release and does not make background printing a supported operating mode.
 
+A second DEBUG experiment, `-FavorHostKeepAliveAudio`, implies the first and also plays a looping silent buffer
+(`.playback`, `.mixWithOthers`) while backgrounded, to try to keep the app running past the background task. Audio
+starts on `.background`, stops on `.active` and re-activates after an interruption; these events are recorded in the
+Background experiment section. The `audio` UIBackgroundModes entry exists only in the Debug Info.plist
+(`Config/Info-Debug.plist`). This is unsupported: App Store review (guideline 2.5.4) rejects silent-audio keep-alive,
+so it suits only internal or ad hoc distribution. The flag is ignored in Release.
+
 ### Fake relay and fake transport (DEBUG)
 
 Two independent DEBUG-only launch arguments:
