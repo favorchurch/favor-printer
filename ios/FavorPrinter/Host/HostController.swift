@@ -131,6 +131,8 @@ enum HostError: Error, Sendable, Equatable {
         case .serialDuplicateHasJobs: "This printer is already set up and has waiting jobs."
         case .serialInUse: "This printer is already in use by another device."
         case .printerNameTaken: "Another printer already has this name."
+        case .hostActive:
+            "This printer is active on another host. Ask an RSVP admin to confirm a handover, then use the new code."
         case .unknown: "The server could not bind this printer."
         }
     }
@@ -160,6 +162,8 @@ final class HostController {
     private(set) var isLoopRunning = false
     private(set) var isEnrolling = false
     private(set) var printerName: String?
+    /// Set by an enrollment that moved the printer off another host. Cleared on unenroll.
+    private(set) var handedOverFrom: RelayHandedOverFrom?
 
     @ObservationIgnored private let backend: Backend
     @ObservationIgnored let transport: any UsbPrinterTransport
@@ -173,6 +177,7 @@ final class HostController {
     private let endBackgroundTask: (Int) -> Void
     private(set) var backgroundExperiment: BackgroundExperimentState
     @ObservationIgnored private var backgroundTaskId: Int?
+    @ObservationIgnored private var pausedBeatTaskId: Int?
     @ObservationIgnored private var backgroundEnqueueTask: Task<Void, Never>?
     @ObservationIgnored private var lastExperimentJobAt: Date?
 
@@ -193,7 +198,7 @@ final class HostController {
         backgroundExperimentEnabled: Bool = false,
         experimentDefaults: UserDefaults = .standard,
         beginBackgroundTask: @escaping (@escaping @MainActor () -> Void) -> Int = { expiration in
-            let identifier = UIApplication.shared.beginBackgroundTask(withName: "FavorPrinter host experiment", expirationHandler: expiration)
+            let identifier = UIApplication.shared.beginBackgroundTask(withName: "FavorPrinter host", expirationHandler: expiration)
             return identifier == .invalid ? -1 : identifier.rawValue
         },
         endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) }
@@ -337,6 +342,11 @@ final class HostController {
 #endif
         case .background:
             isForeground = false
+            var keepsRunning = false
+#if DEBUG
+            keepsRunning = backgroundExperimentEnabled
+#endif
+            if !keepsRunning { sendPausedHeartbeatInBackground() }
 #if DEBUG
             if backgroundExperimentEnabled {
                 backgroundExperiment.backgroundedAt = now()
@@ -355,6 +365,26 @@ final class HostController {
         }
         schedule { await self.reconcile() }
     }
+
+    /// One best-effort "paused" heartbeat as the foreground-only loop is about to stop, under a short background task.
+    /// It runs beside the lifecycle queue, so it never delays the stop or a send in flight, and a failure is ignored.
+    private func sendPausedHeartbeatInBackground() {
+        guard let loop else { return }
+        let taskId = beginBackgroundTask { [weak self] in self?.pausedBeatExpired() }
+        pausedBeatTaskId = taskId >= 0 ? taskId : nil
+        Task { [weak self] in
+            await loop.sendPausedHeartbeat()
+            self?.endPausedBeatTask()
+        }
+    }
+
+    private func endPausedBeatTask() {
+        guard let id = pausedBeatTaskId else { return }
+        pausedBeatTaskId = nil
+        endBackgroundTask(id)
+    }
+
+    private func pausedBeatExpired() { endPausedBeatTask() }
 
     /// Waits until every queued lifecycle change has been applied.
     func settled() async {
@@ -432,6 +462,7 @@ final class HostController {
         authBlocked = false
         enrollment = .enrolled
         printerName = issued.printer?.name
+        handedOverFrom = issued.handedOverFrom
         if let config = try? await newRelay.config(), let first = config.printers.first {
             printerName = first.name
         }
@@ -452,6 +483,7 @@ final class HostController {
         authBlocked = false
         error = nil
         printerName = nil
+        handedOverFrom = nil
         status = HostStatus()
         enrollment = .notEnrolled
     }

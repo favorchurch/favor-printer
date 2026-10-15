@@ -10,6 +10,9 @@ struct HostStatus: Sendable, Equatable {
     var lastHeartbeatAt: Date?
     /// The cloud refused the credential. The loop has stopped; nothing was wiped.
     var authRejected = false
+    /// The cloud says an admin handed this printer to another host. The loop no longer claims or sends for it and
+    /// keeps the credential. It resumes only after a new enrollment or an app relaunch.
+    var printerMoved = false
     /// What the driver extension reported on the last cycle. Nil before the first cycle.
     var driver: DriverAvailability?
 #if DEBUG
@@ -73,6 +76,13 @@ actor HostLoop {
     private var heartbeatAnswered = false
     private var lastHeartbeatAt: Date?
     private var cloudUnreachable = false
+    /// Printers the cloud has told this host were handed to another host. Kept for the life of this loop: `start()`
+    /// does not clear it, a new enrollment builds a new loop.
+    private var handedOver: Set<String> = []
+    private var lastPrinter: PrinterState?
+    /// Set once the last "paused" beat is on its way, so no regular "active" beat follows it until `start()`.
+    private var paused = false
+    private var pausedBeat: Task<Void, Never>?
     private var status = HostStatus()
 
     init(
@@ -101,6 +111,7 @@ actor HostLoop {
         guard !isRunning else { return }
         isRunning = true
         halted = false
+        paused = false
         status.authRejected = false
         forgetCloudState()
         loopTask = Task { await self.run() }
@@ -164,6 +175,7 @@ actor HostLoop {
         cloudUnreachable = false
         status.authRejected = false
         let printer = await readPrinter()
+        lastPrinter = printer
         do {
             try await loadConfigIfNeeded()
             if !heartbeatAnswered { try await heartbeat(printer) }
@@ -180,6 +192,7 @@ actor HostLoop {
         status.printerAttached = printer.attached
         status.printerReady = printer.ready
         status.driver = printer.driver
+        status.printerMoved = !printerIds.isEmpty && printerIds.allSatisfy(handedOver.contains)
 #if DEBUG
         status.driverDiagnostic = printer.debugDiagnostic
 #endif
@@ -216,6 +229,10 @@ actor HostLoop {
             return try await body()
         } catch RelayFailure.auth {
             throw AuthRejected()
+        } catch RelayFailure.printerHandedOver(let ids) {
+            // Terminal for these printers, not a network error: the cloud itself is fine.
+            handedOver.formUnion(ids.isEmpty ? printerIds : ids)
+            return nil
         } catch {
             cloudUnreachable = true
             return nil
@@ -238,22 +255,47 @@ actor HostLoop {
         try await heartbeat(printer)
     }
 
-    private func heartbeat(_ printer: PrinterState) async throws {
-        guard !printerIds.isEmpty, !cloudUnreachable else { return }
-        let nowDate = now()
-        lastHeartbeatAt = nowDate
-        let checkedAt = nowDate.formatted(.iso8601)
-        let body = RelayHeartbeatRequest(
-            printerIds: printerIds,
+    /// The printers this host still serves: everything the cloud listed except what was handed to another host.
+    private var servedPrinterIds: [String] { printerIds.filter { !handedOver.contains($0) } }
+
+    private func heartbeatBody(_ printer: PrinterState, at date: Date, lifecycle: RelayLifecycle) async -> RelayHeartbeatRequest {
+        let ids = servedPrinterIds
+        let checkedAt = date.formatted(.iso8601)
+        return RelayHeartbeatRequest(
+            printerIds: ids,
             relayVersion: identity.appVersion,
             spoolDepth: await spool.count,
-            probes: printerIds.map {
+            probes: ids.map {
                 RelayProbe(printerId: $0, reachable: printer.ready, checkedAt: checkedAt, error: printer.error, status: "status_unknown")
             },
             appVersion: identity.appVersion,
             osVersion: identity.osVersion,
-            printerAttached: printer.attached
+            printerAttached: printer.attached,
+            hostKind: .ipad,
+            lifecycle: lifecycle
         )
+    }
+
+    /// One best-effort "paused" beat for a host that is about to stop. It never waits for a send, never stops the loop
+    /// and ignores every failure. After it, no "active" beat goes out until `start()`.
+    func sendPausedHeartbeat() async {
+        guard isRunning, !paused, lastHeartbeatAt != nil, let printer = lastPrinter, !servedPrinterIds.isEmpty else { return }
+        paused = true
+        let body = await heartbeatBody(printer, at: now(), lifecycle: .paused)
+        let relay = relay
+        let beat = Task { _ = try? await relay.heartbeat(body) }
+        pausedBeat = beat
+        await beat.value
+    }
+
+    private func heartbeat(_ printer: PrinterState) async throws {
+        guard !paused, !servedPrinterIds.isEmpty, !cloudUnreachable else { return }
+        // A "paused" beat still on its way must land first, or it could overwrite this "active" one.
+        await pausedBeat?.value
+        pausedBeat = nil
+        let nowDate = now()
+        lastHeartbeatAt = nowDate
+        let body = await heartbeatBody(printer, at: nowDate, lifecycle: .active)
         guard let answer = try await call({ try await relay.heartbeat(body) }) else {
             // Nothing is known about the printers yet, so try again next cycle instead of waiting out the interval.
             if !heartbeatAnswered { lastHeartbeatAt = nil }
@@ -267,13 +309,14 @@ actor HostLoop {
     // MARK: Spool
 
     private func claimNew(_ printer: PrinterState) async throws -> Set<String> {
-        let claimable = printerIds.filter(enabledPrinterIds.contains)
+        let claimable = servedPrinterIds.filter(enabledPrinterIds.contains)
         guard !halted, printer.ready, !claimable.isEmpty else { return [] }
         let room = timing.maxSpool - (await spool.count)
         guard room > 0 else { return [] }
         guard let answer = try await call({ try await relay.claim(printerIds: claimable, limit: min(timing.claimLimit, room)) }) else {
             return []
         }
+        handedOver.formUnion(answer.handedOverPrinterIds.filter(printerIds.contains))
         var stored: Set<String> = []
         for job in answer.jobs {
             // A claim that cannot be stored is left to expire at the cloud.
@@ -321,7 +364,8 @@ actor HostLoop {
     }
 
     private func print(_ entry: SpoolEntry, _ printer: PrinterState) async throws {
-        guard !halted, !cloudUnreachable, printer.ready, enabledPrinterIds.contains(entry.printerId), printerIds.contains(entry.printerId) else {
+        guard !halted, !cloudUnreachable, printer.ready, enabledPrinterIds.contains(entry.printerId), printerIds.contains(entry.printerId),
+              !handedOver.contains(entry.printerId) else {
             return
         }
         guard let zpl = entry.zpl, !zpl.isEmpty else {
