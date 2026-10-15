@@ -20,6 +20,31 @@ enum HostRelayMode: Sendable, Equatable {
     }
 }
 
+/// Which printer transport the host drives. The real dext transport is the default in every mode, the fake relay
+/// included, so the fake relay's synthetic label goes through the real driver and printer.
+enum HostTransportMode: Sendable, Equatable {
+    case driverKit
+    /// DEBUG only: `FakeUsbTransport`, for simulator UI tests. Requested by its own launch argument, never implied.
+    case fake
+
+    static let fakeTransportArgument = "-FavorHostFakeTransport"
+
+    static func resolve(arguments: [String]) -> HostTransportMode {
+        #if DEBUG
+        arguments.contains(fakeTransportArgument) ? .fake : .driverKit
+        #else
+        .driverKit
+        #endif
+    }
+
+    func makeTransport() -> any UsbPrinterTransport {
+        #if DEBUG
+        if self == .fake { return FakeUsbTransport() }
+        #endif
+        return DriverKitUsbTransport()
+    }
+}
+
 enum HostEnrollment: Sendable, Equatable {
     /// The stored credential has not been read yet (or the Keychain would not answer).
     case launching
@@ -104,7 +129,7 @@ final class HostController {
     private(set) var printerName: String?
 
     @ObservationIgnored private let backend: Backend
-    @ObservationIgnored private let transport: any UsbPrinterTransport
+    @ObservationIgnored let transport: any UsbPrinterTransport
     @ObservationIgnored private let spool: HostSpool
     @ObservationIgnored private let identity: HostIdentity
     @ObservationIgnored private let timing: HostLoop.Timing
@@ -135,7 +160,9 @@ final class HostController {
 
     /// Builds the controller for this launch. The relay is chosen by `arguments` alone: `-FavorHostFakeRelay` (DEBUG
     /// builds) selects `FakeRelay` without reading the host credential or building an HTTP client; otherwise a stored
-    /// credential selects the cloud relay at `baseURL`, and none means not enrolled.
+    /// credential selects the cloud relay at `baseURL`, and none means not enrolled. The transport is the real
+    /// DriverKit one unless `transport` is passed or a DEBUG build is launched with `-FavorHostFakeTransport`; the
+    /// relay choice never changes it.
     static func make(
         arguments: [String] = CommandLine.arguments,
         baseURL: URL,
@@ -162,7 +189,7 @@ final class HostController {
                         try await RelayAPIClient.enroll(baseURL: baseURL, request: request, session: session ?? RelayAPIClient.makeSession())
                     }
                 ),
-                transport: transport ?? DriverKitUsbTransport(),
+                transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
                 spool: spool, identity: identity, timing: timing
             )
         case .fake:
@@ -172,7 +199,7 @@ final class HostController {
                 .appending(path: "HostSpoolFake", directoryHint: .isDirectory)
             return HostController(
                 backend: .fake(FakeRelay.demo()),
-                transport: transport ?? FakeUsbTransport(),
+                transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
                 spool: try HostSpool(directory: directory), identity: identity, timing: timing
             )
             #else

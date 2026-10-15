@@ -193,14 +193,27 @@ on `.background` (waiting for a send already writing, never cutting it short) an
 and a claimed job whose lease runs out is dropped when the loop resumes. The view must call `scenePhaseChanged` for the
 current phase when it appears, since the loop starts only once the app is known to be active.
 
-### Fake relay (DEBUG)
+### Fake relay and fake transport (DEBUG)
 
-Launch a Debug build with `-FavorHostFakeRelay` to run the host against `FakeRelay`, an in-process relay with one demo
-label and a fake printer. The argument forces the fake even when a real host credential is stored, never reads that
-credential, builds no HTTP client (so nothing can reach the network) and refuses `enroll(code:)`. Its spool is a
-separate directory (`HostSpoolFake`), so fake jobs never mix with real ones. Without the argument a stored credential
-selects the real relay and none means not enrolled. `FakeRelay` is compiled only in DEBUG and the argument is ignored
-in Release.
+Two independent DEBUG-only launch arguments:
+
+- `-FavorHostFakeRelay` runs the host against `FakeRelay`, an in-process relay with one demo label. It forces the fake
+  even when a real host credential is stored, never reads that credential, builds no HTTP client (so nothing can reach
+  the network) and refuses `enroll(code:)`. Its spool is a separate directory (`HostSpoolFake`), so fake jobs never mix
+  with real ones. It does not change the printer: the synthetic label goes through the real `DriverKitUsbTransport`, the
+  dext and the printer, which is what the hardware gate tests.
+- `-FavorHostFakeTransport` swaps the printer for `FakeUsbTransport` (bytes are only recorded in memory). It exists for
+  simulator UI tests, which have no dext, and is never implied by the relay argument. It combines with either relay mode.
+
+| Arguments | Relay | Printer |
+| --- | --- | --- |
+| none | cloud relay if a credential is stored, else not enrolled | DriverKit |
+| `-FavorHostFakeRelay` | `FakeRelay` | DriverKit |
+| `-FavorHostFakeTransport` | as with none | `FakeUsbTransport` |
+| both | `FakeRelay` | `FakeUsbTransport` |
+
+Without `-FavorHostFakeRelay` a stored credential selects the real relay and none means not enrolled. `FakeRelay` and
+`FakeUsbTransport` selection exist only in DEBUG; both arguments are ignored in Release.
 
 ### Tests
 

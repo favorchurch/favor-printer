@@ -923,6 +923,44 @@ struct HostRelaySelectionTests {
         #expect(HostRelayMode.resolve(arguments: ["app", "-FavorUITestMock", "FavorHostFakeRelay"]) == .real)
     }
 
+    @Test func theFakeTransportArgumentIsSeparateAndExplicit() {
+        #expect(HostTransportMode.fakeTransportArgument == "-FavorHostFakeTransport")
+        #expect(HostTransportMode.resolve(arguments: ["app"]) == .driverKit)
+        #expect(HostTransportMode.resolve(arguments: ["app", "-FavorHostFakeRelay"]) == .driverKit)
+        #expect(HostTransportMode.resolve(arguments: ["app", "-FavorHostFakeTransport"]) == .fake)
+        #expect(HostTransportMode.resolve(arguments: ["app", "FavorHostFakeTransport"]) == .driverKit)
+    }
+
+    /// Relay choice and transport choice are independent: only the transport argument swaps in the fake printer.
+    @Test(arguments: [
+        ([String](), false, false),
+        (["-FavorHostFakeRelay"], true, false),
+        (["-FavorHostFakeTransport"], false, true),
+        (["-FavorHostFakeRelay", "-FavorHostFakeTransport"], true, true),
+    ])
+    func relayAndTransportSelectionMatrix(arguments: [String], fakeRelay: Bool, fakeTransport: Bool) async throws {
+        let server = relayServer()
+        let secrets = storedCredential()
+        let store = CountingCredentialStore(secrets: secrets)
+        let controller = try HostController.make(
+            arguments: arguments, baseURL: server.baseURL, credentials: store, spoolDirectory: TempDirectory().url,
+            session: RelayAPIClient.makeSession(protocolClasses: [MockURLProtocol.self]), identity: testIdentity, timing: fastTiming
+        )
+        #expect((controller.fakeRelay != nil) == fakeRelay)
+        #expect((controller.transport is FakeUsbTransport) == fakeTransport)
+        #expect((controller.transport is DriverKitUsbTransport) == !fakeTransport)
+        if fakeRelay {
+            // The fake relay is never reachable over HTTP, with either transport.
+            controller.scenePhaseChanged(.active)
+            await controller.settled()
+            controller.scenePhaseChanged(.background)
+            await controller.settled()
+            #expect(controller.enrollment == .fakeRelay)
+            #expect(await controller.enroll(code: "ABCD") == .fakeRelayActive)
+            #expect(server.requests.isEmpty && store.touches == 0)
+        }
+    }
+
     @Test func fakeRelayModeIgnoresAStoredCredentialAndSendsNothingOverHTTP() async throws {
         let server = relayServer()
         let secrets = storedCredential()
