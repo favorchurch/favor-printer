@@ -212,6 +212,11 @@ final class HostController {
     var fakeRelay: FakeRelay? {
         if case .fake(let relay) = backend { relay } else { nil }
     }
+
+    /// Queues one small synthetic label on the fake relay. Does nothing against the real relay.
+    func printSyntheticTestLabel() async {
+        await fakeRelay?.enqueue(zpl: "^XA^FO40,40^A0N,48,48^FDFavor synthetic test^FS^XZ", label: "Synthetic test")
+    }
     #endif
 
     // MARK: Scene phase
@@ -231,6 +236,17 @@ final class HostController {
     /// Waits until every queued lifecycle change has been applied.
     func settled() async {
         await lifecycle?.value
+    }
+
+    /// Reads the printer and driver once for the host screen. The loop reports both every cycle while it runs, so this
+    /// only matters when it does not (not enrolled, in the background): it keeps the screen from showing stale or no
+    /// driver state.
+    func refreshPrinter() async {
+        let reading = await transport.status()
+        guard !isLoopRunning else { return }
+        status.driver = reading.driver
+        status.printerAttached = reading.printerAttached
+        status.printerReady = reading.driver == .running && reading.printerAttached == true
     }
 
     // MARK: Enrollment

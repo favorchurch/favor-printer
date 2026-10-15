@@ -10,6 +10,13 @@ struct HostStatus: Sendable, Equatable {
     var lastHeartbeatAt: Date?
     /// The cloud refused the credential. The loop has stopped; nothing was wiped.
     var authRejected = false
+    /// What the driver extension reported on the last cycle. Nil before the first cycle.
+    var driver: DriverAvailability?
+    /// The outcome of the last job this host decided, whether or not the cloud has been told yet.
+    var lastJobOutcome: RelayReportOutcome?
+    var lastJobAt: Date?
+    /// The error recorded with the last failed or ambiguous job. A fixed phrase from this app, never label or ZPL text.
+    var lastError: String?
 }
 
 enum HostTickResult: Sendable, Equatable {
@@ -168,11 +175,13 @@ actor HostLoop {
         status.spoolDepth = await spool.count
         status.printerAttached = printer.attached
         status.printerReady = printer.ready
+        status.driver = printer.driver
         onStatus?(status)
         return status.authRejected ? .authRejected : .completed
     }
 
     private struct PrinterState {
+        var driver: DriverAvailability
         var attached: Bool?
         var ready: Bool
         var error: String?
@@ -182,7 +191,7 @@ actor HostLoop {
         let reading = await transport.status()
         let ready = reading.driver == .running && reading.printerAttached == true
         let error: String? = ready ? nil : (reading.driver == .printerPresentDriverNotRunning ? "driver_not_running" : "printer_not_attached")
-        return PrinterState(attached: reading.printerAttached, ready: ready, error: error)
+        return PrinterState(driver: reading.driver, attached: reading.printerAttached, ready: ready, error: error)
     }
 
     /// Runs one relay call. A refused credential throws; any other failure marks the cloud unreachable for the rest
@@ -345,6 +354,9 @@ actor HostLoop {
         // If this write fails the outcome is still delivered from memory; a crash first leaves `sending`, which restarts as ambiguous.
         try? await spool.write(recorded)
         log.notice("job \(entry.id, privacy: .public) \(outcome.rawValue, privacy: .public)")
+        status.lastJobOutcome = outcome
+        status.lastJobAt = now()
+        if let error { status.lastError = error }
         try await deliver(recorded)
     }
 
