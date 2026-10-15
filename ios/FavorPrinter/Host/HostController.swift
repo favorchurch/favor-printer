@@ -8,12 +8,19 @@ struct BackgroundExperimentJob: Codable, Sendable, Equatable {
     let outcome: String
 }
 
+/// A keep-alive audio session event: "audio started", "audio stopped", "audio interrupted", "audio resumed", or a failure.
+struct BackgroundExperimentAudioEvent: Codable, Sendable, Equatable {
+    let at: Date
+    let name: String
+}
+
 struct BackgroundExperimentState: Codable, Sendable, Equatable {
     var backgroundedAt: Date?
     var jobs: [BackgroundExperimentJob] = []
     var expiredAt: Date?
     var lastHeartbeatAt: Date?
     var returnedToForegroundAt: Date?
+    var audioEvents: [BackgroundExperimentAudioEvent] = []
 
     static let defaultsKey = "FavorPrinter.BackgroundExperiment"
 
@@ -175,6 +182,8 @@ final class HostController {
     private let experimentDefaults: UserDefaults
     private let beginBackgroundTask: (@escaping @MainActor () -> Void) -> Int
     private let endBackgroundTask: (Int) -> Void
+    private let keepAliveAudio: (any KeepAliveAudioSession)?
+    @ObservationIgnored private var isKeepAliveAudioActive = false
     private(set) var backgroundExperiment: BackgroundExperimentState
     @ObservationIgnored private var backgroundTaskId: Int?
     /// Background tasks begun for a "paused" beat and not yet ended. Each begin has exactly one end.
@@ -202,7 +211,8 @@ final class HostController {
             let identifier = UIApplication.shared.beginBackgroundTask(withName: "FavorPrinter host", expirationHandler: expiration)
             return identifier == .invalid ? -1 : identifier.rawValue
         },
-        endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) }
+        endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) },
+        keepAliveAudio: (any KeepAliveAudioSession)? = nil
     ) {
         self.backend = backend
         self.transport = transport
@@ -214,8 +224,12 @@ final class HostController {
         self.experimentDefaults = experimentDefaults
         self.beginBackgroundTask = beginBackgroundTask
         self.endBackgroundTask = endBackgroundTask
+        self.keepAliveAudio = backgroundExperimentEnabled ? keepAliveAudio : nil
         self.backgroundExperiment = ((experimentDefaults.object(forKey: BackgroundExperimentState.defaultsKey) as? Data)
             .flatMap { try? JSONDecoder().decode(BackgroundExperimentState.self, from: $0) }) ?? BackgroundExperimentState()
+        #if DEBUG
+        self.keepAliveAudio?.onInterruption = { [weak self] event in self?.keepAliveAudioInterrupted(event) }
+        #endif
     }
 
     /// Builds the controller for this launch. The relay is chosen by `arguments` alone: `-FavorHostFakeRelay` (DEBUG
@@ -251,7 +265,8 @@ final class HostController {
                 ),
                 transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
                 spool: spool, identity: identity, timing: timing,
-                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments)
+                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments) || HostKeepAliveAudio.enabled(arguments: arguments),
+                keepAliveAudio: Self.makeKeepAliveAudio(arguments: arguments)
             )
         case .fake:
             #if DEBUG
@@ -262,12 +277,21 @@ final class HostController {
                 backend: .fake(FakeRelay.demo()),
                 transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
                 spool: try HostSpool(directory: directory), identity: identity, timing: timing,
-                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments)
+                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments) || HostKeepAliveAudio.enabled(arguments: arguments),
+                keepAliveAudio: Self.makeKeepAliveAudio(arguments: arguments)
             )
             #else
             preconditionFailure("the fake relay is not compiled into this build")
             #endif
         }
+    }
+
+    private static func makeKeepAliveAudio(arguments: [String]) -> (any KeepAliveAudioSession)? {
+        #if DEBUG
+        HostKeepAliveAudio.enabled(arguments: arguments) ? SilentLoopAudioSession() : nil
+        #else
+        nil
+        #endif
     }
 
     #if DEBUG
@@ -337,6 +361,7 @@ final class HostController {
                 backgroundExperiment.returnedToForegroundAt = now()
                 persistBackgroundExperiment()
                 endExperimentBackgroundTask()
+                stopKeepAliveAudio()
                 backgroundEnqueueTask?.cancel()
                 backgroundEnqueueTask = nil
             }
@@ -360,6 +385,7 @@ final class HostController {
                 backgroundExperiment.returnedToForegroundAt = nil
                 lastExperimentJobAt = status.lastJobAt
                 persistBackgroundExperiment()
+                startKeepAliveAudio()
                 beginExperimentBackgroundTask()
                 enqueueSyntheticLabelsWhileBackgrounded()
                 schedule { await self.reconcile() }
@@ -544,7 +570,8 @@ final class HostController {
 
     private var isBackgroundExperimentRunning: Bool {
 #if DEBUG
-        backgroundExperimentEnabled && backgroundTaskId != nil && backgroundExperiment.backgroundedAt != nil && backgroundExperiment.expiredAt == nil
+        backgroundExperimentEnabled && backgroundExperiment.backgroundedAt != nil
+            && (isKeepAliveAudioActive || (backgroundTaskId != nil && backgroundExperiment.expiredAt == nil))
 #else
         false
 #endif
@@ -661,11 +688,54 @@ final class HostController {
         guard !isForeground, backgroundExperimentEnabled else { return }
         backgroundExperiment.expiredAt = now()
         persistBackgroundExperiment()
+        if isKeepAliveAudioActive {
+            // The audio session keeps the app running: the loop and the synthetic queue continue.
+            schedule { self.endExperimentBackgroundTask() }
+            return
+        }
         backgroundEnqueueTask?.cancel()
         backgroundEnqueueTask = nil
         schedule {
             await self.stopLoop()
             self.endExperimentBackgroundTask()
+        }
+    }
+
+    private func recordAudioEvent(_ name: String) {
+        backgroundExperiment.audioEvents.append(BackgroundExperimentAudioEvent(at: now(), name: name))
+        persistBackgroundExperiment()
+    }
+
+    private func startKeepAliveAudio() {
+        guard let keepAliveAudio, !isKeepAliveAudioActive else { return }
+        do {
+            try keepAliveAudio.start()
+            isKeepAliveAudioActive = true
+            recordAudioEvent("audio started")
+        } catch {
+            recordAudioEvent("audio start failed")
+        }
+    }
+
+    private func stopKeepAliveAudio() {
+        guard let keepAliveAudio, isKeepAliveAudioActive else { return }
+        isKeepAliveAudioActive = false
+        keepAliveAudio.stop()
+        recordAudioEvent("audio stopped")
+    }
+
+    private func keepAliveAudioInterrupted(_ event: KeepAliveAudioInterruption) {
+        guard let keepAliveAudio, isKeepAliveAudioActive else { return }
+        switch event {
+        case .began:
+            recordAudioEvent("audio interrupted")
+        case .ended:
+            do {
+                try keepAliveAudio.resume()
+                recordAudioEvent("audio resumed")
+            } catch {
+                recordAudioEvent("audio resume failed")
+            }
         }
     }
 
