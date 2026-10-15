@@ -23,6 +23,20 @@ struct DextReply {
     /// Structure output as returned. Its length is not trustworthy: callers trim with a scalar byte count or a NUL.
     var data: [UInt8]
 
+    /// Builds a reply from the buffers handed to `IOConnectCallMethod` and the counts it wrote back, so a dext that
+    /// returned fewer scalars than requested shows up as a short array instead of as zeros.
+    init(kernelCode: Int32, scalars: [UInt64], scalarCount: Int, data: [UInt8], dataCount: Int) {
+        code = kernelCode
+        self.scalars = kernelCode == IOReturnCode.success ? Array(scalars.prefix(max(scalarCount, 0))) : []
+        self.data = kernelCode == IOReturnCode.success ? Array(data.prefix(max(dataCount, 0))) : []
+    }
+
+    init(code: Int32, scalars: [UInt64], data: [UInt8]) {
+        self.code = code
+        self.scalars = scalars
+        self.data = data
+    }
+
     /// A reply that claims success but carries fewer scalars than the ABI promises is a dext/app mismatch.
     /// Report it as a failed call instead of letting callers index past the end.
     func requiring(scalars count: Int) -> DextReply {
@@ -113,11 +127,11 @@ private struct IOKitDextConnection: DextConnection {
             &scalars, &scalarCount,
             &data, &dataCount
         )
-        return DextReply(code: code, scalars: scalars, data: code == KERN_SUCCESS ? Array(data.prefix(dataCount)) : [])
+        return DextReply(kernelCode: code, scalars: scalars, scalarCount: Int(scalarCount), data: data, dataCount: dataCount)
     }
 
     func close() {
+        // IOServiceClose destroys the handle: releasing it as well would drop a port right twice.
         IOServiceClose(connection)
-        IOObjectRelease(connection)
     }
 }

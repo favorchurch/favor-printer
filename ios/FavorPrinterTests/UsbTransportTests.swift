@@ -577,6 +577,25 @@ struct DriverKitUsbTransportEdgeTests {
         #expect(answer == .success(Data(repeating: 0x41, count: Int(kFavorZplMaxReadBytes))))
     }
 
+    @Test func aDextReportingMoreBytesThanOfferedWithAUsbErrorIsCappedAtTheOffer() async {
+        let dext = ScriptedDext { _ in
+            DextReply(code: 0, scalars: [UInt64.max, UInt64(UInt32(bitPattern: IOReturnCode.usbTransactionTimeout))], data: [])
+        }
+        let result = await DriverKitUsbTransport(backend: dext).send(Data("^XA^XZ".utf8))
+
+        #expect(result == .failure(.writeFailed(code: IOReturnCode.usbTransactionTimeout, bytesWritten: 6)))
+    }
+
+    @Test func kernelReplyKeepsOnlyWhatTheKernelWroteBack() {
+        let reply = DextReply(kernelCode: 0, scalars: [7, 0, 0, 0], scalarCount: 1, data: [1, 2, 3, 4], dataCount: 2)
+        #expect(reply.scalars == [7])
+        #expect(reply.data == [1, 2])
+        #expect(reply.requiring(scalars: 2).code == IOReturnCode.badArgument)
+
+        let failed = DextReply(kernelCode: IOReturnCode.notReady, scalars: [7], scalarCount: 1, data: [1], dataCount: 1)
+        #expect(failed.scalars.isEmpty && failed.data.isEmpty)
+    }
+
     @Test func payloadExactlyAtTheLimitIsOneCallAndTwiceTheLimitIsTwo() async {
         let one = ScriptedDext { call in ScriptedDext.sendReply(written: call.structInput.count) }
         let two = ScriptedDext { call in ScriptedDext.sendReply(written: call.structInput.count) }
@@ -599,7 +618,40 @@ struct DriverKitUsbTransportEdgeTests {
     }
 }
 
+private final class SharedGate: @unchecked Sendable {
+    let gate = UnsafeMutablePointer<FavorZplGate>.allocate(capacity: 1)
+    /// Only touched while holding the gate.
+    let holders = UnsafeMutablePointer<Int>.allocate(capacity: 1)
+    let overlaps = UnsafeMutablePointer<Int>.allocate(capacity: 1)
+
+    init() {
+        gate.initialize(to: FavorZplGate())
+        holders.initialize(to: 0)
+        overlaps.initialize(to: 0)
+    }
+
+    deinit {
+        gate.deallocate()
+        holders.deallocate()
+        overlaps.deallocate()
+    }
+}
+
 struct TransferGateTests {
+    @Test func threadsContendingForTheGateNeverHoldItTogether() {
+        let shared = SharedGate()
+        DispatchQueue.concurrentPerform(iterations: 8) { _ in
+            for _ in 0..<5000 where FavorZplGateTryAcquire(shared.gate) {
+                shared.holders.pointee += 1
+                if shared.holders.pointee > 1 { shared.overlaps.pointee += 1 }
+                shared.holders.pointee -= 1
+                FavorZplGateRelease(shared.gate)
+            }
+        }
+        #expect(shared.overlaps.pointee == 0)
+        #expect(FavorZplGateTryDrain(shared.gate))
+    }
+
     @Test func onlyOneTransferHoldsTheGateAtATime() {
         var gate = FavorZplGate()
         #expect(FavorZplGateTryAcquire(&gate))
