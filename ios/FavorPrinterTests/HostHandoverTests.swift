@@ -6,12 +6,18 @@ private final class PausedBeatHarness: @unchecked Sendable {
     private let lock = NSLock()
     private var began = 0
     private var endedIds: [Int] = []
+    private var expirations: [@MainActor () -> Void] = []
 
     var beganCount: Int { lock.withLock { began } }
     var ended: [Int] { lock.withLock { endedIds } }
 
     func begin(_ expiration: @escaping @MainActor () -> Void) -> Int {
-        lock.withLock { began += 1; return began }
+        lock.withLock { began += 1; expirations.append(expiration); return began }
+    }
+
+    func expire(_ id: Int) {
+        let handler = lock.withLock { expirations[id - 1] }
+        Task { @MainActor in handler() }
     }
 
     func end(_ id: Int) { lock.withLock { endedIds.append(id) } }
@@ -27,12 +33,12 @@ private func storedHandoverCredential() -> InMemorySecretStore {
 @MainActor
 private func controller(
     relay: FakeRelay, harness: PausedBeatHarness = PausedBeatHarness(), timing: HostLoop.Timing = handoverTiming,
-    secrets: InMemorySecretStore = storedHandoverCredential(),
+    secrets: InMemorySecretStore = storedHandoverCredential(), transport: any UsbPrinterTransport = FakeUsbTransport(),
     enroll: @escaping @Sendable (RelayEnrollRequest) async throws -> RelayCredentials = { _ in throw RelayEnrollFailure.network }
 ) throws -> HostController {
     HostController(
         backend: .real(credentials: SecretHostCredentialStore(secrets: secrets), makeRelay: { _ in relay }, enroll: enroll),
-        transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url), identity: testIdentity, timing: timing,
+        transport: transport, spool: try HostSpool(directory: TempDirectory().url), identity: testIdentity, timing: timing,
         beginBackgroundTask: { harness.begin($0) }, endBackgroundTask: { harness.end($0) }
     )
 }
@@ -176,6 +182,105 @@ struct HostPausedHeartbeatTests {
         #expect(await transport.writes.count == 1)
     }
 
+    @Test func backgroundThenImmediatelyForegroundSendsThePausedBeatAndTheNextBeatIsActive() async throws {
+        let relay = FakeRelay()
+        let harness = PausedBeatHarness()
+        let host = try controller(relay: relay, harness: harness)
+        host.scenePhaseChanged(.active)
+        await host.settled()
+        #expect(await eventually { await relay.heartbeats.count == 1 })
+        host.scenePhaseChanged(.background)
+        host.scenePhaseChanged(.active)
+        await host.settled()
+        #expect(await eventually { await relay.heartbeats.count == 3 })
+        #expect(await relay.heartbeats.map(\.lifecycle) == [.active, .paused, .active])
+        #expect(await eventuallyOnMain { harness.ended == [1] })
+        host.scenePhaseChanged(.background)
+        await host.settled()
+    }
+
+    @Test func aStopThatWonTheRaceStillGetsItsPausedBeat() async throws {
+        let relay = FakeRelay()
+        let loop = HostLoop(relay: relay, transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url), identity: testIdentity, timing: handoverTiming)
+        await loop.start()
+        #expect(await eventually { await relay.heartbeats.count == 1 })
+        await loop.stop()
+        await loop.sendPausedHeartbeat()
+        #expect(await relay.heartbeats.map(\.lifecycle) == [.active, .paused])
+    }
+
+    @Test func backgroundWithAStopPendingBehindASendStillSendsThePausedBeat() async throws {
+        let relay = FakeRelay()
+        await relay.enqueue(zpl: zpl(for: "slow"), id: "slow")
+        let transport = GatedTransport()
+        let harness = PausedBeatHarness()
+        let host = try controller(relay: relay, harness: harness, transport: transport)
+        host.scenePhaseChanged(.active)
+        await host.settled()
+        await transport.waitUntilSending()
+        host.scenePhaseChanged(.background)
+        #expect(await eventually { await relay.heartbeats.last?.lifecycle == .paused })
+        #expect(await relay.reports.isEmpty, "the send is still open")
+        await transport.releaseSend()
+        await host.settled()
+        #expect(await eventually { await relay.reports.map(\.outcome) == [.sent] })
+        #expect(await eventuallyOnMain { harness.ended == [1] })
+    }
+
+    @Test func everyBackgroundTaskThatBeginsEndsExactlyOnce() async throws {
+        let relay = FakeRelay()
+        let harness = PausedBeatHarness()
+        let host = try controller(relay: relay, harness: harness)
+        host.scenePhaseChanged(.active)
+        await host.settled()
+        #expect(await eventually { await relay.heartbeats.count == 1 })
+        host.scenePhaseChanged(.background)
+        await host.settled()
+        #expect(await eventuallyOnMain { harness.ended == [1] })
+        host.scenePhaseChanged(.active)
+        await host.settled()
+        #expect(await eventually { await relay.heartbeats.count == 3 })
+        host.scenePhaseChanged(.background)
+        await host.settled()
+        #expect(await eventuallyOnMain { harness.ended.sorted() == [1, 2] })
+        #expect(harness.beganCount == 2)
+        // A late expiry for an id already ended does not end it again.
+        harness.expire(1)
+        harness.expire(2)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(harness.ended.sorted() == [1, 2])
+    }
+
+    @Test func aPausedBeatWaitsForAnActiveBeatOnTheWire() async throws {
+        let relay = FakeRelay()
+        await relay.holdActiveHeartbeats()
+        let timing = HostLoop.Timing(poll: .milliseconds(10), heartbeat: 60, pausedBeatWait: .seconds(10))
+        let loop = HostLoop(relay: relay, transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url), identity: testIdentity, timing: timing)
+        await loop.start()
+        #expect(await eventually { await relay.calls.contains(.heartbeat) })
+        let beat = await loop.startPausedHeartbeat()
+        #expect(beat != nil)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await relay.heartbeats.isEmpty, "the paused beat must not overtake the active one")
+        await relay.releaseHeartbeats()
+        await beat?.value
+        #expect(await relay.heartbeats.map(\.lifecycle) == [.active, .paused])
+        await loop.stop()
+    }
+
+    @Test func aPausedBeatStopsWaitingForAStuckActiveBeat() async throws {
+        let relay = FakeRelay()
+        await relay.holdActiveHeartbeats()
+        let timing = HostLoop.Timing(poll: .milliseconds(10), heartbeat: 60, pausedBeatWait: .milliseconds(50))
+        let loop = HostLoop(relay: relay, transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url), identity: testIdentity, timing: timing)
+        await loop.start()
+        #expect(await eventually { await relay.calls.contains(.heartbeat) })
+        await loop.sendPausedHeartbeat()
+        #expect(await relay.heartbeats.map(\.lifecycle) == [.paused])
+        await relay.releaseHeartbeats()
+        await loop.stop()
+    }
+
     @Test func noPausedBeatWhenNothingWasEverHeard() async throws {
         let relay = FakeRelay()
         let harness = PausedBeatHarness()
@@ -278,6 +383,39 @@ struct HostPrinterHandedOverTests {
         for _ in 0..<5 { _ = await rig.loop.tick() }
         #expect(await rig.relay.calls.filter { $0 == .claim }.count == 1)
         #expect(await rig.loop.currentStatus.printerMoved)
+    }
+
+    @Test func aHandoverNamingOnlyUnknownPrintersMovesNothing() async throws {
+        let rig = try HostRig()
+        await rig.relay.setHandover(.forbiddenFor(["someone-elses"]))
+        for _ in 0..<2 { _ = await rig.loop.tick() }
+        #expect(await rig.loop.currentStatus.printerMoved == false)
+        await rig.relay.setHandover(.forbiddenFor([FakeRelay.printerId, "someone-elses"]))
+        _ = await rig.loop.tick()
+        #expect(await rig.loop.currentStatus.printerMoved)
+    }
+
+    @Test func anEmptyHandoverListMeansThePrintersOfThatClaim() async throws {
+        let rig = try HostRig()
+        await rig.relay.setHandover(.forbiddenFor([]))
+        _ = await rig.loop.tick()
+        #expect(await rig.loop.currentStatus.printerMoved)
+        #expect(await rig.relay.calls.filter { $0 == .claim }.count == 1)
+    }
+
+    @Test func aClaimedJobForAHandedOverPrinterIsDroppedNeverSentAndFreesItsSlot() async throws {
+        let rig = try HostRig()
+        await rig.relay.setHandover(.forbidden)
+        _ = await rig.loop.tick()
+        #expect(await rig.loop.currentStatus.printerMoved)
+        let leased = try #require(await rig.relay.claimJobs(zpl: zpl(for: "gone"), id: "gone"))
+        try await rig.spool.write(SpoolEntry.claimed(leased, at: Date()))
+        #expect(await rig.spool.count == 1)
+        for _ in 0..<2 { _ = await rig.loop.tick() }
+        #expect(await rig.spool.count == 0)
+        #expect(await rig.writes().isEmpty)
+        #expect(await rig.relay.sendingIds.isEmpty)
+        #expect(await rig.relay.reports.isEmpty)
     }
 
     @Test func aSendingJobIsStillReportedAmbiguousAndNeverResentWhenThePrinterMoved() async throws {

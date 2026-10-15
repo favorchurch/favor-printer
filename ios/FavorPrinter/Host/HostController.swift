@@ -177,7 +177,8 @@ final class HostController {
     private let endBackgroundTask: (Int) -> Void
     private(set) var backgroundExperiment: BackgroundExperimentState
     @ObservationIgnored private var backgroundTaskId: Int?
-    @ObservationIgnored private var pausedBeatTaskId: Int?
+    /// Background tasks begun for a "paused" beat and not yet ended. Each begin has exactly one end.
+    @ObservationIgnored private var pausedBeatTaskIds: Set<Int> = []
     @ObservationIgnored private var backgroundEnqueueTask: Task<Void, Never>?
     @ObservationIgnored private var lastExperimentJobAt: Date?
 
@@ -346,7 +347,12 @@ final class HostController {
 #if DEBUG
             keepsRunning = backgroundExperimentEnabled
 #endif
-            if !keepsRunning { sendPausedHeartbeatInBackground() }
+            if !keepsRunning {
+                // The beat is prepared in the lifecycle queue ahead of the stop, so a stop cannot win the race.
+                let taskId = beginPausedBeatTask()
+                schedule { await self.pausedBeatThenReconcile(taskId) }
+                return
+            }
 #if DEBUG
             if backgroundExperimentEnabled {
                 backgroundExperiment.backgroundedAt = now()
@@ -366,25 +372,40 @@ final class HostController {
         schedule { await self.reconcile() }
     }
 
-    /// One best-effort "paused" heartbeat as the foreground-only loop is about to stop, under a short background task.
-    /// It runs beside the lifecycle queue, so it never delays the stop or a send in flight, and a failure is ignored.
-    private func sendPausedHeartbeatInBackground() {
-        guard let loop else { return }
-        let taskId = beginBackgroundTask { [weak self] in self?.pausedBeatExpired() }
-        pausedBeatTaskId = taskId >= 0 ? taskId : nil
-        Task { [weak self] in
-            await loop.sendPausedHeartbeat()
-            self?.endPausedBeatTask()
+    /// Begins the short background task a "paused" beat runs under. Nil when the system refused one.
+    private func beginPausedBeatTask() -> Int? {
+        var begun: Int?
+        let id = beginBackgroundTask { [weak self] in
+            // Expiry ends this task now; the beat is abandoned with it.
+            if let begun = begun { self?.endPausedBeatTask(begun) }
         }
+        guard id >= 0 else { return nil }
+        begun = id
+        pausedBeatTaskIds.insert(id)
+        return id
     }
 
-    private func endPausedBeatTask() {
-        guard let id = pausedBeatTaskId else { return }
-        pausedBeatTaskId = nil
+    /// Ends the task once. A second call for the same id (expiry after completion, or the reverse) does nothing.
+    private func endPausedBeatTask(_ id: Int) {
+        guard pausedBeatTaskIds.remove(id) != nil else { return }
         endBackgroundTask(id)
     }
 
-    private func pausedBeatExpired() { endPausedBeatTask() }
+    /// Starts one best-effort "paused" heartbeat (under the background task), then applies the stop. The beat runs
+    /// beside the queue, so it never delays the stop or a send in flight, and a failure is ignored.
+    private func pausedBeatThenReconcile(_ taskId: Int?) async {
+        if let loop, let beat = await loop.startPausedHeartbeat() {
+            Task { [weak self] in
+                await beat.value
+                if let taskId { self?.endPausedBeatTask(taskId) }
+            }
+        } else if let taskId {
+            endPausedBeatTask(taskId)
+        }
+        // Back in the foreground before the stop ran: the loop stays up, so it must report "active" again.
+        if isForeground, let loop { await loop.resumeAfterPausedHeartbeat() }
+        await reconcile()
+    }
 
     /// Waits until every queued lifecycle change has been applied.
     func settled() async {
