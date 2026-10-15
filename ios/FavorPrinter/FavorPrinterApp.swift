@@ -29,11 +29,10 @@ struct FavorPrinterApp: App {
         }
         #endif
         let config: AppConfig
-        do { config = try AppConfig.load() } catch {
+        do { config = try AppConfig.loadAfterCleanup() } catch {
             configError = "This build has no valid HTTPS RSVP address."
             return
         }
-        StaleDeviceBearer.deleteOnce()
         do { host = try HostController.make(baseURL: config.rsvpBaseURL) } catch {
             configError = "The print queue on this iPad could not be opened."
         }

@@ -4,6 +4,17 @@ import Testing
 @testable import FavorPrinter
 
 struct AppConfigTests {
+    @Test func staleBearerCleanupRunsBeforeConfigIsValidated() {
+        var events: [String] = []
+        #expect(throws: (any Error).self) {
+            try AppConfig.loadAfterCleanup(
+                cleanUp: { events.append("cleanUp") },
+                load: { events.append("load"); throw AppConfig.Failure.missing }
+            )
+        }
+        #expect(events == ["cleanUp", "load"])
+    }
+
     @Test func readsHTTPSBaseURL() throws {
         let config = try AppConfig(info: ["RSVPBaseURL": " https://rsvp.favor.church "])
         #expect(config.rsvpBaseURL.absoluteString == "https://rsvp.favor.church")
