@@ -27,8 +27,8 @@ enum UITestHarness {
 }
 
 extension UITestHarness {
-    /// A host that never reaches the network or the Keychain. With `-FavorHostFakeRelay` it runs on `FakeRelay` and the
-    /// fake printer. Otherwise it starts not enrolled, and the mocked enroll call accepts any code except `conflictCode`.
+    /// A host that never reaches the network or the Keychain. With `-FavorHostFakeRelay` it runs on `FakeRelay`, and the
+    /// printer is the fake one only with `-FavorHostFakeTransport` too. Otherwise it starts not enrolled, and the mocked enroll call accepts any code except `conflictCode`.
     @MainActor static func makeHost() -> HostController? {
         let arguments = ProcessInfo.processInfo.arguments
         let transport = FakeUsbTransport(
@@ -40,7 +40,8 @@ extension UITestHarness {
             .appending(path: "ui-test-host-\(UUID().uuidString)", directoryHint: .isDirectory)
         guard let baseURL = URL(string: "https://relay.invalid") else { return nil }
         if arguments.contains(HostRelayMode.fakeRelayArgument) {
-            return try? HostController.make(arguments: arguments, baseURL: baseURL, transport: transport, spoolDirectory: directory)
+            // The printer comes from the arguments too: tests pass `-FavorHostFakeTransport` for a fake one.
+            return try? HostController.make(arguments: arguments, baseURL: baseURL, spoolDirectory: directory)
         }
         guard let spool = try? HostSpool(directory: directory) else { return nil }
         let relay = FakeRelay()

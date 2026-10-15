@@ -1,6 +1,6 @@
 import XCTest
 
-/// Drives the Printer Host screen against the fake relay and fake printer (`-FavorHostFakeRelay`) and the mocked
+/// Drives the Printer Host screen against the fake relay and fake printer (`-FavorHostFakeRelay -FavorHostFakeTransport`) and the mocked
 /// enrollment (Debug builds only, launched with `-FavorUITestMock`).
 @MainActor
 final class HostStatusUITests: XCTestCase {
@@ -42,7 +42,7 @@ final class HostStatusUITests: XCTestCase {
     }
 
     func testFakeRelayShowsStatusAndPrintsTheSyntheticLabel() {
-        let app = openHost(["-FavorHostFakeRelay"])
+        let app = openHost(["-FavorHostFakeRelay", "-FavorHostFakeTransport"])
         wait(app, "host-printer", equals: "Attached")
         wait(app, "host-driver", equals: "Running")
         wait(app, "host-running", equals: "Running")

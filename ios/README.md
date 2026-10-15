@@ -225,7 +225,7 @@ the host is running or paused, spool depth, the last job outcome with its time a
 never ZPL, label text, a name or a job id. Not enrolled, it offers a one-time code field and an Enroll button
 (`HostController.enroll(code:)`, with the 409 conflict reason shown); enrolled, it shows an Unenroll control that asks
 first. A DEBUG build on the fake relay also shows "Print synthetic test label"; Release builds do not compile it.
-`HostStatusUITests` drives the screen with `-FavorUITestMock` plus either `-FavorHostFakeRelay` or the mocked enroll
+`HostStatusUITests` drives the screen with `-FavorUITestMock` plus either `-FavorHostFakeRelay -FavorHostFakeTransport` (the simulator cannot load the dext, so the fake printer is needed) or the mocked enroll
 call (code `CONFLICT` is refused with a conflict; `-FavorUITestDriverOff` fakes a printer without a running driver).
 
 ### Tests
