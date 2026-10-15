@@ -21,6 +21,7 @@ host of the relay API (`/api/printing/relay/*`). The app refuses to start unless
 | Configuration | URL |
 | --- | --- |
 | Debug (default for simulator runs and tests) | `https://rsvp-preview.favor.church` (confirm the preview host before first device install) |
+| Internal (development-signed, Favor iPads only) | `https://rsvp.favor.church` |
 | Release | `https://rsvp.favor.church` |
 
 Override locally with an untracked `Config/Local.xcconfig`, for example
@@ -52,6 +53,36 @@ Keychain (`UITestBackend.swift`, `#if DEBUG` only) and checks every control on t
 Unit tests use a `URLProtocol` mock (`FavorPrinterTests/TestSupport.swift`) and need no network. Keychain tests use a
 unique service name per test and delete it afterwards.
 
+## Internal build
+
+The `Internal` configuration is Release plus a supported background keep-alive: it defines `INTERNAL_KEEPALIVE`, uses
+`Config/Info-Internal.plist` (`UIBackgroundModes` = `audio`; Release has none) and is development-signed (team
+3JJ4492TV8, automatic) with the same dext entitlements as Debug (`idVendor` `"*"`). It has no DEBUG code (no fake relay,
+fake transport or diagnostics) and talks to **production RSVP** (`https://rsvp.favor.church`). The host screen has a
+"Keep running in background" toggle (on by default, saved in `UserDefaults`). While it is on, the app plays a looping
+silent buffer after it goes to the background, stops it on return, and the host loop keeps running; the screen shows
+"Keep-alive: Active". With the toggle off the app is foreground-only. Job semantics are unchanged.
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+cd ios && xcodegen generate
+xcodebuild -project FavorPrinter.xcodeproj -scheme FavorPrinter -configuration Internal \
+  -destination 'generic/platform=iOS' -archivePath /tmp/fp-internal/FavorPrinter.xcarchive \
+  -allowProvisioningUpdates archive
+xcodebuild -exportArchive -archivePath /tmp/fp-internal/FavorPrinter.xcarchive \
+  -exportOptionsPlist Config/ExportOptions.plist -exportPath /tmp/fp-internal/export -allowProvisioningUpdates
+```
+
+The result is `/tmp/fp-internal/export/FavorPrinter.ipa`.
+
+- Every iPad's UDID must be in the team's development provisioning profile. Connect the iPad to the Mac and build with
+  `-allowProvisioningDeviceRegistration`, or add the UDID in the developer portal. Install with
+  `xcrun devicectl device install app --device <id> FavorPrinter.ipa` or Apple Configurator.
+- The development profile expires (about 1 year). Rebuild and reinstall before then.
+- After install, turn the driver on in Settings > Favor Printer > Drivers and replug the printer.
+- Silent-audio keep-alive violates App Store guideline 2.5.4. This build is internal only: never submit it to
+  TestFlight or the App Store.
+
 ## Layout
 
 - `FavorPrinter/Device/` `SecretStore` (the Keychain item holding the relay credential) and the stale-bearer cleanup.
@@ -64,7 +95,7 @@ unique service name per test and delete it afterwards.
 - `FavorPrinterDriver/` the DriverKit extension (`FavorPrinterUsbDriver`, `FavorPrinterUsbUserClient`), `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
   `FavorZplTransferGate.h` (one-transfer-at-a-time gate and the Stop ordering, plain C so Swift tests can run it).
 - `FavorPrinterUITests/` the XCUITest.
-- `Config/` xcconfig files and the Info.plist fragment holding `RSVPBaseURL`.
+- `Config/` xcconfig files, the Info.plist fragments holding `RSVPBaseURL` and `ExportOptions.plist` for the Internal export.
 
 Physical iPad and Keychain behavior on device remain manual checks.
 

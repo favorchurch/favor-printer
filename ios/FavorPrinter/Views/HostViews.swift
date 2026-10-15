@@ -25,6 +25,7 @@ struct HostStatusView: View {
             }
             printerSection
             hostSection
+            keepAliveSection
             enrollmentSection
             #if DEBUG
             if host.backgroundExperimentEnabledForDisplay {
@@ -145,6 +146,25 @@ struct HostStatusView: View {
             HostRow(title: "Last job", value: lastJobText, id: "host-last-job")
             HostRow(title: "Last error", value: host.status.lastError ?? "None", id: "host-last-error")
         }
+    }
+
+    @ViewBuilder
+    private var keepAliveSection: some View {
+        if let preference = host.keepAlivePreference {
+            @Bindable var preference = preference
+            Section {
+                Toggle("Keep running in background", isOn: $preference.isEnabled)
+                    .accessibilityIdentifier("keep-alive-toggle")
+                HostRow(title: "Keep-alive", value: keepAliveText(enabled: preference.isEnabled), id: "keep-alive-status")
+            } footer: {
+                Text("Plays silent audio while the app is in the background so printing continues. Internal builds only.")
+            }
+        }
+    }
+
+    private func keepAliveText(enabled: Bool) -> String {
+        if host.isKeepAliveAudioActive { return "Active (silent audio playing)" }
+        return enabled ? "On, starts when the app is in the background" : "Off, printing pauses in the background"
     }
 
     private var lastJobText: String {
