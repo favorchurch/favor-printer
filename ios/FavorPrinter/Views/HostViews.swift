@@ -28,6 +28,12 @@ struct HostStatusView: View {
             enrollmentSection
             #if DEBUG
             Section("Printer diagnostics") {
+                if let diagnostic = host.status.driverDiagnostic {
+                    Text(diagnostic)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("host-driver-diagnostic")
+                }
                 Button("Read printer status (~HS)") {
                     Task { printerReading = await host.readPrinterStatus() }
                 }

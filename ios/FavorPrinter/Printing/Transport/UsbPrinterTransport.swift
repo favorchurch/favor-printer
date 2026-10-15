@@ -10,10 +10,9 @@ protocol UsbPrinterTransport: Sendable {
 }
 
 enum DriverAvailability: Sendable, Equatable {
-    /// The dext service is matched and its user client opens.
+    /// A candidate user client returns this dext's magic and the expected ABI.
     case running
-    /// An IOUSBHost device or interface with VID 0x0A5F PID 389 is visible but there is no working dext service:
-    /// the driver is disabled or has not loaded yet.
+    /// A candidate is present or the printer is visible, but no candidate completed our handshake.
     case printerPresentDriverNotRunning
     /// Neither is visible, e.g. no printer attached. Whether the driver is enabled cannot be inferred.
     case unknown
@@ -43,7 +42,11 @@ struct UsbPrinterStatus: Sendable, Equatable {
     var usbSerial: String?
     /// ABI version the dext reported, nil when it could not be queried.
     var abiVersion: UInt32?
-    /// A dext from another bundle is attached for the printer and ours is not running. The spike app's dext does this.
+#if DEBUG
+    /// Candidate discovery and handshake trace for on-device diagnosis. Never included in Release builds.
+    var debugDiagnostic: String?
+#endif
+    /// A candidate answered the status selector without our identity magic.
     var foreignDriver: Bool
 
     init(
@@ -66,6 +69,9 @@ struct UsbPrinterStatus: Sendable, Equatable {
         self.usbSerial = usbSerial
         self.abiVersion = abiVersion
         self.foreignDriver = foreignDriver
+#if DEBUG
+        self.debugDiagnostic = nil
+#endif
     }
 }
 

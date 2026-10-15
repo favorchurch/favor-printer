@@ -12,6 +12,10 @@ struct HostStatus: Sendable, Equatable {
     var authRejected = false
     /// What the driver extension reported on the last cycle. Nil before the first cycle.
     var driver: DriverAvailability?
+#if DEBUG
+    /// Driver candidate and handshake trace for the host screen's diagnostics section.
+    var driverDiagnostic: String? = nil
+#endif
     /// The outcome of the last job this host decided, whether or not the cloud has been told yet.
     var lastJobOutcome: RelayReportOutcome?
     var lastJobAt: Date?
@@ -176,6 +180,9 @@ actor HostLoop {
         status.printerAttached = printer.attached
         status.printerReady = printer.ready
         status.driver = printer.driver
+#if DEBUG
+        status.driverDiagnostic = printer.debugDiagnostic
+#endif
         onStatus?(status)
         return status.authRejected ? .authRejected : .completed
     }
@@ -185,13 +192,20 @@ actor HostLoop {
         var attached: Bool?
         var ready: Bool
         var error: String?
+#if DEBUG
+        var debugDiagnostic: String?
+#endif
     }
 
     private func readPrinter() async -> PrinterState {
         let reading = await transport.status()
         let ready = reading.driver == .running && reading.printerAttached == true
         let error: String? = ready ? nil : (reading.driver == .printerPresentDriverNotRunning ? "driver_not_running" : "printer_not_attached")
-        return PrinterState(driver: reading.driver, attached: reading.printerAttached, ready: ready, error: error)
+        var printer = PrinterState(driver: reading.driver, attached: reading.printerAttached, ready: ready, error: error)
+#if DEBUG
+        printer.debugDiagnostic = reading.debugDiagnostic
+#endif
+        return printer
     }
 
     /// Runs one relay call. A refused credential throws; any other failure marks the cloud unreachable for the rest

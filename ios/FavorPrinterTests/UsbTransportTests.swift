@@ -6,6 +6,12 @@ import Testing
 
 /// Stands in for the dext. `handler` answers each user-client call and every call is recorded.
 final class ScriptedDext: DextBackend, @unchecked Sendable {
+    struct CandidateScript: Sendable {
+        var className = "ScriptedUserService"
+        var identityHint: String?
+        var openCode: Int32 = IOReturnCode.success
+        var statusReply: DextReply? = nil
+    }
     struct Call: Equatable {
         var selector: Int
         var scalarInput: [UInt64]
@@ -20,9 +26,9 @@ final class ScriptedDext: DextBackend, @unchecked Sendable {
     private var closedCount = 0
     private let mode: Mode
     private let visible: Bool
-    private let foreign: Bool
     private let answersStatus: Bool
     private let abiVersion: UInt64
+    private let candidateScripts: [CandidateScript]?
     private var preflightCount = 0
     let handler: @Sendable (Call) -> DextReply
 
@@ -37,17 +43,17 @@ final class ScriptedDext: DextBackend, @unchecked Sendable {
     /// for tests of the status reply itself.
     init(
         printerVisible: Bool = false,
-        foreignDriver: Bool = false,
         mode: Mode = .connected,
         answersStatus: Bool = false,
         abiVersion: UInt64 = UInt64(kFavorZplABIVersion),
+        candidateScripts: [CandidateScript]? = nil,
         handler: @escaping @Sendable (Call) -> DextReply = { _ in DextReply(code: 0, scalars: [], data: []) }
     ) {
         visible = printerVisible
-        foreign = foreignDriver
         self.mode = mode
         self.answersStatus = answersStatus
         self.abiVersion = abiVersion
+        self.candidateScripts = candidateScripts
         self.handler = handler
     }
 
@@ -57,25 +63,37 @@ final class ScriptedDext: DextBackend, @unchecked Sendable {
     /// Status calls the dext answered by itself, before a send or read.
     var preflights: Int { lock.withLock { preflightCount } }
 
-    func connect() -> DextConnectResult {
-        switch mode {
-        case .connected:
-            lock.withLock { openedCount += 1 }
-            return .connected(ScriptedConnection(dext: self))
-        case .noService:
-            return .noService
-        case .openFailed(let code):
-            return .openFailed(code: code)
+    func candidates() -> [DextCandidate] {
+        let scripts: [CandidateScript]
+        if let candidateScripts {
+            scripts = candidateScripts
+        } else {
+            switch mode {
+            case .connected:
+                scripts = [CandidateScript(statusReply: answersStatus ? nil : healthyStatus)]
+            case .noService:
+                scripts = []
+            case .openFailed(let code):
+                scripts = [CandidateScript(openCode: code, statusReply: answersStatus ? nil : healthyStatus)]
+            }
+        }
+        return scripts.map { script in
+            let connection: DextConnection? = script.openCode == IOReturnCode.success
+                ? ScriptedConnection(dext: self, statusReply: script.statusReply) : nil
+            if connection != nil { lock.withLock { openedCount += 1 } }
+            return DextCandidate(
+                className: script.className, identityHint: script.identityHint,
+                openCode: script.openCode, connection: connection
+            )
         }
     }
 
     func printerVisible() -> Bool { visible }
-    func foreignDriverPresent() -> Bool { foreign }
 
     fileprivate func answersByItself(_ call: Call) -> Bool { call.selector == kFavorZplSelectorStatus && !answersStatus }
     fileprivate func recordPreflight() { lock.withLock { preflightCount += 1 } }
     fileprivate var healthyStatus: DextReply {
-        DextReply(code: 0, scalars: [8, 0, 0x01, 0x81, abiVersion], data: [])
+        DextReply(code: 0, scalars: [8, 0, 0x01, 0x81, UInt64(kFavorZplDriverMagic), abiVersion], data: [])
     }
     fileprivate func record(_ call: Call) { lock.withLock { recorded.append(call) } }
     fileprivate func recordClose() { lock.withLock { closedCount += 1 } }
@@ -88,6 +106,7 @@ final class ScriptedDext: DextBackend, @unchecked Sendable {
 
 struct ScriptedConnection: DextConnection {
     let dext: ScriptedDext
+    let statusReply: DextReply?
 
     func call(selector: Int, scalarInput: [UInt64], structInput: [UInt8], scalarOutputCount: Int, structOutputCapacity: Int) -> DextReply {
         let call = ScriptedDext.Call(
@@ -96,7 +115,13 @@ struct ScriptedConnection: DextConnection {
         )
         // Like IOKit, hand back no more than the caller made room for.
         var reply: DextReply
-        if dext.answersByItself(call) {
+        if call.selector == kFavorZplSelectorStatus, let statusReply {
+            dext.recordPreflight()
+            reply = statusReply
+        } else if call.selector == kFavorZplSelectorStatus, dext.answersByItself(call) {
+            dext.recordPreflight()
+            reply = dext.healthyStatus
+        } else if dext.answersByItself(call) {
             dext.recordPreflight()
             reply = dext.healthyStatus
         } else {
@@ -282,9 +307,9 @@ struct IOReturnMappingTests {
 struct DriverKitUsbTransportTests {
     private func statusReply(
         stage: UInt64 = 8, error: Int32 = 0, out: UInt64 = 0x01, bulkIn: UInt64 = 0x81, abi: UInt64 = UInt64(kFavorZplABIVersion),
-        serial: [UInt8] = []
+        magic: UInt64 = UInt64(kFavorZplDriverMagic), serial: [UInt8] = []
     ) -> DextReply {
-        DextReply(code: 0, scalars: [stage, UInt64(UInt32(bitPattern: error)), out, bulkIn, abi], data: serial)
+        DextReply(code: 0, scalars: [stage, UInt64(UInt32(bitPattern: error)), out, bulkIn, magic, abi], data: serial)
     }
 
     // MARK: status
@@ -293,14 +318,16 @@ struct DriverKitUsbTransportTests {
         let dext = ScriptedDext(answersStatus: true) { _ in statusReply(serial: Array("D2J123456".utf8)) }
         let status = await DriverKitUsbTransport(backend: dext).status()
 
-        #expect(status == UsbPrinterStatus(
-            driver: .running, printerAttached: true, stage: 8, lastError: nil,
-            bulkOutAddress: 0x01, bulkInAddress: 0x81, usbSerial: "D2J123456", abiVersion: UInt32(kFavorZplABIVersion)
-        ))
-        #expect(dext.calls == [.init(
-            selector: kFavorZplSelectorStatus, scalarInput: [], structInput: [],
-            scalarOutputCount: Int(kFavorZplStatusFieldCount), structOutputCapacity: Int(kFavorZplMaxSerialBytes)
-        )])
+        #expect(status.driver == .running)
+        #expect(status.printerAttached == true)
+        #expect(status.stage == 8)
+        #expect(status.lastError == nil)
+        #expect(status.bulkOutAddress == 0x01)
+        #expect(status.bulkInAddress == 0x81)
+        #expect(status.usbSerial == "D2J123456")
+        #expect(status.abiVersion == UInt32(kFavorZplABIVersion))
+        #expect(dext.calls.map(\.selector) == [kFavorZplSelectorStatus])
+        #expect(dext.preflights == 0)
         expectBalanced(dext)
     }
 
@@ -311,19 +338,22 @@ struct DriverKitUsbTransportTests {
         #expect(status.usbSerial == "D2J1")
     }
 
-    @Test func statusWhenTheStatusCallFailsStaysRunningWithTheCodeAndNoDetails() async {
+    @Test func transientStatusCallFailureIsUnavailableRatherThanForeign() async {
         let dext = ScriptedDext(answersStatus: true) { _ in DextReply(code: IOReturnCode.notReady, scalars: [], data: []) }
         let status = await DriverKitUsbTransport(backend: dext).status()
 
-        #expect(status == UsbPrinterStatus(driver: .running, printerAttached: true, lastError: IOReturnCode.notReady))
+        #expect(status.driver == .printerPresentDriverNotRunning)
+        #expect(!status.foreignDriver)
+        #expect(status.lastError == IOReturnCode.notReady)
         expectBalanced(dext)
     }
 
-    @Test func statusWithTooFewScalarsIsAMismatchNotACrash() async {
+    @Test func legacyShortStatusIsAnAbiMismatchRatherThanAForeignDriver() async {
         let dext = ScriptedDext(answersStatus: true) { _ in DextReply(code: 0, scalars: [8], data: []) }
         let status = await DriverKitUsbTransport(backend: dext).status()
 
-        #expect(status == UsbPrinterStatus(driver: .running, printerAttached: true, lastError: IOReturnCode.badArgument))
+        #expect(status.driver == .printerPresentDriverNotRunning)
+        #expect(!status.foreignDriver)
         expectBalanced(dext)
     }
 
@@ -344,7 +374,7 @@ struct DriverKitUsbTransportTests {
         let dext = ScriptedDext(printerVisible: false, mode: .noService)
         let status = await DriverKitUsbTransport(backend: dext).status()
 
-        #expect(status == UsbPrinterStatus(driver: .unknown))
+        #expect(status.driver == .unknown)
         #expect(status.printerAttached == nil)
     }
 
@@ -507,7 +537,7 @@ struct DriverKitUsbTransportTests {
 
     private let expectedABI = UInt32(kFavorZplABIVersion)
 
-    @Test(arguments: [UInt64(0), 2, 99])
+    @Test(arguments: [UInt64(0), 1, 99])
     func sendIsRefusedWithoutSendingWhenTheDextSpeaksAnotherABI(version: UInt64) async {
         let dext = ScriptedDext(abiVersion: version) { call in ScriptedDext.sendReply(written: call.structInput.count) }
         let result = await DriverKitUsbTransport(backend: dext).send(Data("^XA^XZ".utf8))
@@ -550,7 +580,7 @@ struct DriverKitUsbTransportTests {
         expectBalanced(short)
     }
 
-    @Test func aFailingStatusCallBeforeTheWorkIsAnOpenFailureAndSendsNothing() async {
+    @Test func aFailingStatusCallBeforeTheWorkKeepsItsOpenFailureAndSendsNothing() async {
         let dext = ScriptedDext(answersStatus: true) { call in
             call.selector == kFavorZplSelectorStatus
                 ? DextReply(code: IOReturnCode.notReady, scalars: [], data: []) : ScriptedDext.sendReply(written: call.structInput.count)
@@ -559,6 +589,7 @@ struct DriverKitUsbTransportTests {
 
         #expect(result == .failure(.openFailed(code: IOReturnCode.notReady)))
         #expect(dext.calls.map(\.selector) == [kFavorZplSelectorStatus])
+        #expect(dext.preflights == 0)
     }
 
     @Test func statusWithAnotherABIIsNeverRunningAndReportsTheVersion() async {
@@ -586,8 +617,12 @@ struct DriverKitUsbTransportTests {
 
     // MARK: Foreign driver
 
-    @Test func aForeignDriverHoldingThePrinterIsNeverRunningAndSendsNothing() async {
-        let dext = ScriptedDext(printerVisible: true, foreignDriver: true, mode: .noService)
+    @Test func aForeignMagicIsNeverRunningAndSendsNothing() async {
+        let foreign = statusReply(magic: 0x53504B45)
+        let dext = ScriptedDext(
+            printerVisible: true,
+            candidateScripts: [.init(className: "ForeignUserClient", identityHint: "church.favor.printer.spike.driver", statusReply: foreign)]
+        )
         let transport = DriverKitUsbTransport(backend: dext)
 
         let status = await transport.status()
@@ -597,21 +632,47 @@ struct DriverKitUsbTransportTests {
         #expect(status.printerAttached == true)
         #expect(await transport.send(Data("^XA^XZ".utf8)) == .failure(.driverNotFound))
         #expect(dext.calls.isEmpty)
+        #expect(dext.preflights == 2)
+        expectBalanced(dext, opened: 2)
     }
 
-    @Test func aForeignDriverWithNoPrinterVisibleIsNotReportedAsHoldingIt() async {
-        let dext = ScriptedDext(printerVisible: false, foreignDriver: true, mode: .noService)
-        let status = await DriverKitUsbTransport(backend: dext).status()
-
-        #expect(status == UsbPrinterStatus(driver: .unknown))
-    }
-
-    @Test func ourDriverRunningAlongsideAForeignOneIsReportedRunning() async {
-        let dext = ScriptedDext(printerVisible: true, foreignDriver: true, answersStatus: true) { _ in statusReply() }
+    @Test func aCandidateWithNoIdentityPropertiesCanBeIdentifiedByItsHandshake() async {
+        let dext = ScriptedDext(candidateScripts: [.init(statusReply: statusReply())])
         let status = await DriverKitUsbTransport(backend: dext).status()
 
         #expect(status.driver == .running)
         #expect(!status.foreignDriver)
+        #expect(status.debugDiagnostic?.contains("class=ScriptedUserService") == true)
+        #expect(status.debugDiagnostic?.contains("magic=0x46565052 abi=2 stage=8 result=ours") == true)
+        expectBalanced(dext)
+    }
+
+    @Test func foreignCandidateIsClosedAndOurHandshakeIsChosen() async {
+        let foreign = statusReply(magic: 0x53504B45)
+        let ours = statusReply()
+        let dext = ScriptedDext(candidateScripts: [
+            .init(className: "ForeignUserClient", statusReply: foreign),
+            .init(className: "FavorPrinterUsbUserClient", statusReply: ours),
+        ])
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status.driver == .running)
+        #expect(!status.foreignDriver)
+        #expect(status.debugDiagnostic?.contains("result=foreign") == true)
+        #expect(status.debugDiagnostic?.contains("stage=8 result=ours") == true)
+        expectBalanced(dext, opened: 2)
+    }
+
+    @Test func matchingMagicWithAbiMismatchKeepsTheTypedError() async {
+        let dext = ScriptedDext(candidateScripts: [.init(statusReply: statusReply(abi: 1))])
+        let expected = UInt32(kFavorZplABIVersion)
+
+        let result = await DriverKitUsbTransport(backend: dext).send(Data("^XA^XZ".utf8))
+
+        #expect(result == .failure(.abiMismatch(expected: expected, actual: 1)))
+        #expect(dext.calls.isEmpty)
+        #expect(dext.preflights == 1)
+        expectBalanced(dext)
     }
 }
 
@@ -777,10 +838,12 @@ private final class HandleLog: @unchecked Sendable {
     private var releases: [io_object_t] = []
     private var closes: [io_connect_t] = []
     var driverServices: [io_service_t] = []
+    var fallbackDriverServices: [io_service_t] = []
     var printerServices: [io_service_t] = []
     var openResults: [io_service_t: (code: Int32, connection: io_connect_t)] = [:]
-    /// Bundle identifier per driver service. A service not listed here is our own dext.
     var identities: [io_service_t: String] = [:]
+    var classes: [io_service_t: String] = [:]
+    var statusReplies: [io_connect_t: DextReply] = [:]
 
     var opened: [io_service_t] { lock.withLock { opens } }
     var released: [io_object_t] { lock.withLock { releases } }
@@ -793,29 +856,36 @@ private final class HandleLog: @unchecked Sendable {
     var ops: IOKitHandleOps {
         IOKitHandleOps(
             driverServices: { self.driverServices },
-            driverIdentity: { self.identities[$0] ?? IOKitDextBackend.driverBundleID },
+            fallbackDriverServices: { self.fallbackDriverServices },
+            driverIdentity: { self.identities[$0] },
+            className: { self.classes[$0] ?? "IOUserService" },
             printerServices: { self.printerServices },
             open: { service in
                 self.lock.withLock { self.opens.append(service) }
                 return self.openResults[service] ?? (code: IOReturnCode.notReady, connection: 0)
             },
             release: { handle in self.lock.withLock { self.releases.append(handle) } },
-            close: { handle in self.lock.withLock { self.closes.append(handle) } }
+            close: { handle in self.lock.withLock { self.closes.append(handle) } },
+            call: { connection, selector, _, _, scalarCount, _ in
+                guard selector == kFavorZplSelectorStatus, let foundReply = self.statusReplies[connection] else {
+                    return DextReply(code: IOReturnCode.badArgument, scalars: [], data: [])
+                }
+                var reply = foundReply
+                reply.scalars = Array(reply.scalars.prefix(scalarCount))
+                return reply
+            }
         )
     }
 }
 
 struct IOKitHandleLifetimeTests {
-    @Test func aConnectionIsClosedOnceAndNeverReleasedWhileEachServiceIsReleasedOnce() {
+    @Test func candidatesOpenAndReleaseEveryServiceAndCloseEveryConnectionOnce() {
         let log = HandleLog()
         log.driverServices = [100, 101]
         log.openResults = [100: (IOReturnCode.notReady, 0), 101: (0, 7)]
 
-        guard case .connected(let connection) = IOKitDextBackend(ops: log.ops).connect() else {
-            Issue.record("expected a connection")
-            return
-        }
-        connection.close()
+        let candidates = IOKitDextBackend(ops: log.ops).candidates()
+        candidates.compactMap(\.connection).forEach { $0.close() }
 
         #expect(log.opened == [100, 101])
         #expect(log.countsPerHandle(log.released) == [100: 1, 101: 1])
@@ -829,9 +899,9 @@ struct IOKitHandleLifetimeTests {
         log.openResults = [100: (0, 7), 102: (0, 8)]
         let backend = IOKitDextBackend(ops: log.ops)
 
-        if case .connected(let first) = backend.connect() { first.close() }
+        backend.candidates().compactMap(\.connection).forEach { $0.close() }
         log.driverServices = [102]   // the dext service after a replug
-        if case .connected(let second) = backend.connect() { second.close() }
+        backend.candidates().compactMap(\.connection).forEach { $0.close() }
 
         #expect(log.closed == [7, 8])
         #expect(log.countsPerHandle(log.released) == [100: 1, 102: 1])
@@ -843,12 +913,8 @@ struct IOKitHandleLifetimeTests {
         log.driverServices = [100, 101]
         log.openResults = [100: (IOReturnCode.notReady, 0), 101: (IOReturnCode.notReady, 0)]
 
-        guard case .openFailed(let code) = IOKitDextBackend(ops: log.ops).connect() else {
-            Issue.record("expected openFailed")
-            return
-        }
-
-        #expect(code == IOReturnCode.notReady)
+        let candidates = IOKitDextBackend(ops: log.ops).candidates()
+        #expect(candidates.map(\.openCode) == [IOReturnCode.notReady, IOReturnCode.notReady])
         #expect(log.countsPerHandle(log.released) == [100: 1, 101: 1])
         #expect(log.closed.isEmpty)
     }
@@ -863,61 +929,40 @@ struct IOKitHandleLifetimeTests {
         #expect(log.countsPerHandle(log.released) == [200: 1, 201: 1])
     }
 
-    private static let spike = "church.favor.printer.spike.driver"
-
-    @Test func aServiceFromAnotherBundleIsNeverOpenedEvenWithOurClassName() {
-        let log = HandleLog()
-        log.driverServices = [100]
-        log.identities = [100: Self.spike]
-        log.openResults = [100: (0, 7)]
-        let backend = IOKitDextBackend(ops: log.ops)
-
-        guard case .noService = backend.connect() else {
-            Issue.record("expected noService")
-            return
-        }
-
-        #expect(log.opened.isEmpty)
-        #expect(log.countsPerHandle(log.released) == [100: 1])
-        #expect(backend.foreignDriverPresent())
-    }
-
-    @Test func withTwoDriversPresentOnlyOursIsOpened() {
+    @Test func handshakeRejectsAndClosesForeignCandidateThenChoosesOurCandidate() async {
         let log = HandleLog()
         log.driverServices = [100, 101]
-        log.identities = [100: Self.spike, 101: IOKitDextBackend.driverBundleID]
+        log.identities = [100: "foreign.bundle"]
+        log.classes = [100: "ForeignUserClient", 101: "FavorPrinterUsbUserClient"]
         log.openResults = [100: (0, 6), 101: (0, 7)]
+        log.statusReplies = [
+            6: DextReply(code: 0, scalars: [8, 0, 1, 0x81, 0x53504B45, UInt64(kFavorZplABIVersion)], data: []),
+            7: DextReply(code: 0, scalars: [8, 0, 1, 0x81, UInt64(kFavorZplDriverMagic), UInt64(kFavorZplABIVersion)], data: []),
+        ]
 
-        guard case .connected(let connection) = IOKitDextBackend(ops: log.ops).connect() else {
-            Issue.record("expected a connection")
-            return
-        }
-        connection.close()
+        let status = await DriverKitUsbTransport(backend: IOKitDextBackend(ops: log.ops)).status()
 
-        #expect(log.opened == [101])
-        #expect(log.closed == [7])
+        #expect(status.driver == .running)
+        #expect(log.opened == [100, 101])
+        #expect(log.closed == [6, 7])
         #expect(log.countsPerHandle(log.released) == [100: 1, 101: 1])
+        #expect(Set(log.released).isDisjoint(with: Set(log.closed)))
     }
 
-    @Test func aServiceWithNoIdentityIsNotOurs() {
+    @Test func interfaceChildFallbackFindsAndClosesOurCandidate() async {
         let log = HandleLog()
-        log.driverServices = [100]
-        log.identities = [100: ""]
-        guard case .noService = IOKitDextBackend(ops: log.ops).connect() else {
-            Issue.record("expected noService")
-            return
-        }
-        #expect(log.opened.isEmpty)
-    }
+        log.fallbackDriverServices = [100]
+        log.openResults = [100: (0, 7)]
+        log.statusReplies = [
+            7: DextReply(code: 0, scalars: [8, 0, 1, 0x81, UInt64(kFavorZplDriverMagic), UInt64(kFavorZplABIVersion)], data: [])
+        ]
 
-    @Test func onlyOurDriverMeansNoForeignDriverAndReleasesWhatItFound() {
-        let log = HandleLog()
-        let backend = IOKitDextBackend(ops: log.ops)
-        #expect(!backend.foreignDriverPresent())
+        let status = await DriverKitUsbTransport(backend: IOKitDextBackend(ops: log.ops)).status()
 
-        log.driverServices = [100]
-        #expect(!backend.foreignDriverPresent())
+        #expect(status.driver == .running)
+        #expect(log.opened == [100])
         #expect(log.countsPerHandle(log.released) == [100: 1])
+        #expect(log.closed == [7])
     }
 
     @Test func identityIsTheServerNameElseTheBundleIdentifier() {
@@ -960,10 +1005,7 @@ struct IOKitHandleLifetimeTests {
 
     @Test func noServiceReleasesNothingAndOpensNothing() {
         let log = HandleLog()
-        guard case .noService = IOKitDextBackend(ops: log.ops).connect() else {
-            Issue.record("expected noService")
-            return
-        }
+        #expect(IOKitDextBackend(ops: log.ops).candidates().isEmpty)
         #expect(log.opened.isEmpty && log.released.isEmpty && log.closed.isEmpty)
     }
 }

@@ -2,23 +2,21 @@ import Foundation
 
 /// What `DriverKitUsbTransport` needs from IOKit, so everything above this seam runs against a scripted backend in tests.
 protocol DextBackend: Sendable {
-    /// Finds the dext service and opens a user client on it.
-    func connect() -> DextConnectResult
+    /// Opens each candidate service. Registry identity is diagnostic context only; the status handshake identifies us.
+    func candidates() -> [DextCandidate]
     /// Best effort: whether the ZD421 shows up in the IORegistry at all, driver or not.
     func printerVisible() -> Bool
-    /// Best effort: whether a dext from another bundle (e.g. the spike app's) is attached for this printer.
-    func foreignDriverPresent() -> Bool
 }
 
-enum DextConnectResult {
-    case connected(DextConnection)
-    /// No dext instance exists.
-    case noService
-    /// A dext instance exists but no user client would open. `code` is the last `IOServiceOpen` result.
-    case openFailed(code: Int32)
+struct DextCandidate: Sendable {
+    var className: String
+    /// Registry identity is a hint for diagnostics, never a reason to reject a candidate.
+    var identityHint: String?
+    var openCode: Int32
+    var connection: DextConnection?
 }
 
-struct DextReply {
+struct DextReply: Sendable {
     /// `IOConnectCallMethod`'s return. The other fields are meaningless unless this is 0.
     var code: Int32
     var scalars: [UInt64]
@@ -47,7 +45,7 @@ struct DextReply {
     }
 }
 
-protocol DextConnection {
+protocol DextConnection: Sendable {
     func call(selector: Int, scalarInput: [UInt64], structInput: [UInt8], scalarOutputCount: Int, structOutputCapacity: Int) -> DextReply
     func close()
 }
@@ -63,14 +61,16 @@ extension DextConnection {
     }
 }
 
-/// The IOKit calls that create, find and end handles. Injectable so a test can count what happens to each handle.
-/// `IOConnectCallMethod` stays direct: it neither creates nor ends a handle.
+/// The IOKit calls that find, open, query and end handles. Injectable for candidate selection and lifetime tests.
 struct IOKitHandleOps: Sendable {
-    /// Every dext instance that could be ours or hold the printer: our class name or the printer's VID/PID, from any
-    /// bundle. Callers tell them apart with `driverIdentity`.
+    /// All IOUserService entries, without IOPropertyMatch filters.
     var driverServices: @Sendable () -> [io_service_t]
-    /// The bundle identifier of the dext behind a service: `IOUserServerName`, else `CFBundleIdentifier`.
+    /// IOUserService children of matching printer interfaces, used as a fallback discovery path.
+    var fallbackDriverServices: @Sendable () -> [io_service_t]
+    /// Optional registry identity hint for diagnostics.
     var driverIdentity: @Sendable (io_service_t) -> String?
+    /// Runtime registry class name for diagnostics.
+    var className: @Sendable (io_service_t) -> String
     /// Printer entries in the IORegistry (device or interface, VID 0x0A5F PID 389), driver or not.
     var printerServices: @Sendable () -> [io_service_t]
     /// `IOServiceOpen`: the result code and, on success, the connection handle.
@@ -79,20 +79,16 @@ struct IOKitHandleOps: Sendable {
     var release: @Sendable (io_object_t) -> Void
     /// `IOServiceClose`, which destroys a connection handle. Connections are never also released.
     var close: @Sendable (io_connect_t) -> Void
+    /// User-client calls, injectable so candidate handshakes can be tested without IOKit or hardware.
+    var call: @Sendable (io_connect_t, Int, [UInt64], [UInt8], Int, Int) -> DextReply
 
     static let live = IOKitHandleOps(
-        driverServices: {
-            let byClass = IOServiceMatching("IOUserService") as NSMutableDictionary
-            byClass["IOPropertyMatch"] = ["IOUserClass": IOKitDextBackend.driverClassName]
-            let byPrinter = IOServiceMatching("IOUserService") as NSMutableDictionary
-            byPrinter["IOPropertyMatch"] = [
-                "idVendor": IOKitDextBackend.printerVendorID, "idProduct": IOKitDextBackend.printerProductID,
-            ]
-            return IOKitHandleOps.distinct([byClass, byPrinter].flatMap(IOKitHandleOps.services(matching:)))
-        },
+        driverServices: { IOKitHandleOps.services(matching: IOServiceMatching("IOUserService")) },
+        fallbackDriverServices: { IOKitHandleOps.userServiceChildrenOfPrinterInterfaces() },
         driverIdentity: { service in
             IOKitHandleOps.identity(of: { IORegistryEntryCreateCFProperty(service, $0 as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String })
         },
+        className: { service in IOObjectCopyClass(service)?.takeRetainedValue() as String? ?? "unknown" },
         printerServices: {
             ["IOUSBHostDevice", "IOUSBHostInterface"].flatMap { className -> [io_service_t] in
                 let match = IOServiceMatching(className) as NSMutableDictionary
@@ -108,7 +104,18 @@ struct IOKitHandleOps: Sendable {
             return (code, connection)
         },
         release: { _ = IOObjectRelease($0) },
-        close: { _ = IOServiceClose($0) }
+        close: { _ = IOServiceClose($0) },
+        call: { connection, selector, scalarInput, structInput, scalarOutputCount, structOutputCapacity in
+            var scalars = [UInt64](repeating: 0, count: scalarOutputCount)
+            var scalarCount = UInt32(scalarOutputCount)
+            var data = [UInt8](repeating: 0, count: structOutputCapacity)
+            var dataCount = structOutputCapacity
+            let code = IOConnectCallMethod(
+                connection, UInt32(selector), scalarInput, UInt32(scalarInput.count), structInput, structInput.count,
+                &scalars, &scalarCount, &data, &dataCount
+            )
+            return DextReply(kernelCode: code, scalars: scalars, scalarCount: Int(scalarCount), data: data, dataCount: dataCount)
+        }
     )
 
     /// `IOUserServerName`, else `CFBundleIdentifier`, from whatever reads a string property.
@@ -119,19 +126,19 @@ struct IOKitHandleOps: Sendable {
         return nil
     }
 
-    /// One handle per registry entry: the class and VID/PID queries can both find the same dext.
-    private static func distinct(_ services: [io_service_t]) -> [io_service_t] {
+    /// One handle per registry entry: global and USB-interface child enumeration can find the same service.
+    static func distinct(_ services: [io_service_t], release: (io_object_t) -> Void) -> [io_service_t] {
         var seen = Set<UInt64>()
         return services.filter { service in
             var entryID: UInt64 = 0
             guard IORegistryEntryGetRegistryEntryID(service, &entryID) == KERN_SUCCESS else { return true }
             if seen.insert(entryID).inserted { return true }
-            IOObjectRelease(service)
+            release(service)
             return false
         }
     }
 
-    private static func services(matching match: NSMutableDictionary) -> [io_service_t] {
+    static func services(matching match: CFMutableDictionary) -> [io_service_t] {
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, match, &iterator) == KERN_SUCCESS else { return [] }
         defer { IOObjectRelease(iterator) }
@@ -143,6 +150,28 @@ struct IOKitHandleOps: Sendable {
         }
         return found
     }
+
+    static func userServiceChildrenOfPrinterInterfaces() -> [io_service_t] {
+        let match = IOServiceMatching("IOUSBHostInterface") as NSMutableDictionary
+        match["IOPropertyMatch"] = [
+            "idVendor": IOKitDextBackend.printerVendorID, "idProduct": IOKitDextBackend.printerProductID,
+        ]
+        let interfaces = services(matching: match)
+        defer { interfaces.forEach { _ = IOObjectRelease($0) } }
+        var found: [io_service_t] = []
+        for interface in interfaces {
+            var iterator: io_iterator_t = 0
+            guard IORegistryEntryGetChildIterator(interface, kIOServicePlane, &iterator) == KERN_SUCCESS else { continue }
+            defer { _ = IOObjectRelease(iterator) }
+            var child = IOIteratorNext(iterator)
+            while child != 0 {
+                if IOObjectConformsTo(child, "IOUserService") != 0 { found.append(child) }
+                else { _ = IOObjectRelease(child) }
+                child = IOIteratorNext(iterator)
+            }
+        }
+        return found
+    }
 }
 
 /// The real backend. Looks the dext up through the IORegistry on every call and opens a fresh user client, so a
@@ -151,28 +180,24 @@ struct IOKitHandleOps: Sendable {
 struct IOKitDextBackend: DextBackend {
     static let printerVendorID = 0x0A5F
     static let printerProductID = 389
-    /// The production dext's `IOUserClass`. No other bundle (the spike's was `FavorZplDriver`) uses it.
+    /// Registry class and bundle hints retained for diagnostics and personality contract tests.
     static let driverClassName = "FavorPrinterUsbDriver"
-    /// The production dext's bundle identifier, the only identity this backend opens.
     static let driverBundleID = "church.favor.printer.ios.driver"
-
     var ops = IOKitHandleOps.live
 
-    func connect() -> DextConnectResult {
-        let services = ops.driverServices()
+    func candidates() -> [DextCandidate] {
+        let services = IOKitHandleOps.distinct(ops.driverServices() + ops.fallbackDriverServices(), release: ops.release)
         defer { services.forEach(ops.release) }
-        // A service with our class name from another bundle is somebody else's driver: never open its user client.
-        let ours = services.filter { ops.driverIdentity($0) == Self.driverBundleID }
-        guard !ours.isEmpty else { return .noService }
-        var failure = IOReturnCode.notFound
-        for service in ours {
+        return services.map { service in
             let opened = ops.open(service)
-            if opened.code == KERN_SUCCESS {
-                return .connected(IOKitDextConnection(connection: opened.connection, closeHandle: ops.close))
-            }
-            failure = opened.code
+            let connection = opened.code == KERN_SUCCESS
+                ? IOKitDextConnection(connection: opened.connection, callHandle: ops.call, closeHandle: ops.close) as DextConnection
+                : nil
+            return DextCandidate(
+                className: ops.className(service), identityHint: ops.driverIdentity(service),
+                openCode: opened.code, connection: connection
+            )
         }
-        return .openFailed(code: failure)
     }
 
     func printerVisible() -> Bool {
@@ -180,33 +205,17 @@ struct IOKitDextBackend: DextBackend {
         found.forEach(ops.release)
         return !found.isEmpty
     }
-
-    func foreignDriverPresent() -> Bool {
-        let services = ops.driverServices()
-        defer { services.forEach(ops.release) }
-        return services.contains { ops.driverIdentity($0) != Self.driverBundleID }
-    }
 }
 
 struct IOKitDextConnection: DextConnection {
     let connection: io_connect_t
+    let callHandle: @Sendable (io_connect_t, Int, [UInt64], [UInt8], Int, Int) -> DextReply
     /// `IOServiceClose`. It destroys the handle (IOKitLib.h: "should not be released with IOObjectRelease"), so
     /// nothing else is called on `connection`: releasing as well would drop a port right twice.
     let closeHandle: @Sendable (io_connect_t) -> Void
 
     func call(selector: Int, scalarInput: [UInt64], structInput: [UInt8], scalarOutputCount: Int, structOutputCapacity: Int) -> DextReply {
-        var scalars = [UInt64](repeating: 0, count: scalarOutputCount)
-        var scalarCount = UInt32(scalarOutputCount)
-        var data = [UInt8](repeating: 0, count: structOutputCapacity)
-        var dataCount = structOutputCapacity
-        let code = IOConnectCallMethod(
-            connection, UInt32(selector),
-            scalarInput, UInt32(scalarInput.count),
-            structInput, structInput.count,
-            &scalars, &scalarCount,
-            &data, &dataCount
-        )
-        return DextReply(kernelCode: code, scalars: scalars, scalarCount: Int(scalarCount), data: data, dataCount: dataCount)
+        callHandle(connection, selector, scalarInput, structInput, scalarOutputCount, structOutputCapacity)
     }
 
     func close() {

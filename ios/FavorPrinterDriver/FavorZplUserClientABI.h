@@ -40,13 +40,17 @@ enum {
 	kFavorZplStatusError = 1,
 	kFavorZplStatusBulkOutAddress = 2,
 	kFavorZplStatusBulkInAddress = 3,   // 0 when the interface has no usable bulk IN endpoint
-	kFavorZplStatusABIVersion = 4,
-	kFavorZplStatusFieldCount = 5,
+	kFavorZplStatusDriverMagic = 4,
+	kFavorZplStatusABIVersion = 5,
+	kFavorZplStatusFieldCount = 6,
 };
+
+// 'FVPR' identifies this user client independently of optional IORegistry properties.
+enum { kFavorZplDriverMagic = 0x46565052 };
 
 // Bump when a selector, scalar layout or size limit changes. A dext that predates the field leaves it 0.
 enum {
-	kFavorZplABIVersion = 1,
+	kFavorZplABIVersion = 2,
 };
 
 enum {
