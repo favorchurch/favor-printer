@@ -217,8 +217,8 @@ final class HostController {
         await schedule { await self.performEnroll(code: code) }.value
     }
 
-    /// Deletes the host credential (never the check-in bearer) and the spool, and stops the loop. Waiting jobs would
-    /// expire at the cloud, and their label text should not outlive the enrollment.
+    /// Stops the loop and deletes the host credential, nothing else: not the check-in bearer and not the spool. A job
+    /// still waiting in the spool is refused as stale by the cloud on its next enrollment and dropped.
     func unenroll() async {
         await schedule { await self.performUnenroll() }.value
     }
@@ -279,7 +279,6 @@ final class HostController {
             await reconcile()
             return
         }
-        await spool.removeAll()
         uninstall()
         authBlocked = false
         error = nil

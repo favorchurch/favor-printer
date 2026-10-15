@@ -752,7 +752,7 @@ struct HostControllerEnrollmentTests {
         #expect(controller.enrollment == .notEnrolled)
     }
 
-    @Test func unenrollDeletesOnlyTheHostCredentialAndClearsTheSpool() async throws {
+    @Test func unenrollDeletesOnlyTheHostCredential() async throws {
         let server = relayServer()
         let host = storedCredential()
         let checkin = InMemorySecretStore("checkin-bearer")
@@ -763,15 +763,13 @@ struct HostControllerEnrollmentTests {
             RelayJob(id: "j1", printerId: "p1", label: "Ada", copy: 1, zpl: "^XA", claimToken: "c", leaseExpiresAt: "x", attempt: 1, host: "usb", port: 0),
             at: Date()
         ))
-        controller.scenePhaseChanged(.active)
-        await controller.settled()
 
         await controller.unenroll()
         #expect(host.current == nil)
         #expect(checkin.current == "checkin-bearer")
         #expect(controller.enrollment == .notEnrolled)
         #expect(controller.isLoopRunning == false)
-        #expect(rawEntries(in: directory.url).isEmpty)
+        #expect(rawEntries(in: directory.url).map(\.id) == ["j1"], "unenroll must not touch the spool")
     }
 
     @Test func aKeychainThatWillNotAnswerIsNotTreatedAsNotEnrolled() async throws {

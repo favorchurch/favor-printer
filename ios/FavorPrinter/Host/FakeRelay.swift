@@ -82,8 +82,6 @@ actor FakeRelay: HostRelay {
     /// Ids leased and not yet settled: what the cloud still expects a report for.
     var unsettledIds: Set<String> { Set(leased.keys).subtracting(settled) }
 
-    var settledIds: Set<String> { settled }
-
     func claim(printerIds: [String], limit: Int) async throws -> RelayClaimResponse {
         calls.append(.claim)
         try fail(.claim)

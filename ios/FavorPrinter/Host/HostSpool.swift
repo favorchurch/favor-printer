@@ -173,12 +173,6 @@ actor HostSpool {
         try? fileManager.removeItem(at: url(for: id))
     }
 
-    func removeAll() {
-        for url in (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] {
-            try? fileManager.removeItem(at: url)
-        }
-    }
-
     private func url(for id: String) -> URL {
         directory.appending(path: Self.fileName(for: id))
     }

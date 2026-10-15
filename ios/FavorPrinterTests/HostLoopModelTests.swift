@@ -8,7 +8,7 @@ import Testing
 //
 // Replay a failure: the failing case is named by its seed. Rerun just it with HOST_MODEL_SEED=<seed> (and
 // HOST_MODEL_STEPS=<n> for a longer run). Deep runs: HOST_MODEL_SEEDS=<count>.
-// On a simulator, pass them as SIMCTL_CHILD_HOST_MODEL_SEED=<seed> xcodebuild test ...
+// On a simulator, pass them as TEST_RUNNER_HOST_MODEL_SEED=<seed> xcodebuild test ...
 
 struct SplitMix64: RandomNumberGenerator {
     var state: UInt64
@@ -220,7 +220,10 @@ final class ChaosRelay: HostRelay, @unchecked Sendable {
         if stage != "sending" { world.violate("told the cloud \(jobId) is sending while its spool stage is \(stage ?? "absent")") }
         await crash.point()
         let answer = try await inner.sending(jobId: jobId, claimToken: claimToken)
+        // A stale answer settles the job at the cloud; the loop has not dropped its entry yet.
+        if case .stale = answer { world.setPendingDoubt(jobId) }
         await crash.point()
+        world.setPendingDoubt(nil)
         return answer
     }
 
@@ -229,7 +232,8 @@ final class ChaosRelay: HostRelay, @unchecked Sendable {
         if stage != "report" { world.violate("reported \(jobId) while its spool stage is \(stage ?? "absent")") }
         await crash.point()
         let answer = try await inner.report(jobId: jobId, claimToken: claimToken, outcome: outcome, error: error)
-        if case .ok = answer { world.setPendingDoubt(jobId) }
+        // Accepted or stale, the cloud has settled the job before the loop removes its entry.
+        world.setPendingDoubt(jobId)
         await crash.point()
         world.setPendingDoubt(nil)
         return answer

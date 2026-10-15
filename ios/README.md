@@ -164,8 +164,8 @@ in `FavorPrinter/Host/`. It is foreground-only (see below), so it is for an iPad
   before any request. The returned relay id and token are saved as one Keychain item (`HostCredentialStore`, service
   `church.favor.printer.relay`, separate from the check-in bearer) and never logged. Then `config()` is fetched.
   A 409 `printer_conflict` surfaces its reason; any failed enroll stores nothing and leaves an earlier credential alone.
-  `unenroll()` stops the loop, deletes only the host item (never the check-in bearer) and clears the spool, because a
-  waiting job's label text should not outlive the enrollment and its claim would expire at the cloud anyway.
+  `unenroll()` stops the loop and deletes only the host item: not the check-in bearer and not the spool. A job left
+  in the spool keeps its label text on disk until the next enrollment, where the cloud refuses it as stale and it is dropped.
   Enrolling against production needs separate approval; no test does it.
 - **Spool.** One JSON file per unreported job in `Application Support/FavorPrinter/HostSpool`, written to a temp file,
   synced and renamed into place, so a crash leaves the old or the new entry and never a torn one. Stages are
@@ -210,5 +210,5 @@ jobs, printer success, failure, partial write or timeout, relay network error, s
 crash and restart at any call boundary) against a reference model. Each step checks: no job is sent twice, every job
 that reached `sending` is reported `sent`, `failed` or `ambiguous` exactly once, unknown outcomes are `ambiguous`,
 the spool holds ZPL only in `claimed` entries, and spool depth equals the jobs still owed a report. A failure prints
-its seed: rerun it with `HOST_MODEL_SEED=<seed>` (on a simulator pass `SIMCTL_CHILD_HOST_MODEL_SEED=<seed>`), and raise
+its seed: rerun it with `HOST_MODEL_SEED=<seed>` (on a simulator pass `TEST_RUNNER_HOST_MODEL_SEED=<seed>`), and raise
 the depth with `HOST_MODEL_SEEDS` and `HOST_MODEL_STEPS`.
