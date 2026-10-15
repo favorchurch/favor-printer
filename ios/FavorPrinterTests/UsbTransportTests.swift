@@ -618,6 +618,117 @@ struct DriverKitUsbTransportEdgeTests {
     }
 }
 
+private final class StepCounter: @unchecked Sendable {
+    let gate: UnsafeMutablePointer<FavorZplGate>
+    var steps = 0
+    var releaseAfter: Int?
+
+    init(gate: UnsafeMutablePointer<FavorZplGate>, releaseAfter: Int?) {
+        self.gate = gate
+        self.releaseAfter = releaseAfter
+    }
+}
+
+/// Fake IOKit handle calls that count what happens to each handle.
+private final class HandleLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var opens: [io_service_t] = []
+    private var releases: [io_object_t] = []
+    private var closes: [io_connect_t] = []
+    var driverServices: [io_service_t] = []
+    var printerServices: [io_service_t] = []
+    var openResults: [io_service_t: (code: Int32, connection: io_connect_t)] = [:]
+
+    var opened: [io_service_t] { lock.withLock { opens } }
+    var released: [io_object_t] { lock.withLock { releases } }
+    var closed: [io_connect_t] { lock.withLock { closes } }
+
+    func countsPerHandle(_ handles: [UInt32]) -> [UInt32: Int] {
+        Dictionary(handles.map { ($0, 1) }, uniquingKeysWith: +)
+    }
+
+    var ops: IOKitHandleOps {
+        IOKitHandleOps(
+            driverServices: { self.driverServices },
+            printerServices: { self.printerServices },
+            open: { service in
+                self.lock.withLock { self.opens.append(service) }
+                return self.openResults[service] ?? (code: IOReturnCode.notReady, connection: 0)
+            },
+            release: { handle in self.lock.withLock { self.releases.append(handle) } },
+            close: { handle in self.lock.withLock { self.closes.append(handle) } }
+        )
+    }
+}
+
+struct IOKitHandleLifetimeTests {
+    @Test func aConnectionIsClosedOnceAndNeverReleasedWhileEachServiceIsReleasedOnce() {
+        let log = HandleLog()
+        log.driverServices = [100, 101]
+        log.openResults = [100: (IOReturnCode.notReady, 0), 101: (0, 7)]
+
+        guard case .connected(let connection) = IOKitDextBackend(ops: log.ops).connect() else {
+            Issue.record("expected a connection")
+            return
+        }
+        connection.close()
+
+        #expect(log.opened == [100, 101])
+        #expect(log.countsPerHandle(log.released) == [100: 1, 101: 1])
+        #expect(log.closed == [7])
+        #expect(!log.released.contains(7))
+    }
+
+    @Test func aReplugOpensANewConnectionAndEveryHandleIsStillEndedExactlyOnce() {
+        let log = HandleLog()
+        log.driverServices = [100]
+        log.openResults = [100: (0, 7), 102: (0, 8)]
+        let backend = IOKitDextBackend(ops: log.ops)
+
+        if case .connected(let first) = backend.connect() { first.close() }
+        log.driverServices = [102]   // the dext service after a replug
+        if case .connected(let second) = backend.connect() { second.close() }
+
+        #expect(log.closed == [7, 8])
+        #expect(log.countsPerHandle(log.released) == [100: 1, 102: 1])
+        #expect(Set(log.released).isDisjoint(with: Set(log.closed)))
+    }
+
+    @Test func serviceHandlesAreReleasedWhenNothingOpens() {
+        let log = HandleLog()
+        log.driverServices = [100, 101]
+        log.openResults = [100: (IOReturnCode.notReady, 0), 101: (IOReturnCode.notReady, 0)]
+
+        guard case .openFailed(let code) = IOKitDextBackend(ops: log.ops).connect() else {
+            Issue.record("expected openFailed")
+            return
+        }
+
+        #expect(code == IOReturnCode.notReady)
+        #expect(log.countsPerHandle(log.released) == [100: 1, 101: 1])
+        #expect(log.closed.isEmpty)
+    }
+
+    @Test func printerLookupReleasesWhatItFoundAndReportsVisibility() {
+        let log = HandleLog()
+        let backend = IOKitDextBackend(ops: log.ops)
+        #expect(!backend.printerVisible())
+
+        log.printerServices = [200, 201]
+        #expect(backend.printerVisible())
+        #expect(log.countsPerHandle(log.released) == [200: 1, 201: 1])
+    }
+
+    @Test func noServiceReleasesNothingAndOpensNothing() {
+        let log = HandleLog()
+        guard case .noService = IOKitDextBackend(ops: log.ops).connect() else {
+            Issue.record("expected noService")
+            return
+        }
+        #expect(log.opened.isEmpty && log.released.isEmpty && log.closed.isEmpty)
+    }
+}
+
 private final class SharedGate: @unchecked Sendable {
     let gate = UnsafeMutablePointer<FavorZplGate>.allocate(capacity: 1)
     /// Only touched while holding the gate.
@@ -638,6 +749,64 @@ private final class SharedGate: @unchecked Sendable {
 }
 
 struct TransferGateTests {
+    private static let step: @convention(c) (UnsafeMutableRawPointer?) -> Void = { context in
+        let counter = Unmanaged<StepCounter>.fromOpaque(context!).takeUnretainedValue()
+        counter.steps += 1
+        if let releaseAfter = counter.releaseAfter, counter.steps >= releaseAfter { FavorZplGateRelease(counter.gate) }
+    }
+
+    private func drain(inFlight: Bool, releaseAfter: Int?, maxWaitMs: UInt32 = 100) -> (drained: Bool, steps: Int, canFree: Bool) {
+        let gate = UnsafeMutablePointer<FavorZplGate>.allocate(capacity: 1)
+        gate.initialize(to: FavorZplGate())
+        defer { gate.deallocate() }
+        if inFlight { _ = FavorZplGateTryAcquire(gate) }
+        let counter = StepCounter(gate: gate, releaseAfter: releaseAfter)
+        let drained = FavorZplGateCloseAndDrain(gate, maxWaitMs, 10, Self.step, Unmanaged.passUnretained(counter).toOpaque())
+        return (drained, counter.steps, FavorZplGateCanFreePipes(gate))
+    }
+
+    @Test func stopOnAnIdleGateDrainsWithoutWaiting() {
+        let result = drain(inFlight: false, releaseAfter: nil)
+        #expect(result.drained)
+        #expect(result.canFree)
+        #expect(result.steps == 0)
+    }
+
+    @Test func stopWaitsUntilTheTransferInFlightLeaves() {
+        let result = drain(inFlight: true, releaseAfter: 3)
+        #expect(result.drained)
+        #expect(result.canFree)
+        #expect(result.steps == 3)
+    }
+
+    @Test func stopGivesUpAfterTheWaitAndSaysTheTransferIsStillRunning() {
+        let result = drain(inFlight: true, releaseAfter: nil, maxWaitMs: 100)
+        #expect(!result.drained)
+        #expect(!result.canFree)
+        #expect(result.steps == 10)
+    }
+
+    @Test func pipesAreNotFreeableWhileAStopWaitsOnATransfer() {
+        var gate = FavorZplGate()
+        #expect(FavorZplGateTryAcquire(&gate))
+        FavorZplGateClose(&gate)
+        #expect(!FavorZplGateCanFreePipes(&gate))
+    }
+
+    @Test func aTimedOutStopStaysNonFreeableEvenAfterTheTransferEndsLater() {
+        let gate = UnsafeMutablePointer<FavorZplGate>.allocate(capacity: 1)
+        gate.initialize(to: FavorZplGate())
+        defer { gate.deallocate() }
+        _ = FavorZplGateTryAcquire(gate)
+        let counter = StepCounter(gate: gate, releaseAfter: nil)
+
+        let drained = FavorZplGateCloseAndDrain(gate, 30, 10, Self.step, Unmanaged.passUnretained(counter).toOpaque())
+        FavorZplGateRelease(gate)   // the transfer finally ends, after Stop gave up
+
+        #expect(!drained)
+        #expect(!FavorZplGateCanFreePipes(gate))
+    }
+
     @Test func threadsContendingForTheGateNeverHoldItTogether() {
         let shared = SharedGate()
         DispatchQueue.concurrentPerform(iterations: 8) { _ in

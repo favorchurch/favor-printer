@@ -6,7 +6,6 @@
 //
 // Every scalar is a uint64_t. IOReturn values travel as the low 32 bits (cast back with Int32(truncatingIfNeeded:)).
 
-#include <stdbool.h>
 #include <stdint.h>
 
 enum {
@@ -68,46 +67,5 @@ enum {
 	kFavorZplMaxReadTimeoutMs = 10000,
 	kFavorZplMaxSerialBytes = 64,
 };
-
-// Transfer gate in the dext: one transfer at a time (two user clients could otherwise interleave labels on the
-// bulk OUT pipe), held through start-up, and closed for good when the dext stops so that no new transfer begins
-// while Stop tears the pipes down. Zero-initialise. Lives here so the Swift tests can exercise it.
-typedef struct {
-	uint32_t busy;
-	uint32_t closed;
-} FavorZplGate;
-
-static inline bool FavorZplGateTryAcquire(FavorZplGate *gate)
-{
-	if (__atomic_exchange_n(&gate->busy, 1, __ATOMIC_ACQUIRE) != 0) return false;
-	// Checked after taking busy so that Close cannot slip in between: Stop then never waits on a transfer that
-	// did not start.
-	if (__atomic_load_n(&gate->closed, __ATOMIC_ACQUIRE)) {
-		__atomic_store_n(&gate->busy, 0, __ATOMIC_RELEASE);
-		return false;
-	}
-	return true;
-}
-
-static inline bool FavorZplGateIsClosed(const FavorZplGate *gate)
-{
-	return __atomic_load_n(&gate->closed, __ATOMIC_ACQUIRE) != 0;
-}
-
-static inline void FavorZplGateRelease(FavorZplGate *gate)
-{
-	__atomic_store_n(&gate->busy, 0, __ATOMIC_RELEASE);
-}
-
-static inline void FavorZplGateClose(FavorZplGate *gate)
-{
-	__atomic_store_n(&gate->closed, 1, __ATOMIC_RELEASE);
-}
-
-// For Stop, after FavorZplGateClose: true once no transfer is in flight. The caller then owns the gate.
-static inline bool FavorZplGateTryDrain(FavorZplGate *gate)
-{
-	return __atomic_exchange_n(&gate->busy, 1, __ATOMIC_ACQUIRE) == 0;
-}
 
 #endif

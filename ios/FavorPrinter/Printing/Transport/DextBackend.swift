@@ -61,42 +61,43 @@ extension DextConnection {
     }
 }
 
-/// The real backend. Looks the dext up through the IORegistry on every call and opens a fresh user client, so a
-/// replug or a driver reload needs no reconnect logic.
-struct IOKitDextBackend: DextBackend {
-    static let printerVendorID = 0x0A5F
-    static let printerProductID = 389
+/// The IOKit calls that create, find and end handles. Injectable so a test can count what happens to each handle.
+/// `IOConnectCallMethod` stays direct: it neither creates nor ends a handle.
+struct IOKitHandleOps: Sendable {
+    /// Every dext instance. Only the USB-matched printer personality exists, so this is zero or one.
+    var driverServices: @Sendable () -> [io_service_t]
+    /// Printer entries in the IORegistry (device or interface, VID 0x0A5F PID 389), driver or not.
+    var printerServices: @Sendable () -> [io_service_t]
+    /// `IOServiceOpen`: the result code and, on success, the connection handle.
+    var open: @Sendable (io_service_t) -> (code: Int32, connection: io_connect_t)
+    /// `IOObjectRelease`, for service handles only.
+    var release: @Sendable (io_object_t) -> Void
+    /// `IOServiceClose`, which destroys a connection handle. Connections are never also released.
+    var close: @Sendable (io_connect_t) -> Void
 
-    func connect() -> DextConnectResult {
-        let services = Self.services(matching: Self.driverMatch())
-        defer { services.forEach { IOObjectRelease($0) } }
-        guard !services.isEmpty else { return .noService }
-        var failure = IOReturnCode.notFound
-        for service in services {
+    static let live = IOKitHandleOps(
+        driverServices: {
+            let match = IOServiceMatching("IOUserService") as NSMutableDictionary
+            match["IOPropertyMatch"] = ["IOUserClass": "FavorZplDriver"]
+            return IOKitHandleOps.services(matching: match)
+        },
+        printerServices: {
+            ["IOUSBHostDevice", "IOUSBHostInterface"].flatMap { className -> [io_service_t] in
+                let match = IOServiceMatching(className) as NSMutableDictionary
+                match["IOPropertyMatch"] = [
+                    "idVendor": IOKitDextBackend.printerVendorID, "idProduct": IOKitDextBackend.printerProductID,
+                ]
+                return IOKitHandleOps.services(matching: match)
+            }
+        },
+        open: { service in
             var connection: io_connect_t = 0
             let code = IOServiceOpen(service, mach_task_self_, 0, &connection)
-            if code == KERN_SUCCESS { return .connected(IOKitDextConnection(connection: connection)) }
-            failure = code
-        }
-        return .openFailed(code: failure)
-    }
-
-    func printerVisible() -> Bool {
-        ["IOUSBHostDevice", "IOUSBHostInterface"].contains { className in
-            let match = IOServiceMatching(className) as NSMutableDictionary
-            match["IOPropertyMatch"] = ["idVendor": Self.printerVendorID, "idProduct": Self.printerProductID]
-            let found = Self.services(matching: match)
-            found.forEach { IOObjectRelease($0) }
-            return !found.isEmpty
-        }
-    }
-
-    /// Every dext instance. Only the USB-matched printer personality exists, so this is zero or one.
-    private static func driverMatch() -> NSMutableDictionary {
-        let match = IOServiceMatching("IOUserService") as NSMutableDictionary
-        match["IOPropertyMatch"] = ["IOUserClass": "FavorZplDriver"]
-        return match
-    }
+            return (code, connection)
+        },
+        release: { _ = IOObjectRelease($0) },
+        close: { _ = IOServiceClose($0) }
+    )
 
     private static func services(matching match: NSMutableDictionary) -> [io_service_t] {
         var iterator: io_iterator_t = 0
@@ -112,8 +113,42 @@ struct IOKitDextBackend: DextBackend {
     }
 }
 
-private struct IOKitDextConnection: DextConnection {
+/// The real backend. Looks the dext up through the IORegistry on every call and opens a fresh user client, so a
+/// replug or a driver reload needs no reconnect logic. Each service handle is released once, each connection
+/// handle closed once.
+struct IOKitDextBackend: DextBackend {
+    static let printerVendorID = 0x0A5F
+    static let printerProductID = 389
+
+    var ops = IOKitHandleOps.live
+
+    func connect() -> DextConnectResult {
+        let services = ops.driverServices()
+        defer { services.forEach(ops.release) }
+        guard !services.isEmpty else { return .noService }
+        var failure = IOReturnCode.notFound
+        for service in services {
+            let opened = ops.open(service)
+            if opened.code == KERN_SUCCESS {
+                return .connected(IOKitDextConnection(connection: opened.connection, closeHandle: ops.close))
+            }
+            failure = opened.code
+        }
+        return .openFailed(code: failure)
+    }
+
+    func printerVisible() -> Bool {
+        let found = ops.printerServices()
+        found.forEach(ops.release)
+        return !found.isEmpty
+    }
+}
+
+struct IOKitDextConnection: DextConnection {
     let connection: io_connect_t
+    /// `IOServiceClose`. It destroys the handle (IOKitLib.h: "should not be released with IOObjectRelease"), so
+    /// nothing else is called on `connection`: releasing as well would drop a port right twice.
+    let closeHandle: @Sendable (io_connect_t) -> Void
 
     func call(selector: Int, scalarInput: [UInt64], structInput: [UInt8], scalarOutputCount: Int, structOutputCapacity: Int) -> DextReply {
         var scalars = [UInt64](repeating: 0, count: scalarOutputCount)
@@ -131,7 +166,6 @@ private struct IOKitDextConnection: DextConnection {
     }
 
     func close() {
-        // IOServiceClose destroys the handle: releasing it as well would drop a port right twice.
-        IOServiceClose(connection)
+        closeHandle(connection)
     }
 }

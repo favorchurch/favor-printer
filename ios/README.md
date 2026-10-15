@@ -93,7 +93,8 @@ name per test and delete it afterwards.
 - `FavorPrinter/Views/` SwiftUI screens for each state and for the check-in flow.
 - `FavorPrinter/Printing/Transport/` `UsbPrinterTransport` (raw ZPL in, bytes written or a typed `UsbTransportError` out),
   `DriverKitUsbTransport` (IOKit user client to the dext), `FakeUsbTransport` and the IOReturn mapping.
-- `FavorPrinterDriver/` the DriverKit extension and `FavorZplUserClientABI.h`, the selector and scalar layout shared with Swift.
+- `FavorPrinterDriver/` the DriverKit extension, `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
+  `FavorZplTransferGate.h` (one-transfer-at-a-time gate and the Stop ordering, plain C so Swift tests can run it).
 - `FavorPrinterUITests/` the XCUITest.
 
 The rsvp `docs/prototypes/printer-2` screens are not present in the T3 revision above, so the layouts follow the
@@ -125,7 +126,8 @@ A payload over 256 KiB goes out as several send calls. The dext's transfer gate 
 released between chunks, so use a single `DriverKitUsbTransport` per app. The dext does not authenticate its callers:
 any app holding `communicates-with-drivers` can open it (`allow-third-party-userclients` is required for the app to
 reach it at all), so treat the printer as shared with other entitled apps on the device. On `Stop` the dext closes the
-gate, aborts in-flight transfers and waits (at most 6 s) before releasing the pipes.
+gate, aborts in-flight transfers and waits (at most 6 s). It frees the pipes only if the transfer left in time
+(`FavorZplGateCanFreePipes`), otherwise it leaks them.
 Tests run it against a scripted backend (`UsbTransportTests.swift`); none touches IOKit or a printer.
 
 ### Gotchas (each one failed silently in the spike, issue #23)

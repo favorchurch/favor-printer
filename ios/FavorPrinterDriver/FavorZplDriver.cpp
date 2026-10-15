@@ -12,6 +12,7 @@
 #include <USBDriverKit/USBDriverKitDefs.h>
 #include "FavorZplDriver.h"
 #include "FavorZplUserClientABI.h"
+#include "FavorZplTransferGate.h"
 
 // Only sizes and IOReturn codes are logged, never the bytes moved.
 #define LOG(fmt, ...) os_log(OS_LOG_DEFAULT, "FavorZplDriver: " fmt, ##__VA_ARGS__)
@@ -23,6 +24,7 @@ constexpr uint32_t kWriteTimeoutMs = 5000;
 constexpr uint32_t kFollowUpReadTimeoutMs = 50;
 // Longest Stop waits for an in-flight transfer: a write timeout plus margin.
 constexpr uint32_t kStopWaitMs = kWriteTimeoutMs + 1000;
+constexpr uint32_t kStopStepMs = 10;
 }
 
 struct FavorZplDriver_IVars {
@@ -69,6 +71,15 @@ static void ReadSerial(IOUSBHostInterface *interface, uint8_t *serial, uint32_t 
 		}
 	}
 	OSSafeReleaseNULL(device);
+}
+
+// One wait step of Stop: abort whatever is in flight, then give it a moment to return.
+static void AbortTransfers(void *context)
+{
+	auto *ivars = static_cast<FavorZplDriver_IVars *>(context);
+	if (ivars->outPipe != nullptr) ivars->outPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
+	if (ivars->inPipe != nullptr) ivars->inPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
+	IOSleep(kStopStepMs);
 }
 
 bool FavorZplDriver::init()
@@ -168,14 +179,8 @@ kern_return_t IMPL(FavorZplDriver, Stop)
 {
 	LOG("stopped");
 	// Close the gate so no transfer starts, abort the one in flight, and wait for it to leave before the pipes go.
-	FavorZplGateClose(&ivars->gate);
-	bool drained = false;
-	for (uint32_t waited = 0; !(drained = FavorZplGateTryDrain(&ivars->gate)) && waited < kStopWaitMs; waited += 10) {
-		if (ivars->outPipe != nullptr) ivars->outPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
-		if (ivars->inPipe != nullptr) ivars->inPipe->Abort(kIOUSBAbortAsynchronous, kIOReturnAborted, nullptr);
-		IOSleep(10);
-	}
-	if (!drained) {
+	FavorZplGateCloseAndDrain(&ivars->gate, kStopWaitMs, kStopStepMs, AbortTransfers, ivars);
+	if (!FavorZplGateCanFreePipes(&ivars->gate)) {
 		// A transfer is still using the pipes. Leaking the pipe and interface references beats freeing them under it.
 		// Closing the interface still ends the transfer and lets the provider terminate.
 		LOG("stop: transfer did not finish, leaving pipes in place");
