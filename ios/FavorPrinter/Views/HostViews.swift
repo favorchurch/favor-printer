@@ -27,6 +27,22 @@ struct HostStatusView: View {
             hostSection
             enrollmentSection
             #if DEBUG
+            if host.backgroundExperimentEnabledForDisplay {
+                Section("Background experiment") {
+                    experimentRow("Backgrounded at", host.backgroundExperiment.backgroundedAt)
+                    ForEach(host.backgroundExperiment.jobs.indices, id: \.self) { index in
+                        let job = host.backgroundExperiment.jobs[index]
+                        HostRow(
+                            title: "Job sent, \(job.outcome)",
+                            value: job.at.formatted(date: .abbreviated, time: .shortened),
+                            id: "host-experiment-job-\(job.at.timeIntervalSince1970)"
+                        )
+                    }
+                    experimentRow("Background task expired", host.backgroundExperiment.expiredAt)
+                    experimentRow("Last background heartbeat", host.backgroundExperiment.lastHeartbeatAt)
+                    experimentRow("Returned to foreground", host.backgroundExperiment.returnedToForegroundAt)
+                }
+            }
             Section("Printer diagnostics") {
                 if let diagnostic = host.status.driverDiagnostic {
                     Text(diagnostic)
@@ -68,6 +84,13 @@ struct HostStatusView: View {
             }
         }
     }
+
+#if DEBUG
+    @ViewBuilder
+    private func experimentRow(_ title: String, _ date: Date?) -> some View {
+        HostRow(title: title, value: date?.formatted(date: .abbreviated, time: .shortened) ?? "None", id: "host-experiment-\(title)")
+    }
+#endif
 
     // MARK: Printer
 

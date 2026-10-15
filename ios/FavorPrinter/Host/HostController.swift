@@ -1,6 +1,39 @@
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
+
+struct BackgroundExperimentJob: Codable, Sendable, Equatable {
+    let at: Date
+    let outcome: String
+}
+
+struct BackgroundExperimentState: Codable, Sendable, Equatable {
+    var backgroundedAt: Date?
+    var jobs: [BackgroundExperimentJob] = []
+    var expiredAt: Date?
+    var lastHeartbeatAt: Date?
+    var returnedToForegroundAt: Date?
+
+    static let defaultsKey = "FavorPrinter.BackgroundExperiment"
+
+    func containsBackgroundEvent(at date: Date) -> Bool {
+        guard let backgroundedAt, date >= backgroundedAt else { return false }
+        return returnedToForegroundAt.map { date <= $0 } ?? true
+    }
+}
+
+enum HostBackgroundExperiment {
+    static let launchArgument = "-FavorHostBackgroundExperiment"
+
+    static func enabled(arguments: [String]) -> Bool {
+        #if DEBUG
+        arguments.contains(launchArgument)
+        #else
+        false
+        #endif
+    }
+}
 
 /// Which relay the host talks to. Chosen once at launch from the launch arguments, never from stored state.
 enum HostRelayMode: Sendable, Equatable {
@@ -134,6 +167,14 @@ final class HostController {
     @ObservationIgnored private let identity: HostIdentity
     @ObservationIgnored private let timing: HostLoop.Timing
     @ObservationIgnored private let now: @Sendable () -> Date
+    private let backgroundExperimentEnabled: Bool
+    private let experimentDefaults: UserDefaults
+    private let beginBackgroundTask: (@escaping @MainActor () -> Void) -> Int
+    private let endBackgroundTask: (Int) -> Void
+    private(set) var backgroundExperiment: BackgroundExperimentState
+    @ObservationIgnored private var backgroundTaskId: Int?
+    @ObservationIgnored private var backgroundEnqueueTask: Task<Void, Never>?
+    @ObservationIgnored private var lastExperimentJobAt: Date?
 
     @ObservationIgnored private var relay: (any HostRelay)?
     @ObservationIgnored private var loop: HostLoop?
@@ -148,7 +189,14 @@ final class HostController {
         spool: HostSpool,
         identity: HostIdentity = .current,
         timing: HostLoop.Timing = HostLoop.Timing(),
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        backgroundExperimentEnabled: Bool = false,
+        experimentDefaults: UserDefaults = .standard,
+        beginBackgroundTask: @escaping (@escaping @MainActor () -> Void) -> Int = { expiration in
+            let identifier = UIApplication.shared.beginBackgroundTask(withName: "FavorPrinter host experiment", expirationHandler: expiration)
+            return identifier == .invalid ? -1 : identifier.rawValue
+        },
+        endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) }
     ) {
         self.backend = backend
         self.transport = transport
@@ -156,6 +204,12 @@ final class HostController {
         self.identity = identity
         self.timing = timing
         self.now = now
+        self.backgroundExperimentEnabled = backgroundExperimentEnabled
+        self.experimentDefaults = experimentDefaults
+        self.beginBackgroundTask = beginBackgroundTask
+        self.endBackgroundTask = endBackgroundTask
+        self.backgroundExperiment = ((experimentDefaults.object(forKey: BackgroundExperimentState.defaultsKey) as? Data)
+            .flatMap { try? JSONDecoder().decode(BackgroundExperimentState.self, from: $0) }) ?? BackgroundExperimentState()
     }
 
     /// Builds the controller for this launch. The relay is chosen by `arguments` alone: `-FavorHostFakeRelay` (DEBUG
@@ -190,7 +244,8 @@ final class HostController {
                     }
                 ),
                 transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
-                spool: spool, identity: identity, timing: timing
+                spool: spool, identity: identity, timing: timing,
+                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments)
             )
         case .fake:
             #if DEBUG
@@ -200,7 +255,8 @@ final class HostController {
             return HostController(
                 backend: .fake(FakeRelay.demo()),
                 transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
-                spool: try HostSpool(directory: directory), identity: identity, timing: timing
+                spool: try HostSpool(directory: directory), identity: identity, timing: timing,
+                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments)
             )
             #else
             preconditionFailure("the fake relay is not compiled into this build")
@@ -210,6 +266,7 @@ final class HostController {
 
     #if DEBUG
     private(set) var isReadingPrinterStatus = false
+    var backgroundExperimentEnabledForDisplay: Bool { backgroundExperimentEnabled }
 
     /// DEBUG only. Sends `~HS` and reads the answer, to see what the printer says over bulk IN. The loop is paused for
     /// the read and resumed after, so the probe never shares the wire with a job: pausing waits for a send already
@@ -262,12 +319,37 @@ final class HostController {
 
     // MARK: Scene phase
 
-    /// Foreground-only: stop the loop on `.background`, resume on `.active`. `.inactive` (a system sheet, the app
-    /// switcher) changes nothing. Call it for the current phase when the view appears, too.
+    /// The DEBUG experiment keeps the loop alive under an iOS background task. Normal launches stay foreground-only.
+    /// `.inactive` (a system sheet, the app switcher) changes nothing. Call it for the current phase when the view appears.
     func scenePhaseChanged(_ phase: ScenePhase) {
         switch phase {
-        case .active: isForeground = true
-        case .background: isForeground = false
+        case .active:
+            isForeground = true
+#if DEBUG
+            if backgroundExperimentEnabled, backgroundExperiment.backgroundedAt != nil,
+               backgroundExperiment.returnedToForegroundAt == nil {
+                backgroundExperiment.returnedToForegroundAt = now()
+                persistBackgroundExperiment()
+                endExperimentBackgroundTask()
+                backgroundEnqueueTask?.cancel()
+                backgroundEnqueueTask = nil
+            }
+#endif
+        case .background:
+            isForeground = false
+#if DEBUG
+            if backgroundExperimentEnabled {
+                backgroundExperiment.backgroundedAt = now()
+                backgroundExperiment.expiredAt = nil
+                backgroundExperiment.returnedToForegroundAt = nil
+                lastExperimentJobAt = status.lastJobAt
+                persistBackgroundExperiment()
+                beginExperimentBackgroundTask()
+                enqueueSyntheticLabelsWhileBackgrounded()
+                schedule { await self.reconcile() }
+                return
+            }
+#endif
         case .inactive: return
         @unknown default: return
         }
@@ -397,7 +479,7 @@ final class HostController {
     /// cloud has not refused the credential.
     private func reconcile() async {
         resolveRelayIfNeeded()
-        let shouldRun = isForeground && relay != nil && !authBlocked
+        let shouldRun = (isForeground || isBackgroundExperimentRunning) && relay != nil && !authBlocked
         guard let loop else { return }
         if shouldRun {
             await loop.start()
@@ -405,6 +487,14 @@ final class HostController {
         } else {
             await stopLoop()
         }
+    }
+
+    private var isBackgroundExperimentRunning: Bool {
+#if DEBUG
+        backgroundExperimentEnabled && backgroundTaskId != nil && backgroundExperiment.backgroundedAt != nil && backgroundExperiment.expiredAt == nil
+#else
+        false
+#endif
     }
 
     private func resolveRelayIfNeeded() {
@@ -464,10 +554,77 @@ final class HostController {
 
     private func apply(_ newStatus: HostStatus) {
         status = newStatus
+#if DEBUG
+        if backgroundExperimentEnabled {
+            if let at = newStatus.lastJobAt,
+               backgroundExperiment.containsBackgroundEvent(at: at),
+               at != lastExperimentJobAt,
+               let outcome = newStatus.lastJobOutcome {
+                backgroundExperiment.jobs.append(BackgroundExperimentJob(at: at, outcome: outcome.rawValue))
+                lastExperimentJobAt = at
+                persistBackgroundExperiment()
+            }
+            if let heartbeat = newStatus.lastHeartbeatAt,
+               backgroundExperiment.containsBackgroundEvent(at: heartbeat),
+               heartbeat != backgroundExperiment.lastHeartbeatAt {
+                backgroundExperiment.lastHeartbeatAt = heartbeat
+                persistBackgroundExperiment()
+            }
+        }
+#endif
         if newStatus.authRejected {
             authBlocked = true
             error = .authRejected
             isLoopRunning = false
         }
     }
+
+#if DEBUG
+    private func persistBackgroundExperiment() {
+        guard let data = try? JSONEncoder().encode(backgroundExperiment) else { return }
+        experimentDefaults.set(data, forKey: BackgroundExperimentState.defaultsKey)
+    }
+
+    private func beginExperimentBackgroundTask() {
+        guard backgroundTaskId == nil else { return }
+        let id = beginBackgroundTask { [weak self] in
+            guard let self else { return }
+            self.backgroundTaskExpired()
+        }
+        guard id >= 0 else {
+            schedule { await self.stopLoop() }
+            return
+        }
+        backgroundTaskId = id
+    }
+
+    private func endExperimentBackgroundTask() {
+        guard let id = backgroundTaskId else { return }
+        backgroundTaskId = nil
+        endBackgroundTask(id)
+    }
+
+    private func backgroundTaskExpired() {
+        guard !isForeground, backgroundExperimentEnabled else { return }
+        backgroundExperiment.expiredAt = now()
+        persistBackgroundExperiment()
+        backgroundEnqueueTask?.cancel()
+        backgroundEnqueueTask = nil
+        schedule {
+            await self.stopLoop()
+            self.endExperimentBackgroundTask()
+        }
+    }
+
+    private func enqueueSyntheticLabelsWhileBackgrounded() {
+        guard backgroundEnqueueTask == nil, let relay = fakeRelay else { return }
+        backgroundEnqueueTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(20))
+                guard !Task.isCancelled, let self, !self.isForeground else { return }
+                await relay.enqueue(zpl: "^XA^FO40,40^A0N,48,48^FDFavor background experiment^FS^XZ", label: "Background experiment")
+            }
+        }
+    }
+#endif
 }

@@ -59,6 +59,70 @@ func eventuallyOnMain(timeout: Duration = .seconds(5), _ condition: @MainActor (
 func zplMarker(_ id: String) -> String { "SECRET-ZPL-\(id)" }
 func zpl(for id: String) -> String { "^XA^FD\(zplMarker(id))^FS^XZ" }
 
+#if DEBUG
+@MainActor
+private final class BackgroundTaskHarness {
+    private(set) var expiration: (@MainActor () -> Void)?
+    private(set) var ended: [Int] = []
+
+    func begin(_ expiration: @escaping @MainActor () -> Void) -> Int {
+        self.expiration = expiration
+        return 1
+    }
+
+    func end(_ identifier: Int) { ended.append(identifier) }
+}
+
+private final class MutableTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(_ value: Date) { self.value = value }
+
+    func now() -> Date { lock.withLock { value } }
+    func set(_ value: Date) { lock.withLock { self.value = value } }
+}
+
+private actor DelayedHeartbeatRelay: HostRelay {
+    private var heartbeatContinuation: CheckedContinuation<Void, Never>?
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private(set) var heartbeatStarted = false
+
+    func waitUntilHeartbeatStarts() async {
+        if heartbeatStarted { return }
+        await withCheckedContinuation { startedContinuation = $0 }
+    }
+
+    func releaseHeartbeat() {
+        heartbeatContinuation?.resume()
+        heartbeatContinuation = nil
+    }
+
+    func config() async throws -> RelayConfigResponse {
+        let printer = RelayPrinter(id: "p1", name: "Printer", usbSerial: nil, campusId: nil)
+        return RelayConfigResponse(apiVersion: 1, relayId: "relay", label: "Test", printerIds: ["p1"], printers: [printer])
+    }
+
+    func heartbeat(_ body: RelayHeartbeatRequest) async throws -> RelayHeartbeatResponse {
+        heartbeatStarted = true
+        startedContinuation?.resume()
+        startedContinuation = nil
+        await withCheckedContinuation { heartbeatContinuation = $0 }
+        return RelayHeartbeatResponse(
+            ok: true, serverTime: "now",
+            printers: [.init(id: "p1", name: "Printer", enabled: false, host: "usb", port: 0)]
+        )
+    }
+
+    func claim(printerIds: [String], limit: Int) async throws -> RelayClaimResponse {
+        RelayClaimResponse(jobs: [], rejectedPrinterIds: [])
+    }
+
+    func sending(jobId: String, claimToken: String) async throws -> RelayJobCallResult { .ok(status: "sending") }
+    func report(jobId: String, claimToken: String, outcome: RelayReportOutcome, error: String?) async throws -> RelayJobCallResult { .ok(status: "reported") }
+}
+#endif
+
 /// A loop over a fresh spool, fake relay and fake printer.
 final class HostRig: @unchecked Sendable {
     let directory = TempDirectory()
@@ -844,6 +908,200 @@ struct HostControllerEnrollmentTests {
 
 @MainActor
 struct HostControllerLifecycleTests {
+#if DEBUG
+    @Test func delayedBackgroundHeartbeatIsRecordedAfterForegroundReturn() async throws {
+        let relay = DelayedHeartbeatRelay()
+        let suiteName = "host-background-delayed-heartbeat-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let harness = BackgroundTaskHarness()
+        let startedAt = Date(timeIntervalSince1970: 100)
+        let clock = MutableTestClock(startedAt)
+        let controller = HostController(
+            backend: .real(
+                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                makeRelay: { _ in relay },
+                enroll: { _ in throw RelayEnrollFailure.network }
+            ),
+            transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
+            identity: testIdentity, timing: .init(poll: .seconds(5), heartbeat: 60), now: { clock.now() }, backgroundExperimentEnabled: true,
+            experimentDefaults: defaults,
+            beginBackgroundTask: { harness.begin($0) },
+            endBackgroundTask: { harness.end($0) }
+        )
+
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        await relay.waitUntilHeartbeatStarts()
+        let returnedAt = Date(timeIntervalSince1970: 101)
+        clock.set(returnedAt)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(controller.backgroundExperiment.returnedToForegroundAt == returnedAt)
+
+        await relay.releaseHeartbeat()
+        #expect(await eventuallyOnMain { controller.backgroundExperiment.lastHeartbeatAt == startedAt })
+        let restored = HostController(
+            backend: .real(
+                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                makeRelay: { _ in relay },
+                enroll: { _ in throw RelayEnrollFailure.network }
+            ),
+            transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
+            identity: testIdentity, timing: fastTiming, backgroundExperimentEnabled: true,
+            experimentDefaults: defaults, beginBackgroundTask: { _ in 2 }, endBackgroundTask: { _ in }
+        )
+        #expect(restored.backgroundExperiment.lastHeartbeatAt == startedAt)
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        harness.expiration?()
+        await controller.settled()
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test func repeatedActiveNotificationsDoNotExtendTheBackgroundInterval() async throws {
+        let relay = FakeRelay()
+        let suiteName = "host-background-repeat-active-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let harness = BackgroundTaskHarness()
+        let base = Date(timeIntervalSince1970: 200)
+        let clock = MutableTestClock(base)
+        let controller = HostController(
+            backend: .real(
+                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                makeRelay: { _ in relay },
+                enroll: { _ in throw RelayEnrollFailure.network }
+            ),
+            transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
+            identity: testIdentity, timing: fastTiming, now: { clock.now() }, backgroundExperimentEnabled: true,
+            experimentDefaults: defaults,
+            beginBackgroundTask: { harness.begin($0) },
+            endBackgroundTask: { harness.end($0) }
+        )
+
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        clock.set(base.addingTimeInterval(1))
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        let firstReturn = controller.backgroundExperiment.returnedToForegroundAt
+        clock.set(base.addingTimeInterval(2))
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(controller.backgroundExperiment.returnedToForegroundAt == firstReturn)
+
+        await relay.enqueue(zpl: zpl(for: "later-foreground"), id: "later-foreground")
+        #expect(await eventually { await relay.reports.map(\.jobId).contains("later-foreground") })
+        #expect(await eventuallyOnMain { controller.status.lastJobAt == clock.now() })
+        #expect(controller.backgroundExperiment.jobs.isEmpty)
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        harness.expiration?()
+        await controller.settled()
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test func backgroundExperimentDoesNotCountTheLastForegroundJobAgain() async throws {
+        let backgroundedAt = Date(timeIntervalSince1970: 10)
+        let returnedAt = Date(timeIntervalSince1970: 20)
+        let interval = BackgroundExperimentState(backgroundedAt: backgroundedAt, returnedToForegroundAt: returnedAt)
+        #expect(!interval.containsBackgroundEvent(at: Date(timeIntervalSince1970: 9)))
+        #expect(interval.containsBackgroundEvent(at: Date(timeIntervalSince1970: 15)))
+        #expect(!interval.containsBackgroundEvent(at: Date(timeIntervalSince1970: 21)))
+
+        let relay = FakeRelay()
+        let suiteName = "host-background-foreground-job-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let harness = BackgroundTaskHarness()
+        let controller = HostController(
+            backend: .real(
+                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                makeRelay: { _ in relay },
+                enroll: { _ in throw RelayEnrollFailure.network }
+            ),
+            transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
+            identity: testIdentity, timing: fastTiming, backgroundExperimentEnabled: true,
+            experimentDefaults: defaults,
+            beginBackgroundTask: { harness.begin($0) },
+            endBackgroundTask: { harness.end($0) }
+        )
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        await relay.enqueue(zpl: zpl(for: "foreground"), id: "foreground")
+        #expect(await eventually { await relay.reports.map(\.jobId) == ["foreground"] })
+        #expect(await eventuallyOnMain { controller.status.lastJobAt != nil })
+
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.count >= 2 })
+        #expect(controller.backgroundExperiment.jobs.isEmpty)
+
+        harness.expiration?()
+        await controller.settled()
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        let firstForegroundJobAt = controller.status.lastJobAt
+        await relay.enqueue(zpl: zpl(for: "foreground-again"), id: "foreground-again")
+        #expect(await eventually { await relay.reports.map(\.jobId).contains("foreground-again") })
+        #expect(await eventuallyOnMain { controller.status.lastJobAt != firstForegroundJobAt })
+        #expect(controller.backgroundExperiment.jobs.isEmpty)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test func backgroundExperimentRunsUntilExpirationThenStopsCleanly() async throws {
+        let relay = FakeRelay()
+        await relay.enqueue(zpl: zpl(for: "background"), id: "background")
+        let suiteName = "host-background-experiment-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let harness = BackgroundTaskHarness()
+        let transport = GatedTransport()
+        let controller = HostController(
+            backend: .real(
+                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                makeRelay: { _ in relay },
+                enroll: { _ in throw RelayEnrollFailure.network }
+            ),
+            transport: transport, spool: try HostSpool(directory: TempDirectory().url),
+            identity: testIdentity, timing: fastTiming, backgroundExperimentEnabled: true,
+            experimentDefaults: defaults,
+            beginBackgroundTask: { harness.begin($0) },
+            endBackgroundTask: { harness.end($0) }
+        )
+
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        await transport.waitUntilSending()
+        #expect(controller.isLoopRunning)
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        #expect(controller.isLoopRunning, "the experiment should retain the loop while its background task is active")
+        #expect(harness.expiration != nil)
+
+        harness.expiration?()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(controller.isLoopRunning, "expiration must wait for a send already in progress")
+        #expect(harness.ended.isEmpty, "keep the background task assertion until the in-flight send settles")
+        await transport.releaseSend()
+        await controller.settled()
+        #expect(controller.isLoopRunning == false)
+        #expect(controller.backgroundExperiment.expiredAt != nil)
+        #expect(controller.backgroundExperiment.lastHeartbeatAt != nil)
+        #expect(controller.backgroundExperiment.jobs.map(\.outcome) == ["sent"])
+        let restored = HostController(
+            backend: .real(
+                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                makeRelay: { _ in relay },
+                enroll: { _ in throw RelayEnrollFailure.network }
+            ),
+            transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
+            identity: testIdentity, timing: fastTiming, backgroundExperimentEnabled: true,
+            experimentDefaults: defaults, beginBackgroundTask: { _ in 2 }, endBackgroundTask: { _ in }
+        )
+        #expect(restored.backgroundExperiment == controller.backgroundExperiment)
+        #expect(harness.ended == [1])
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+#endif
+
     @Test func theLoopRunsOnlyWhileTheAppIsActive() async throws {
         let relay = FakeRelay()
         let controller = try makeController(secrets: storedCredential(), relay: relay, directory: TempDirectory())

@@ -159,11 +159,18 @@ in `FavorPrinter/Host/`. It is foreground-only (see below), so it is for an iPad
 
 ### Foreground only
 
-There are no background tasks, push wakeups or background modes. `HostController.scenePhaseChanged(_:)` stops the loop
-on `.background` (waiting for a send already writing, never cutting it short) and starts it again on `.active`;
+Normally there are no background tasks, push wakeups or background modes. `HostController.scenePhaseChanged(_:)` stops
+the loop on `.background` (waiting for a send already writing, never cutting it short) and starts it again on `.active`;
 `.inactive` changes nothing. While the app is not in the foreground nothing is claimed or sent, jobs wait at the cloud,
 and a claimed job whose lease runs out is dropped when the loop resumes. The view must call `scenePhaseChanged` for the
 current phase when it appears, since the loop starts only once the app is known to be active.
+
+DEBUG builds have an unsupported background execution experiment, enabled only with the launch argument
+`-FavorHostBackgroundExperiment`. It keeps the host loop running while iOS grants one background task; when that task
+expires, the loop stops after any send already in progress completes. With `-FavorHostFakeRelay`, a synthetic label is
+queued every 20 seconds while backgrounded. The DEBUG-only Background experiment section records lifecycle times,
+background job outcomes and heartbeat time in UserDefaults so the observations remain visible after relaunch. It stores
+no labels or ZPL. The flag is ignored in Release and does not make background printing a supported operating mode.
 
 ### Fake relay and fake transport (DEBUG)
 
