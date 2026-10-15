@@ -59,4 +59,13 @@ struct AppConfig: Sendable, Equatable {
     static func load(bundle: Bundle = .main, build: Build = .current) throws -> AppConfig {
         try AppConfig(info: bundle.infoDictionary, build: build)
     }
+
+    /// Launch order: the stale device bearer goes first, so a build with a bad RSVP address still cleans up.
+    static func loadAfterCleanup(
+        cleanUp: () -> Void = { StaleDeviceBearer.deleteOnce() },
+        load: () throws -> AppConfig = { try AppConfig.load() }
+    ) throws -> AppConfig {
+        cleanUp()
+        return try load()
+    }
 }

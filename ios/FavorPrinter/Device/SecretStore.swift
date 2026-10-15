@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Holds the device bearer secret. The only place it may be persisted.
+/// Holds one secret. The only place the relay credential may be persisted.
 protocol SecretStore: Sendable {
     func read() throws -> String?
     func write(_ secret: String) throws
@@ -12,14 +12,26 @@ struct KeychainError: Error, Equatable {
     let status: OSStatus
 }
 
-struct KeychainSecretStore: SecretStore {
+/// Holds the cloud relay credential.
+struct KeychainHostCredentialStore: SecretStore {
     let service: String
     let account: String
 
-    init(service: String = "church.favor.printer.device", account: String = "bearer") {
+    init(service: String = "church.favor.printer.relay", account: String = "bearer") {
         self.service = service
         self.account = account
     }
+
+    private var item: KeychainCredentialItem { KeychainCredentialItem(service: service, account: account) }
+
+    func read() throws -> String? { try item.read() }
+    func write(_ secret: String) throws { try item.write(secret) }
+    func delete() throws { try item.delete() }
+}
+
+private struct KeychainCredentialItem {
+    let service: String
+    let account: String
 
     private var identity: [String: Any] {
         [
@@ -67,5 +79,27 @@ struct KeychainSecretStore: SecretStore {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(status: status)
         }
+    }
+}
+
+/// Builds before the relay-only app kept a bearer in the Keychain under this service. Nothing reads it any more:
+/// launch deletes it, once.
+enum StaleDeviceBearer {
+    static let service = "church.favor.printer.device"
+    /// The grant record that went with it: non-secret, and equally unused now.
+    static let recordKey = "church.favor.printer.device.record"
+    static let doneKey = "church.favor.printer.device.cleaned"
+
+    /// Returns whether the item is gone. A failed delete (a locked Keychain) is retried on the next launch.
+    @discardableResult
+    static func deleteOnce(
+        in store: any SecretStore = KeychainHostCredentialStore(service: service),
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        if defaults.bool(forKey: doneKey) { return true }
+        do { try store.delete() } catch { return false }
+        defaults.removeObject(forKey: recordKey)
+        defaults.set(true, forKey: doneKey)
+        return true
     }
 }
