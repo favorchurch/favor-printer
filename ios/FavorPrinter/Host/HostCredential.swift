@@ -10,7 +10,7 @@ struct HostCredential: Codable, Sendable, Equatable, CustomStringConvertible, Cu
     var customMirror: Mirror { Mirror(self, children: ["relayId": relayId]) }
 }
 
-/// Holds the host credential as one item, so it is either whole or absent. Independent from the check-in bearer.
+/// Holds the host credential as one item, so it is either whole or absent.
 protocol HostCredentialStore: Sendable {
     func load() throws -> HostCredential?
     func save(_ credential: HostCredential) throws

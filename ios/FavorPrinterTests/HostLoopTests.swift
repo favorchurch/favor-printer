@@ -799,7 +799,6 @@ struct HostControllerEnrollmentTests {
     @Test func unenrollDeletesOnlyTheHostCredential() async throws {
         let server = relayServer()
         let host = storedCredential()
-        let checkin = InMemorySecretStore("checkin-bearer")
         let directory = TempDirectory()
         let (controller, _) = try makeController(server: server, secrets: host, directory: directory)
         let seed = try HostSpool(directory: directory.url)
@@ -810,7 +809,6 @@ struct HostControllerEnrollmentTests {
 
         await controller.unenroll()
         #expect(host.current == nil)
-        #expect(checkin.current == "checkin-bearer")
         #expect(controller.enrollment == .notEnrolled)
         #expect(controller.isLoopRunning == false)
         #expect(rawEntries(in: directory.url).map(\.id) == ["j1"], "unenroll must not touch the spool")

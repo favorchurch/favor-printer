@@ -7,6 +7,9 @@ struct HostStatusView: View {
     let host: HostController
     @State private var code = ""
     @State private var confirmingUnenroll = false
+    #if DEBUG
+    @State private var printerReading: PrinterStatusReading?
+    #endif
 
     var body: some View {
         List {
@@ -24,6 +27,20 @@ struct HostStatusView: View {
             hostSection
             enrollmentSection
             #if DEBUG
+            Section("Printer diagnostics") {
+                Button("Read printer status (~HS)") {
+                    Task { printerReading = await host.readPrinterStatus() }
+                }
+                .disabled(host.isReadingPrinterStatus)
+                .accessibilityLabel("Read printer status")
+                .accessibilityIdentifier("host-read-status")
+                if let printerReading {
+                    Text(printerReading.summary)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("host-status-reading")
+                }
+            }
             if host.fakeRelay != nil {
                 Section("Test build") {
                     Button("Print synthetic test label") { Task { await host.printSyntheticTestLabel() } }
@@ -104,7 +121,7 @@ struct HostStatusView: View {
     private var enrollmentSection: some View {
         switch host.enrollment {
         case .launching:
-            Section("Enrollment") { ProgressView().accessibilityLabel("Checking enrollment") }
+            Section("Enrollment") { ProgressView().accessibilityLabel("Reading enrollment") }
         case .notEnrolled:
             Section {
                 HostRow(title: "Status", value: "Not enrolled", id: "host-enrollment")

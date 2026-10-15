@@ -4,6 +4,17 @@ import Testing
 @testable import FavorPrinter
 
 struct AppConfigTests {
+    @Test func staleBearerCleanupRunsBeforeConfigIsValidated() {
+        var events: [String] = []
+        #expect(throws: (any Error).self) {
+            try AppConfig.loadAfterCleanup(
+                cleanUp: { events.append("cleanUp") },
+                load: { events.append("load"); throw AppConfig.Failure.missing }
+            )
+        }
+        #expect(events == ["cleanUp", "load"])
+    }
+
     @Test func readsHTTPSBaseURL() throws {
         let config = try AppConfig(info: ["RSVPBaseURL": " https://rsvp.favor.church "])
         #expect(config.rsvpBaseURL.absoluteString == "https://rsvp.favor.church")
@@ -68,19 +79,21 @@ struct AppConfigTests {
     }
 }
 
-struct KeychainSecretStoreTests {
-    private func store() -> KeychainSecretStore {
-        KeychainSecretStore(service: "church.favor.printer.tests.\(UUID().uuidString)", account: "bearer")
+struct KeychainHostCredentialStoreTests {
+    private let token = "relay-secret-a"
+
+    private func store() -> KeychainHostCredentialStore {
+        KeychainHostCredentialStore(service: "church.favor.printer.tests.\(UUID().uuidString)", account: "bearer")
     }
 
     @Test func writeReadOverwriteDelete() throws {
         let store = store()
         defer { try? store.delete() }
         #expect(try store.read() == nil)
-        try store.write(Fixture.token)
-        #expect(try store.read() == Fixture.token)
-        try store.write("checkin_device_" + String(repeating: "b", count: 43))
-        #expect(try store.read() == "checkin_device_" + String(repeating: "b", count: 43))
+        try store.write(token)
+        #expect(try store.read() == token)
+        try store.write("relay-secret-b")
+        #expect(try store.read() == "relay-secret-b")
         try store.delete()
         #expect(try store.read() == nil)
         try store.delete()
@@ -89,7 +102,7 @@ struct KeychainSecretStoreTests {
     @Test func separateServicesDoNotShareSecrets() throws {
         let first = store(), second = store()
         defer { try? first.delete(); try? second.delete() }
-        try first.write(Fixture.token)
+        try first.write(token)
         #expect(try second.read() == nil)
     }
 
@@ -106,13 +119,13 @@ struct KeychainSecretStoreTests {
         ]
         #expect(SecItemAdd(stale as CFDictionary, nil) == errSecSuccess)
 
-        try store.write(Fixture.token)
+        try store.write(token)
 
-        #expect(try store.read() == Fixture.token)
+        #expect(try store.read() == token)
         #expect(accessibility(of: store) == (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String))
     }
 
-    private func accessibility(of store: KeychainSecretStore) -> String? {
+    private func accessibility(of store: KeychainHostCredentialStore) -> String? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: store.service,

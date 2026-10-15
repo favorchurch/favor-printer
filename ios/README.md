@@ -1,53 +1,20 @@
 # Favor Printer for iPad
 
 iPad-only SwiftUI app (display name "Favor Printer", scheme `FavorPrinter`, Swift 6 strict concurrency,
-iPadOS 17+). It has the device grant flow (register, pending, approved, revoked), a hand-written client for
-the device and check-in endpoints, and the volunteer screens: pick a check-in and a service for the
-device's campus, search for a person, check in (event or Kids family), print labels and watch print status.
-Check-in is online-only: with no network every check-in action is blocked with a message and nothing is
-queued or replayed later.
+iPadOS 17+). It is a print relay for the iPad's USB printer: it launches straight into the Printer Host screen,
+enrolls with a one-time code, claims print jobs from the cloud relay and writes them to the printer through a
+DriverKit extension. There is no check-in, device registration or navigation: earlier builds had a check-in app and
+a device grant flow, and both are gone.
 
-## API contract
-
-Implemented against `docs/native-api/v1.md` from favorchurch/rsvp.favor.church PR #655
-(`office/ca02e6f1/T2`), commit `8a560ce305ce25252e28ce92886ecb3b9fd995bc`.
-
-Check-in endpoints are implemented against `docs/native-api/v1.md` from favorchurch/rsvp.favor.church PR #656
-(`office/ca02e6f1/T3`), rsvp commit `6462986a1d7272ffc50732222982ed0f7638c3b9`. That is the head of PR #656 when
-this slice was written; the orchestrator holds the gate that T3 is accepted before T5 merges, so re-check this SHA
-against the accepted T3 revision and update it with the types if it moved.
-
-Covered: device register and status, `GET definitions, occurrences, contacts, family, printers, print/status` and
-`POST check-in, family/check-in, print/enqueue` under `/api/native/v1/checkin/`, every error code in the
-contract table, and the state rules below. If the contract changes, update the types in `FavorPrinter/API/` and
-these SHAs together.
-
-## Behavior
-
-- Registration returns the bearer secret once. It goes straight into the Keychain
-  (`KeychainSecretStore`, this-device-only, no iCloud sync) and is never stored anywhere else or logged.
-- Non-secret state (grant id, campus, label, status, a `revoked` flag) lives in `UserDefaults`.
-- Any 401, a 403 `device_revoked`, or a 200 status of `revoked` wipes the secret and shows the revoked
-  screen. The revoked flag is persisted, so a failed wipe is retried on the next launch and no network
-  call is made with a revoked credential. "Register again" creates a new pending grant.
-- 400, 429, 503 and transport failures keep the credential and state and show a message.
-- Redirects are never followed, so the bearer header cannot be forwarded.
-- Every check-in call goes through `CheckinService` -> `DeviceSession.withCredential`, which only runs for an
-  approved grant, reads the secret from the Keychain, drops an answer that arrives after the credential was wiped,
-  and routes failures through `DeviceSession.report(_:)` so the same rules apply.
-- Contract errors have their own messages: `wrong_campus` (own campus only), `definition_forbidden` (turned off or
-  another campus), `occurrence_forbidden`, `printer_forbidden`; `device_revoked` and 401s wipe the secret.
-- Online-only: `NetworkMonitor` (NWPathMonitor) feeds `CheckinService`. Offline, nothing is sent, the screens show
-  an offline banner, and there is no queue or replay. A transport failure on a check-in write says the check-in may
-  have been recorded, so the volunteer confirms before retrying. Print enqueue reuses one stable `actionId` per
-  screen, so a retry queues once.
-- The campus sent on every request is the approved grant's campus. The server decides what it may touch.
-- HTTP 200 does not mean success: check-in, family and print results are inspected per child and per label.
+On launch the app deletes, once, the check-in bearer an older build may have left in the Keychain (service
+`church.favor.printer.device`) and the old grant record in `UserDefaults`. Nothing reads either
+(`StaleDeviceBearer` in `FavorPrinter/Device/SecretStore.swift`). A Keychain that will not delete is retried on the
+next launch.
 
 ## RSVP base URL
 
-Set per build configuration in `Config/*.xcconfig` and exposed as `RSVPBaseURL` in Info.plist.
-The app refuses to start unless it is HTTPS. No secrets live in config.
+Set per build configuration in `Config/*.xcconfig` and exposed as `RSVPBaseURL` in Info.plist. It is the
+host of the relay API (`/api/printing/relay/*`). The app refuses to start unless it is HTTPS. No secrets live in config.
 
 | Configuration | URL |
 | --- | --- |
@@ -78,19 +45,16 @@ xcodebuild build -scheme FavorPrinter -configuration Release -destination 'gener
 ```
 
 `-quiet` prints nothing on success; drop it to see the Swift Testing summary. The XCUITest
-(`FavorPrinterUITests`) launches the Debug app with `-FavorUITestMock`, which swaps in an in-process backend
-(`UITestBackend.swift`, `#if DEBUG` only): register, mocked admin approval, search, check in, print and print
-status, a Kids family check-in, and the offline block (`-FavorUITestOffline`, `-FavorUITestApproved` skip
-registration). It also checks every control on each screen has a VoiceOver label. Unit tests use a `URLProtocol`
-mock (`FavorPrinterTests/TestSupport.swift`) and need no network. Keychain tests use a unique service
-name per test and delete it afterwards.
+(`FavorPrinterUITests`) launches the Debug app with `-FavorUITestMock`, which swaps in an in-process relay and
+Keychain (`UITestBackend.swift`, `#if DEBUG` only) and checks every control on the host screen has a VoiceOver label.
+Unit tests use a `URLProtocol` mock (`FavorPrinterTests/TestSupport.swift`) and need no network. Keychain tests use a
+unique service name per test and delete it afterwards.
 
 ## Layout
 
-- `FavorPrinter/API/` Codable wire types, error codes, `DeviceAPIClient` and the check-in client (`CheckinAPIClient`).
-- `FavorPrinter/Device/` `SecretStore` (Keychain), `DeviceRecordStore`, the `DeviceSession` state machine and `CheckinService`.
-- `FavorPrinter/Checkin/` view models for search, check-in, family check-in and print status.
-- `FavorPrinter/Views/` SwiftUI screens for each state and for the check-in flow.
+- `FavorPrinter/Device/` `SecretStore` (the Keychain item holding the relay credential) and the stale-bearer cleanup.
+- `FavorPrinter/Relay/` `RelayAPIClient`, the relay HTTP client.
+- `FavorPrinter/Views/` the Printer Host screen and its root.
 - `FavorPrinter/Printing/Transport/` `UsbPrinterTransport` (raw ZPL in, bytes written or a typed `UsbTransportError` out),
   `DriverKitUsbTransport` (IOKit user client to the dext), `FakeUsbTransport` and the IOReturn mapping.
 - `FavorPrinter/Host/` the host side: `HostController` (enrollment, credential, scene phase), `HostLoop` (claim, send,
@@ -98,13 +62,9 @@ name per test and delete it afterwards.
 - `FavorPrinterDriver/` the DriverKit extension, `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
   `FavorZplTransferGate.h` (one-transfer-at-a-time gate and the Stop ordering, plain C so Swift tests can run it).
 - `FavorPrinterUITests/` the XCUITest.
-
-The rsvp `docs/prototypes/printer-2` screens are not present in the T3 revision above, so the layouts follow the
-flow in the contract (definition, service, search, check-in, print, status). Compare them with the prototypes
-when those land.
 - `Config/` xcconfig files and the Info.plist fragment holding `RSVPBaseURL`.
 
-Physical iPad, Keychain behavior on device and offline verification remain manual checks.
+Physical iPad and Keychain behavior on device remain manual checks.
 
 ## USB printing: driver extension
 
@@ -162,9 +122,9 @@ in `FavorPrinter/Host/`. It is foreground-only (see below), so it is for an iPad
 - **Enrollment.** `HostController.enroll(code:)` redeems a one-time code at the configured RSVPBaseURL together with the
   attached printer's USB serial. It needs the dext running and a serial, otherwise it fails with `printerNotReady`
   before any request. The returned relay id and token are saved as one Keychain item (`HostCredentialStore`, service
-  `church.favor.printer.relay`, separate from the check-in bearer) and never logged. Then `config()` is fetched.
+  `church.favor.printer.relay`) and never logged. Then `config()` is fetched.
   A 409 `printer_conflict` surfaces its reason; any failed enroll stores nothing and leaves an earlier credential alone.
-  `unenroll()` stops the loop and deletes only the host item: not the check-in bearer and not the spool. A job left
+  `unenroll()` stops the loop and deletes only the host item, not the spool. A job left
   in the spool keeps its label text on disk until the next enrollment, where the cloud refuses it as stale and it is dropped.
   Enrolling against production needs separate approval; no test does it.
 - **Spool.** One JSON file per unreported job in `Application Support/FavorPrinter/HostSpool`, written to a temp file,
@@ -217,14 +177,16 @@ Without `-FavorHostFakeRelay` a stored credential selects the real relay and non
 
 ### Printer Host screen
 
-The toolbar of the root screen has a "Printer host" link (`Views/HostViews.swift`) that works in every check-in state.
-It shows the printer and driver state (`DriverAvailability`: running; printer seen but driver not running, with the
+The app opens on this screen (`Views/HostViews.swift`). It shows the printer and driver state (`DriverAvailability`: running; printer seen but driver not running, with the
 Settings > Favor Printer > Drivers hint and "replug after enabling"; unknown, "attach the printer to check"), whether
 the host is running or paused, spool depth, the last job outcome with its time and the last error. `HostStatus` carries
 `driver`, `lastJobOutcome`, `lastJobAt` and `lastError` for this. The last error is one of the loop's fixed phrases,
 never ZPL, label text, a name or a job id. Not enrolled, it offers a one-time code field and an Enroll button
 (`HostController.enroll(code:)`, with the 409 conflict reason shown); enrolled, it shows an Unenroll control that asks
-first. A DEBUG build on the fake relay also shows "Print synthetic test label"; Release builds do not compile it.
+first. A DEBUG build on the fake relay also shows "Print synthetic test label". Every DEBUG build shows "Read printer status
+(~HS)" under "Printer diagnostics": it pauses the loop (waiting for a send already writing), sends `~HS`, reads the
+answer, shows the byte count and its printable ASCII or the typed error, and resumes the loop, so the read never shares
+the wire with a job. Release builds compile neither.
 `HostStatusUITests` drives the screen with `-FavorUITestMock` plus either `-FavorHostFakeRelay -FavorHostFakeTransport` (the simulator cannot load the dext, so the fake printer is needed) or the mocked enroll
 call (code `CONFLICT` is refused with a conflict; `-FavorUITestDriverOff` fakes a printer without a running driver).
 
