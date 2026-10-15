@@ -153,6 +153,16 @@ in `FavorPrinter/Host/`. It is foreground-only (see below), so it is for an iPad
 - **Reports** are retried every cycle until the cloud answers. A stale answer drops the entry. A 401 (`auth`) stops the
   loop, shows an error and keeps the credential and the spool; going to the background and back does not retry it,
   `retryAfterAuthError()` does.
+- **Handover.** Enroll and every heartbeat send `hostKind: "ipad"`; heartbeats also send `lifecycle: "active"`. When the
+  app goes to the background (foreground-only mode) the host sends one best-effort `lifecycle: "paused"` heartbeat under a
+  short `UIApplication` background task, beside the lifecycle queue so it never delays a send or the stop; a failure is
+  ignored and the next heartbeat after returning active sends `active`. A 409 `host_active` enroll conflict tells the
+  volunteer to ask an RSVP admin to confirm a handover and use the new code. `handedOverFrom` from a successful enroll
+  shows as "Took over from Mac '<label>'". A claim 403 `printer_handed_over`, or a 200 claim whose `handedOverPrinterIds`
+  names our printer, is terminal for that printer: no more claims, sends or heartbeats, the credential is kept and the
+  status shows "Printer moved to another host". Claiming resumes only after a new enrollment or an app relaunch. A
+  `sending` refusal keeps the stale rule (never resend), and the `ambiguous` rule is unchanged. Unknown or absent fields
+  are tolerated.
 - **Heartbeat** sends `printerAttached`, `spoolDepth`, `appVersion` and `osVersion` every 15 s. The loop claims only
   when the printer is attached and the driver extension answers, only for printers the cloud lists as enabled, and
   never holds more than 20 jobs.

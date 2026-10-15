@@ -130,6 +130,9 @@ struct HostStatusView: View {
     private var hostSection: some View {
         Section("Host") {
             HostRow(title: "Host", value: host.isLoopRunning ? "Running" : "Paused", id: "host-running")
+            if host.status.printerMoved {
+                HostRow(title: "Printer", value: "Printer moved to another host", id: "host-printer-moved")
+            }
             HostRow(title: "Spool", value: "\(host.status.spoolDepth)", id: "host-spool")
             HostRow(title: "Last job", value: lastJobText, id: "host-last-job")
             HostRow(title: "Last error", value: host.status.lastError ?? "None", id: "host-last-error")
@@ -174,6 +177,9 @@ struct HostStatusView: View {
         case .enrolled:
             Section("Enrollment") {
                 HostRow(title: "Status", value: host.printerName.map { "Enrolled, \($0)" } ?? "Enrolled", id: "host-enrollment")
+                if let from = host.handedOverFrom {
+                    HostRow(title: "Handover", value: from.summary, id: "host-handed-over-from")
+                }
                 Button("Unenroll", role: .destructive) { confirmingUnenroll = true }
                     .accessibilityLabel("Unenroll this printer")
                     .accessibilityIdentifier("unenroll-button")

@@ -19,6 +19,16 @@ actor FakeRelay: HostRelay {
         let error: String?
     }
 
+    /// How the fake answers claims once an admin has "handed the printer over".
+    enum Handover: Sendable, Equatable {
+        /// 403 `printer_handed_over` naming the printer.
+        case forbidden
+        /// 200 with no jobs and the printer in `handedOverPrinterIds`.
+        case listed
+        /// 403 `printer_handed_over` naming exactly these printers (empty: names none).
+        case forbiddenFor([String])
+    }
+
     static let printerId = "fake-printer-1"
 
     private(set) var calls: [Call] = []
@@ -30,6 +40,9 @@ actor FakeRelay: HostRelay {
     private(set) var staleIds: [String] = []
     private(set) var heartbeats: [RelayHeartbeatRequest] = []
     private(set) var printerEnabled = true
+    private var handover: Handover?
+    private var holdActive = false
+    private var parked: [CheckedContinuation<Void, Never>] = []
 
     private var queue: [RelayJob]
     private var leased: [String: RelayJob] = [:]
@@ -67,6 +80,19 @@ actor FakeRelay: HostRelay {
 
     func clearScript() { script = [:] }
 
+    /// Makes later claims answer as if the printer moved to another host. Nil puts it back.
+    func setHandover(_ handover: Handover?) { self.handover = handover }
+
+    /// Parks every later "active" heartbeat before it is recorded, until `releaseHeartbeats()`.
+    func holdActiveHeartbeats() { holdActive = true }
+
+    func releaseHeartbeats() {
+        holdActive = false
+        let waiting = parked
+        parked = []
+        for continuation in waiting { continuation.resume() }
+    }
+
     func setPrinterEnabled(_ enabled: Bool) { printerEnabled = enabled }
 
     /// Lease expiry: jobs claimed but never answered `sending` and not in `held` go back in the queue with a new claim token.
@@ -85,6 +111,12 @@ actor FakeRelay: HostRelay {
     func claim(printerIds: [String], limit: Int) async throws -> RelayClaimResponse {
         calls.append(.claim)
         try fail(.claim)
+        switch handover {
+        case .forbidden: throw RelayFailure.printerHandedOver([Self.printerId])
+        case .forbiddenFor(let ids): throw RelayFailure.printerHandedOver(ids)
+        case .listed: return RelayClaimResponse(jobs: [], rejectedPrinterIds: printerIds, handedOverPrinterIds: [Self.printerId])
+        case nil: break
+        }
         guard printerIds.contains(Self.printerId) else {
             return RelayClaimResponse(jobs: [], rejectedPrinterIds: printerIds)
         }
@@ -116,6 +148,7 @@ actor FakeRelay: HostRelay {
     func heartbeat(_ body: RelayHeartbeatRequest) async throws -> RelayHeartbeatResponse {
         calls.append(.heartbeat)
         try fail(.heartbeat)
+        if holdActive, body.lifecycle == .active { await withCheckedContinuation { parked.append($0) } }
         heartbeats.append(body)
         return RelayHeartbeatResponse(
             ok: true, serverTime: "2099-01-01T00:00:00Z",

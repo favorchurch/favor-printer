@@ -131,6 +131,8 @@ enum HostError: Error, Sendable, Equatable {
         case .serialDuplicateHasJobs: "This printer is already set up and has waiting jobs."
         case .serialInUse: "This printer is already in use by another device."
         case .printerNameTaken: "Another printer already has this name."
+        case .hostActive:
+            "This printer is active on another host. Ask an RSVP admin to confirm a handover, then use the new code."
         case .unknown: "The server could not bind this printer."
         }
     }
@@ -160,6 +162,8 @@ final class HostController {
     private(set) var isLoopRunning = false
     private(set) var isEnrolling = false
     private(set) var printerName: String?
+    /// Set by an enrollment that moved the printer off another host. Cleared on unenroll.
+    private(set) var handedOverFrom: RelayHandedOverFrom?
 
     @ObservationIgnored private let backend: Backend
     @ObservationIgnored let transport: any UsbPrinterTransport
@@ -173,6 +177,8 @@ final class HostController {
     private let endBackgroundTask: (Int) -> Void
     private(set) var backgroundExperiment: BackgroundExperimentState
     @ObservationIgnored private var backgroundTaskId: Int?
+    /// Background tasks begun for a "paused" beat and not yet ended. Each begin has exactly one end.
+    @ObservationIgnored private var pausedBeatTaskIds: Set<Int> = []
     @ObservationIgnored private var backgroundEnqueueTask: Task<Void, Never>?
     @ObservationIgnored private var lastExperimentJobAt: Date?
 
@@ -193,7 +199,7 @@ final class HostController {
         backgroundExperimentEnabled: Bool = false,
         experimentDefaults: UserDefaults = .standard,
         beginBackgroundTask: @escaping (@escaping @MainActor () -> Void) -> Int = { expiration in
-            let identifier = UIApplication.shared.beginBackgroundTask(withName: "FavorPrinter host experiment", expirationHandler: expiration)
+            let identifier = UIApplication.shared.beginBackgroundTask(withName: "FavorPrinter host", expirationHandler: expiration)
             return identifier == .invalid ? -1 : identifier.rawValue
         },
         endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) }
@@ -337,6 +343,16 @@ final class HostController {
 #endif
         case .background:
             isForeground = false
+            var keepsRunning = false
+#if DEBUG
+            keepsRunning = backgroundExperimentEnabled
+#endif
+            if !keepsRunning {
+                // The beat is prepared in the lifecycle queue ahead of the stop, so a stop cannot win the race.
+                let taskId = beginPausedBeatTask()
+                schedule { await self.pausedBeatThenReconcile(taskId) }
+                return
+            }
 #if DEBUG
             if backgroundExperimentEnabled {
                 backgroundExperiment.backgroundedAt = now()
@@ -354,6 +370,41 @@ final class HostController {
         @unknown default: return
         }
         schedule { await self.reconcile() }
+    }
+
+    /// Begins the short background task a "paused" beat runs under. Nil when the system refused one.
+    private func beginPausedBeatTask() -> Int? {
+        var begun: Int?
+        let id = beginBackgroundTask { [weak self] in
+            // Expiry ends this task now; the beat is abandoned with it.
+            if let begun = begun { self?.endPausedBeatTask(begun) }
+        }
+        guard id >= 0 else { return nil }
+        begun = id
+        pausedBeatTaskIds.insert(id)
+        return id
+    }
+
+    /// Ends the task once. A second call for the same id (expiry after completion, or the reverse) does nothing.
+    private func endPausedBeatTask(_ id: Int) {
+        guard pausedBeatTaskIds.remove(id) != nil else { return }
+        endBackgroundTask(id)
+    }
+
+    /// Starts one best-effort "paused" heartbeat (under the background task), then applies the stop. The beat runs
+    /// beside the queue, so it never delays the stop or a send in flight, and a failure is ignored.
+    private func pausedBeatThenReconcile(_ taskId: Int?) async {
+        if let loop, let beat = await loop.startPausedHeartbeat() {
+            Task { [weak self] in
+                await beat.value
+                if let taskId { self?.endPausedBeatTask(taskId) }
+            }
+        } else if let taskId {
+            endPausedBeatTask(taskId)
+        }
+        // Back in the foreground before the stop ran: the loop stays up, so it must report "active" again.
+        if isForeground, let loop { await loop.resumeAfterPausedHeartbeat() }
+        await reconcile()
     }
 
     /// Waits until every queued lifecycle change has been applied.
@@ -432,6 +483,7 @@ final class HostController {
         authBlocked = false
         enrollment = .enrolled
         printerName = issued.printer?.name
+        handedOverFrom = issued.handedOverFrom
         if let config = try? await newRelay.config(), let first = config.printers.first {
             printerName = first.name
         }
@@ -452,6 +504,7 @@ final class HostController {
         authBlocked = false
         error = nil
         printerName = nil
+        handedOverFrom = nil
         status = HostStatus()
         enrollment = .notEnrolled
     }

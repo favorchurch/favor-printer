@@ -51,6 +51,8 @@ struct RelayClientTests {
         #expect(heartbeatBody["appVersion"] as? String == "1.2.3")
         #expect(heartbeatBody["osVersion"] as? String == "iPadOS 18")
         #expect(heartbeatBody["printerAttached"] as? Bool == true)
+        #expect(heartbeatBody["hostKind"] as? String == "ipad")
+        #expect(heartbeatBody["lifecycle"] as? String == "active")
         let probe = try #require((heartbeatBody["probes"] as? [[String: Any]])?.first)
         #expect(probe["printerId"] as? String == "p1")
         #expect(probe["reachable"] as? Bool == true)
@@ -93,7 +95,7 @@ struct RelayClientTests {
         #expect(request.timeoutInterval == 10)
         let bodyData = try #require(request.httpBody)
         let body = try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: String])
-        #expect(body == ["code": "123456", "usbSerial": "serial-1", "appVersion": "1.0", "osVersion": "iPadOS 18"])
+        #expect(body == ["code": "123456", "usbSerial": "serial-1", "appVersion": "1.0", "osVersion": "iPadOS 18", "hostKind": "ipad"])
     }
 
     @Test func enrollIgnoresMalformedOptionalLabelAndPrinterMetadata() async throws {

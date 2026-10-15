@@ -6,7 +6,15 @@ enum RelayFailure: Error, Sendable, Equatable {
     case stale
     case insecureBaseURL
     case invalidResponse
+    /// A claim was refused because an admin handed these printers to another host. Terminal for them: not a network error.
+    case printerHandedOver([String])
 }
+
+/// What kind of host this is, sent with enroll and every heartbeat. Unknown values from the cloud decode to nil.
+enum RelayHostKind: String, Codable, Sendable { case mac, ipad }
+
+/// A heartbeat's lifecycle. Absent means active to the cloud.
+enum RelayLifecycle: String, Codable, Sendable { case active, paused }
 
 enum RelayEnrollReason: String, Codable, Sendable, CaseIterable {
     case targetNotFound = "target_not_found"
@@ -17,6 +25,8 @@ enum RelayEnrollReason: String, Codable, Sendable, CaseIterable {
     case serialDuplicateHasJobs = "serial_duplicate_has_jobs"
     case serialInUse = "serial_in_use"
     case printerNameTaken = "printer_name_taken"
+    /// The printer's current host is live. An admin must confirm a handover and issue a new code.
+    case hostActive = "host_active"
     case unknown
 }
 
@@ -36,6 +46,7 @@ struct RelayEnrollRequest: Encodable, Sendable, Equatable {
     let usbSerial: String
     let appVersion: String
     let osVersion: String
+    var hostKind: RelayHostKind = .ipad
 }
 
 struct RelayPrinter: Codable, Sendable, Equatable {
@@ -50,10 +61,12 @@ struct RelayCredentials: Decodable, Sendable, Equatable, CustomStringConvertible
     let token: String
     let label: String?
     let printer: RelayEnrolledPrinter?
+    /// Set when this enrollment moved the printer off another host. Absent from an older cloud.
+    let handedOverFrom: RelayHandedOverFrom?
 
     var description: String { "RelayCredentials(relayId: \(relayId), token: <redacted>)" }
     var debugDescription: String { description }
-    var customMirror: Mirror { Mirror(self, children: ["relayId": relayId, "label": label as Any, "printer": printer as Any]) }
+    var customMirror: Mirror { Mirror(self, children: ["relayId": relayId, "label": label as Any, "printer": printer as Any, "handedOverFrom": handedOverFrom as Any]) }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: Keys.self)
@@ -62,9 +75,41 @@ struct RelayCredentials: Decodable, Sendable, Equatable, CustomStringConvertible
         label = (try? container.decode(String.self, forKey: .label))
             .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         printer = try? container.decodeIfPresent(RelayEnrolledPrinter.self, forKey: .printer)
+        handedOverFrom = try? container.decodeIfPresent(RelayHandedOverFrom.self, forKey: .handedOverFrom)
     }
 
-    private enum Keys: String, CodingKey { case relayId, token, label, printer }
+    private enum Keys: String, CodingKey { case relayId, token, label, printer, handedOverFrom }
+}
+
+/// The host an enrollment took the printer from: its kind and label, never its id. Either may be absent or unknown.
+struct RelayHandedOverFrom: Decodable, Sendable, Equatable {
+    let hostKind: RelayHostKind?
+    let label: String?
+
+    init(hostKind: RelayHostKind?, label: String?) {
+        self.hostKind = hostKind
+        self.label = label
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Keys.self)
+        hostKind = (try? container.decodeIfPresent(String.self, forKey: .hostKind)).flatMap(RelayHostKind.init(rawValue:))
+        label = (try? container.decodeIfPresent(String.self, forKey: .label))
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+    }
+
+    private enum Keys: String, CodingKey { case hostKind, label }
+
+    /// "Took over from Mac 'Front desk'", or a shorter form when the cloud sent less.
+    var summary: String {
+        let kind = hostKind.map { $0 == .mac ? "Mac" : "iPad" }
+        switch (kind, label) {
+        case let (kind?, label?): return "Took over from \(kind) '\(label)'"
+        case (_?, nil): return "Took over from \(hostKind == .mac ? "a Mac" : "an iPad")"
+        case let (nil, label?): return "Took over from '\(label)'"
+        case (nil, nil): return "Took over from another host"
+        }
+    }
 }
 
 struct RelayEnrolledPrinter: Decodable, Sendable, Equatable {
@@ -103,6 +148,23 @@ struct RelayJob: Decodable, Sendable, Equatable {
 struct RelayClaimResponse: Decodable, Sendable, Equatable {
     let jobs: [RelayJob]
     let rejectedPrinterIds: [String]
+    /// The rejected ids an admin handed to another host. Absent from an older cloud.
+    let handedOverPrinterIds: [String]
+
+    init(jobs: [RelayJob], rejectedPrinterIds: [String], handedOverPrinterIds: [String] = []) {
+        self.jobs = jobs
+        self.rejectedPrinterIds = rejectedPrinterIds
+        self.handedOverPrinterIds = handedOverPrinterIds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Keys.self)
+        jobs = try container.decode([RelayJob].self, forKey: .jobs)
+        rejectedPrinterIds = try container.decode([String].self, forKey: .rejectedPrinterIds)
+        handedOverPrinterIds = (try? container.decodeIfPresent([String].self, forKey: .handedOverPrinterIds)) ?? []
+    }
+
+    private enum Keys: String, CodingKey { case jobs, rejectedPrinterIds, handedOverPrinterIds }
 }
 
 struct RelayProbe: Encodable, Sendable, Equatable {
@@ -121,6 +183,8 @@ struct RelayHeartbeatRequest: Encodable, Sendable, Equatable {
     let appVersion: String?
     let osVersion: String?
     let printerAttached: Bool?
+    var hostKind: RelayHostKind? = .ipad
+    var lifecycle: RelayLifecycle? = .active
 }
 
 struct RelayHeartbeatResponse: Decodable, Sendable, Equatable {
@@ -180,6 +244,7 @@ enum RelayReportOutcome: String, Encodable, Sendable { case sent, failed, ambigu
 private struct RelayErrorBody: Decodable {
     let error: String?
     let reason: String?
+    let printerIds: [String]?
 }
 
 private struct RelayStatusBody: Decodable { let status: String }
@@ -313,6 +378,11 @@ struct RelayAPIClient: Sendable, CustomStringConvertible, CustomDebugStringConve
         guard let http = response as? HTTPURLResponse else { throw RelayFailure.network }
         if http.statusCode == 401 { throw RelayFailure.auth }
         guard (200..<300).contains(http.statusCode) else {
+            if path == "/claim", http.statusCode == 403,
+               let body = try? JSONDecoder().decode(RelayErrorBody.self, from: data),
+               body.error == "forbidden", body.reason == "printer_handed_over" {
+                throw RelayFailure.printerHandedOver(body.printerIds ?? [])
+            }
             if http.statusCode >= 500 { throw RelayFailure.network }
             if path.hasPrefix("/jobs/"), [403, 404, 409].contains(http.statusCode) { throw RelayFailure.stale }
             throw RelayFailure.network

@@ -1124,6 +1124,8 @@ struct HostControllerLifecycleTests {
         controller.scenePhaseChanged(.background)
         await controller.settled()
         #expect(controller.isLoopRunning == false)
+        // The one "paused" heartbeat goes out beside the stop; after it nothing more is called.
+        #expect(await eventually { await relay.heartbeats.last?.lifecycle == .paused })
         let calls = await relay.calls.count
         try await Task.sleep(for: .milliseconds(100))
         #expect(await relay.calls.count == calls, "the loop kept calling the relay in the background")
