@@ -41,6 +41,14 @@ struct HostStatusView: View {
                     experimentRow("Background task expired", host.backgroundExperiment.expiredAt)
                     experimentRow("Last background heartbeat", host.backgroundExperiment.lastHeartbeatAt)
                     experimentRow("Returned to foreground", host.backgroundExperiment.returnedToForegroundAt)
+                    ForEach(host.backgroundExperiment.audioEvents.indices, id: \.self) { index in
+                        let event = host.backgroundExperiment.audioEvents[index]
+                        HostRow(
+                            title: event.name.prefix(1).uppercased() + event.name.dropFirst(),
+                            value: event.at.formatted(date: .abbreviated, time: .standard),
+                            id: "host-experiment-audio-\(index)"
+                        )
+                    }
                 }
             }
             Section("Printer diagnostics") {
