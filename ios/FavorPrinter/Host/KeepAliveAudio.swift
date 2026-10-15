@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import Observation
 
 /// What the audio session reports while the keep-alive experiment holds it.
 enum KeepAliveAudioInterruption: Sendable, Equatable {
@@ -7,7 +8,7 @@ enum KeepAliveAudioInterruption: Sendable, Equatable {
     case ended
 }
 
-/// The DEBUG keep-alive audio experiment's seam. `HostController` drives it from scene phase changes; the real one
+/// The keep-alive audio seam (DEBUG experiment and the Internal build). `HostController` drives it from scene phase changes; the real one
 /// plays a looping silent buffer, tests use a fake.
 @MainActor
 protocol KeepAliveAudioSession: AnyObject {
@@ -31,7 +32,26 @@ enum HostKeepAliveAudio {
     }
 }
 
-#if DEBUG
+/// The "Keep running in background" setting. On by default, persisted in UserDefaults. Only an Internal build (or a
+/// test) hands one to `HostController`; without it the host is foreground-only.
+@MainActor
+@Observable
+final class KeepAlivePreference {
+    static let defaultsKey = "FavorPrinter.KeepRunningInBackground"
+
+    @ObservationIgnored private let defaults: UserDefaults
+
+    var isEnabled: Bool {
+        didSet { defaults.set(isEnabled, forKey: Self.defaultsKey) }
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        isEnabled = defaults.object(forKey: Self.defaultsKey) as? Bool ?? true
+    }
+}
+
+#if DEBUG || INTERNAL_KEEPALIVE
 /// Plays a silent looping buffer through a `.playback` + `.mixWithOthers` session. Unsupported experiment: App Store
 /// review (guideline 2.5.4) rejects silent-audio keep-alive.
 @MainActor

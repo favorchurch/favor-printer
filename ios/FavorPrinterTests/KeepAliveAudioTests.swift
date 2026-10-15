@@ -168,4 +168,96 @@ struct KeepAliveAudioTests {
         #expect(data.dropFirst(44).allSatisfy { $0 == 0 })
     }
 }
+
+@MainActor
+struct KeepAliveToggleTests {
+    private func makeController(
+        audio: FakeKeepAliveAudio, preference: KeepAlivePreference, harness: AudioTaskHarness = AudioTaskHarness()
+    ) throws -> HostController {
+        // Experiment off: this is the supported (Internal build) path, with no DEBUG experiment involved.
+        HostController(
+            backend: .real(
+                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                makeRelay: { _ in FakeRelay() },
+                enroll: { _ in throw RelayEnrollFailure.network }
+            ),
+            transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
+            identity: testIdentity, timing: fastTiming,
+            beginBackgroundTask: { harness.begin($0) }, endBackgroundTask: { _ in },
+            keepAliveAudio: audio, keepAlivePreference: preference
+        )
+    }
+
+    private func makeDefaults() throws -> (UserDefaults, String) {
+        let name = "keepalive-toggle-\(UUID().uuidString)"
+        return (try #require(UserDefaults(suiteName: name)), name)
+    }
+
+    @Test func toggleDefaultsOnAndPersists() throws {
+        let (defaults, name) = try makeDefaults()
+        let preference = KeepAlivePreference(defaults: defaults)
+        #expect(preference.isEnabled)
+        preference.isEnabled = false
+        #expect(!KeepAlivePreference(defaults: defaults).isEnabled)
+        preference.isEnabled = true
+        #expect(KeepAlivePreference(defaults: defaults).isEnabled)
+        defaults.removePersistentDomain(forName: name)
+    }
+
+    @Test func toggleOffNeverStartsAudioAndStopsTheLoopInTheBackground() async throws {
+        let (defaults, name) = try makeDefaults()
+        let preference = KeepAlivePreference(defaults: defaults)
+        preference.isEnabled = false
+        let audio = FakeKeepAliveAudio()
+        let controller = try makeController(audio: audio, preference: preference)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(controller.isLoopRunning)
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        #expect(!controller.isLoopRunning, "toggle off is the foreground-only loop")
+        #expect(!controller.isKeepAliveAudioActive)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(audio.calls.isEmpty)
+        defaults.removePersistentDomain(forName: name)
+    }
+
+    @Test func toggleOnStartsOnBackgroundAndStopsOnActive() async throws {
+        let (defaults, name) = try makeDefaults()
+        let audio = FakeKeepAliveAudio()
+        let controller = try makeController(audio: audio, preference: KeepAlivePreference(defaults: defaults))
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(audio.calls.isEmpty)
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        #expect(audio.calls == ["start"])
+        #expect(controller.isKeepAliveAudioActive)
+        audio.interrupt(.ended)
+        #expect(audio.calls == ["start", "resume"])
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(audio.calls == ["start", "resume", "stop"])
+        #expect(!controller.isKeepAliveAudioActive)
+        defaults.removePersistentDomain(forName: name)
+    }
+
+    @Test func loopContinuesInTheBackgroundWhileKeepAliveIsActive() async throws {
+        let (defaults, name) = try makeDefaults()
+        let audio = FakeKeepAliveAudio()
+        let controller = try makeController(audio: audio, preference: KeepAlivePreference(defaults: defaults))
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        #expect(controller.isLoopRunning)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(controller.isLoopRunning)
+        defaults.removePersistentDomain(forName: name)
+    }
+}
 #endif
