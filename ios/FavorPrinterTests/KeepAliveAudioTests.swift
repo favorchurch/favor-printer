@@ -8,8 +8,12 @@ private final class FakeKeepAliveAudio: KeepAliveAudioSession {
     var onInterruption: (@MainActor (KeepAliveAudioInterruption) -> Void)?
     private(set) var calls: [String] = []
     var failResume = false
+    var failStart = false
 
-    func start() throws { calls.append("start") }
+    func start() throws {
+        calls.append("start")
+        if failStart { throw URLError(.unknown) }
+    }
     func resume() throws {
         calls.append("resume")
         if failResume { throw URLError(.unknown) }
@@ -172,13 +176,14 @@ struct KeepAliveAudioTests {
 @MainActor
 struct KeepAliveToggleTests {
     private func makeController(
-        audio: FakeKeepAliveAudio, preference: KeepAlivePreference, harness: AudioTaskHarness = AudioTaskHarness()
+        audio: FakeKeepAliveAudio, preference: KeepAlivePreference, harness: AudioTaskHarness = AudioTaskHarness(),
+        relay: FakeRelay = FakeRelay()
     ) throws -> HostController {
         // Experiment off: this is the supported (Internal build) path, with no DEBUG experiment involved.
         HostController(
             backend: .real(
                 credentials: SecretHostCredentialStore(secrets: storedCredential()),
-                makeRelay: { _ in FakeRelay() },
+                makeRelay: { _ in relay },
                 enroll: { _ in throw RelayEnrollFailure.network }
             ),
             transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
@@ -257,6 +262,58 @@ struct KeepAliveToggleTests {
         controller.scenePhaseChanged(.active)
         await controller.settled()
         #expect(controller.isLoopRunning)
+        defaults.removePersistentDomain(forName: name)
+    }
+
+    @Test func keepAliveOnBackgroundedSendsNoPausedBeatAndActiveBeatsContinue() async throws {
+        let (defaults, name) = try makeDefaults()
+        let relay = FakeRelay()
+        let audio = FakeKeepAliveAudio()
+        let controller = try makeController(audio: audio, preference: KeepAlivePreference(defaults: defaults), relay: relay)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.count >= 1 })
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        let before = await relay.heartbeats.count
+        #expect(await eventually { await relay.heartbeats.count > before + 1 })
+        #expect(await relay.heartbeats.allSatisfy { $0.lifecycle == .active })
+        #expect(controller.isLoopRunning)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        defaults.removePersistentDomain(forName: name)
+    }
+
+    @Test func keepAliveOffBackgroundedSendsThePausedBeat() async throws {
+        let (defaults, name) = try makeDefaults()
+        let preference = KeepAlivePreference(defaults: defaults)
+        preference.isEnabled = false
+        let relay = FakeRelay()
+        let controller = try makeController(audio: FakeKeepAliveAudio(), preference: preference, relay: relay)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.count >= 1 })
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.last?.lifecycle == .paused })
+        #expect(!controller.isLoopRunning)
+        defaults.removePersistentDomain(forName: name)
+    }
+
+    @Test func audioStartFailureSendsThePausedBeat() async throws {
+        let (defaults, name) = try makeDefaults()
+        let relay = FakeRelay()
+        let audio = FakeKeepAliveAudio()
+        audio.failStart = true
+        let controller = try makeController(audio: audio, preference: KeepAlivePreference(defaults: defaults), relay: relay)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.count >= 1 })
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.last?.lifecycle == .paused })
+        #expect(!controller.isKeepAliveAudioActive)
+        #expect(!controller.isLoopRunning)
         defaults.removePersistentDomain(forName: name)
     }
 }
