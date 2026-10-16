@@ -1,5 +1,7 @@
 # Favor Printer for iPad
 
+Installing on an iPad (operators and maintainers): see [docs/IPAD-INSTALL.md](../docs/IPAD-INSTALL.md).
+
 iPad-only SwiftUI app (display name "Favor Printer", scheme `FavorPrinter`, Swift 6 strict concurrency,
 iPadOS 17+). It is a print relay for the iPad's USB printer: it launches straight into the Printer Host screen,
 enrolls with a one-time code, claims print jobs from the cloud relay and writes them to the printer through a
