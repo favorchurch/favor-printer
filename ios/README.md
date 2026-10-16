@@ -114,13 +114,17 @@ Prerequisites (none of them can be done from this repo):
 - **D1:** Apple has approved the DriverKit USB transport entitlement for Zebra's vendor ID 0x0A5F (2655) on team
   3JJ4492TV8, and it appears on the App Store distribution profile for `church.favor.printer.ios.driver`. Without it
   the TestFlight archive cannot be signed for distribution, and a development profile rejects the integer `2655`.
-- An App Store Connect app record for bundle ID `church.favor.printer.ios`.
+- An App Store Connect app record for bundle ID `church.favor.printer.ios`. Its app ID has the DriverKit
+  communicates-with-drivers capability (`com.apple.developer.driverkit.communicates-with-drivers`, from
+  `FavorPrinter.entitlements`) enabled, and it appears on the app's App Store distribution profile.
 - An Apple Distribution certificate for the team in this Mac's keychain (or a cloud-managed one through
   `-allowProvisioningUpdates`), and an App Store Connect API key (`AuthKey_<id>.p8`) for the upload.
 
 Build number: App Store Connect rejects a build number it has seen for the same version. Pass the commit count of `HEAD`
 at archive time (it overrides `CURRENT_PROJECT_VERSION` for the app and the dext), so two uploads never collide. Bump
-`MARKETING_VERSION` in `project.yml` for a new version. Archive from a clean checkout of the commit to upload.
+`MARKETING_VERSION` in `project.yml` for a new version. Archive from a clean, full (non-shallow) checkout of a merged
+`main` commit: the count is monotonic only on the full history of `main`, so run `git fetch --unshallow` first if the
+clone is shallow.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
