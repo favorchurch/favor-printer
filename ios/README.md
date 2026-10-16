@@ -62,6 +62,9 @@ fake transport or diagnostics) and talks to **production RSVP** (`https://rsvp.f
 "Keep running in background" toggle (on by default, saved in `UserDefaults`). While it is on, the app plays a looping
 silent buffer after it goes to the background, stops it on return, and the host loop keeps running; the screen shows
 "Keep-alive: Active". With the toggle off the app is foreground-only. Job semantics are unchanged.
+The audio also stops when there is no relay (not enrolled) or the cloud refuses the credential. An audio interruption
+while backgrounded sends the "paused" heartbeat at once and "active" again when the audio resumes; a failed resume
+falls back to the plain background behavior.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -74,6 +77,9 @@ xcodebuild -exportArchive -archivePath /tmp/fp-internal/FavorPrinter.xcarchive \
 ```
 
 The result is `/tmp/fp-internal/export/FavorPrinter.ipa`.
+
+Xcode's Product > Archive uses the scheme's archive configuration (Release), so it does not produce this build: use the
+`-configuration Internal` command line above.
 
 - Every iPad's UDID must be in the team's development provisioning profile. Connect the iPad to the Mac and build with
   `-allowProvisioningDeviceRegistration`, or add the UDID in the developer portal. Install with
@@ -218,8 +224,8 @@ no labels or ZPL. The flag is ignored in Release and does not make background pr
 A second DEBUG experiment, `-FavorHostKeepAliveAudio`, implies the first and also plays a looping silent buffer
 (`.playback`, `.mixWithOthers`) while backgrounded, to try to keep the app running past the background task. Audio
 starts on `.background`, stops on `.active` and re-activates after an interruption; these events are recorded in the
-Background experiment section. The `audio` UIBackgroundModes entry exists only in the Debug Info.plist
-(`Config/Info-Debug.plist`). This is unsupported: App Store review (guideline 2.5.4) rejects silent-audio keep-alive,
+Background experiment section. The `audio` UIBackgroundModes entry exists only in the Debug and Internal Info.plists
+(`Config/Info-Debug.plist`, `Config/Info-Internal.plist`), never in Release. This is unsupported: App Store review (guideline 2.5.4) rejects silent-audio keep-alive,
 so it suits only internal or ad hoc distribution. The flag is ignored in Release.
 
 ### Fake relay and fake transport (DEBUG)
