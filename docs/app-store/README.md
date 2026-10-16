@@ -22,6 +22,8 @@ This release adds the Mac onboarding work to the same app: first-run and re-enro
 
 The native iPad app is implemented in this repository at `ios/`: a SwiftUI, iPad-only iPadOS target (Xcode scheme `FavorPrinter`, display name Favor Printer) with unit tests over a mocked transport and simulator UI tests, run with `xcodebuild test` as documented in `ios/README.md`. Its locked first-release scope is Favor Printer check-in for Rock event and Kids check-in, online only, printing through the existing cloud to Mac relay, with device registration and approved check-in device grants following [rsvp docs/native-api/v1.md](https://github.com/favorchurch/rsvp.favor.church/blob/8a560ce305ce25252e28ce92886ecb3b9fd995bc/docs/native-api/v1.md). iPad printer hosting is a committed later update of that same app, gated on hardware and iPadOS lifecycle proof.
 
+The internal iPad keep-alive build is separate from this release. It may go to internal TestFlight testers only (see [IPAD-INSTALL.md](../IPAD-INSTALL.md)) and must never be an external TestFlight build or the binary submitted for App Review (guideline 2.5.4).
+
 ## Draft package
 
 - [Store metadata](STORE-METADATA-DRAFT.md): descriptions and fields still to confirm
