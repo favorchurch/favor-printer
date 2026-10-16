@@ -8,12 +8,19 @@ struct BackgroundExperimentJob: Codable, Sendable, Equatable {
     let outcome: String
 }
 
+/// A keep-alive audio session event: "audio started", "audio stopped", "audio interrupted", "audio resumed", or a failure.
+struct BackgroundExperimentAudioEvent: Codable, Sendable, Equatable {
+    let at: Date
+    let name: String
+}
+
 struct BackgroundExperimentState: Codable, Sendable, Equatable {
     var backgroundedAt: Date?
     var jobs: [BackgroundExperimentJob] = []
     var expiredAt: Date?
     var lastHeartbeatAt: Date?
     var returnedToForegroundAt: Date?
+    var audioEvents: [BackgroundExperimentAudioEvent] = []
 
     static let defaultsKey = "FavorPrinter.BackgroundExperiment"
 
@@ -175,6 +182,11 @@ final class HostController {
     private let experimentDefaults: UserDefaults
     private let beginBackgroundTask: (@escaping @MainActor () -> Void) -> Int
     private let endBackgroundTask: (Int) -> Void
+    private let keepAliveAudio: (any KeepAliveAudioSession)?
+    /// nil when this build has no supported keep-alive (everything but Internal): the host is foreground-only.
+    let keepAlivePreference: KeepAlivePreference?
+    /// True while the silent audio is playing, so the host screen can say keep-alive is active.
+    private(set) var isKeepAliveAudioActive = false
     private(set) var backgroundExperiment: BackgroundExperimentState
     @ObservationIgnored private var backgroundTaskId: Int?
     /// Background tasks begun for a "paused" beat and not yet ended. Each begin has exactly one end.
@@ -202,7 +214,9 @@ final class HostController {
             let identifier = UIApplication.shared.beginBackgroundTask(withName: "FavorPrinter host", expirationHandler: expiration)
             return identifier == .invalid ? -1 : identifier.rawValue
         },
-        endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) }
+        endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) },
+        keepAliveAudio: (any KeepAliveAudioSession)? = nil,
+        keepAlivePreference: KeepAlivePreference? = nil
     ) {
         self.backend = backend
         self.transport = transport
@@ -214,8 +228,11 @@ final class HostController {
         self.experimentDefaults = experimentDefaults
         self.beginBackgroundTask = beginBackgroundTask
         self.endBackgroundTask = endBackgroundTask
+        self.keepAlivePreference = keepAlivePreference
+        self.keepAliveAudio = (backgroundExperimentEnabled || keepAlivePreference != nil) ? keepAliveAudio : nil
         self.backgroundExperiment = ((experimentDefaults.object(forKey: BackgroundExperimentState.defaultsKey) as? Data)
             .flatMap { try? JSONDecoder().decode(BackgroundExperimentState.self, from: $0) }) ?? BackgroundExperimentState()
+        self.keepAliveAudio?.onInterruption = { [weak self] event in self?.keepAliveAudioInterrupted(event) }
     }
 
     /// Builds the controller for this launch. The relay is chosen by `arguments` alone: `-FavorHostFakeRelay` (DEBUG
@@ -251,7 +268,9 @@ final class HostController {
                 ),
                 transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
                 spool: spool, identity: identity, timing: timing,
-                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments)
+                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments) || HostKeepAliveAudio.enabled(arguments: arguments),
+                keepAliveAudio: Self.makeKeepAliveAudio(arguments: arguments),
+                keepAlivePreference: Self.makeKeepAlivePreference()
             )
         case .fake:
             #if DEBUG
@@ -262,12 +281,32 @@ final class HostController {
                 backend: .fake(FakeRelay.demo()),
                 transport: transport ?? HostTransportMode.resolve(arguments: arguments).makeTransport(),
                 spool: try HostSpool(directory: directory), identity: identity, timing: timing,
-                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments)
+                backgroundExperimentEnabled: HostBackgroundExperiment.enabled(arguments: arguments) || HostKeepAliveAudio.enabled(arguments: arguments),
+                keepAliveAudio: Self.makeKeepAliveAudio(arguments: arguments),
+                keepAlivePreference: Self.makeKeepAlivePreference()
             )
             #else
             preconditionFailure("the fake relay is not compiled into this build")
             #endif
         }
+    }
+
+    private static func makeKeepAliveAudio(arguments: [String]) -> (any KeepAliveAudioSession)? {
+        #if INTERNAL_KEEPALIVE
+        return SilentLoopAudioSession()
+        #elseif DEBUG
+        return HostKeepAliveAudio.enabled(arguments: arguments) ? SilentLoopAudioSession() : nil
+        #else
+        return nil
+        #endif
+    }
+
+    private static func makeKeepAlivePreference() -> KeepAlivePreference? {
+        #if INTERNAL_KEEPALIVE
+        return KeepAlivePreference()
+        #else
+        return nil
+        #endif
     }
 
     #if DEBUG
@@ -341,12 +380,22 @@ final class HostController {
                 backgroundEnqueueTask = nil
             }
 #endif
+            stopKeepAliveAudio()
         case .background:
             isForeground = false
             var keepsRunning = false
 #if DEBUG
             keepsRunning = backgroundExperimentEnabled
 #endif
+            if !keepsRunning, keepAlivePreference?.isEnabled == true {
+                // Keep-alive audio holds the app running, so the loop stays up and keeps sending "active" beats.
+                // If the audio does not start, fall through to the paused beat exactly as without keep-alive.
+                startKeepAliveAudio()
+                if isKeepAliveAudioActive {
+                    schedule { await self.reconcile() }
+                    return
+                }
+            }
             if !keepsRunning {
                 // The beat is prepared in the lifecycle queue ahead of the stop, so a stop cannot win the race.
                 let taskId = beginPausedBeatTask()
@@ -360,16 +409,22 @@ final class HostController {
                 backgroundExperiment.returnedToForegroundAt = nil
                 lastExperimentJobAt = status.lastJobAt
                 persistBackgroundExperiment()
+                startKeepAliveAudio()
                 beginExperimentBackgroundTask()
                 enqueueSyntheticLabelsWhileBackgrounded()
                 schedule { await self.reconcile() }
                 return
             }
 #endif
+            startKeepAliveAudio()
         case .inactive: return
         @unknown default: return
         }
-        schedule { await self.reconcile() }
+        schedule {
+            // An interruption while backgrounded left the loop up with a "paused" beat sent: report "active" again.
+            if self.isForeground { await self.loop?.resumeAfterPausedHeartbeat() }
+            await self.reconcile()
+        }
     }
 
     /// Begins the short background task a "paused" beat runs under. Nil when the system refused one.
@@ -532,7 +587,9 @@ final class HostController {
     /// cloud has not refused the credential.
     private func reconcile() async {
         resolveRelayIfNeeded()
-        let shouldRun = (isForeground || isBackgroundExperimentRunning) && relay != nil && !authBlocked
+        // The audio only exists to keep a running loop alive: without a relay or after an auth refusal, let it go.
+        if !isForeground, relay == nil || authBlocked { stopKeepAliveAudio() }
+        let shouldRun = (isForeground || isKeepAliveAudioActive || isBackgroundExperimentRunning) && relay != nil && !authBlocked
         guard let loop else { return }
         if shouldRun {
             await loop.start()
@@ -544,7 +601,8 @@ final class HostController {
 
     private var isBackgroundExperimentRunning: Bool {
 #if DEBUG
-        backgroundExperimentEnabled && backgroundTaskId != nil && backgroundExperiment.backgroundedAt != nil && backgroundExperiment.expiredAt == nil
+        backgroundExperimentEnabled && backgroundExperiment.backgroundedAt != nil
+            && (isKeepAliveAudioActive || (backgroundTaskId != nil && backgroundExperiment.expiredAt == nil))
 #else
         false
 #endif
@@ -629,6 +687,68 @@ final class HostController {
             authBlocked = true
             error = .authRejected
             isLoopRunning = false
+            if !isForeground { stopKeepAliveAudio() }
+        }
+    }
+
+    // MARK: Keep-alive audio
+
+    private func recordAudioEvent(_ name: String) {
+#if DEBUG
+        guard backgroundExperimentEnabled else { return }
+        backgroundExperiment.audioEvents.append(BackgroundExperimentAudioEvent(at: now(), name: name))
+        persistBackgroundExperiment()
+#endif
+    }
+
+    private func startKeepAliveAudio() {
+        guard let keepAliveAudio, !isKeepAliveAudioActive,
+              backgroundExperimentEnabled || keepAlivePreference?.isEnabled == true else { return }
+        do {
+            try keepAliveAudio.start()
+            isKeepAliveAudioActive = true
+            recordAudioEvent("audio started")
+        } catch {
+            recordAudioEvent("audio start failed")
+        }
+    }
+
+    private func stopKeepAliveAudio() {
+        guard let keepAliveAudio, isKeepAliveAudioActive else { return }
+        isKeepAliveAudioActive = false
+        keepAliveAudio.stop()
+        recordAudioEvent("audio stopped")
+    }
+
+    private func keepAliveAudioInterrupted(_ event: KeepAliveAudioInterruption) {
+        guard let keepAliveAudio, isKeepAliveAudioActive else { return }
+        switch event {
+        case .began:
+            recordAudioEvent("audio interrupted")
+            if !isForeground {
+                // The paused audio no longer holds the app awake, so tell the cloud now. The loop stays up for the resume.
+                let taskId = beginPausedBeatTask()
+                schedule { await self.pausedBeatThenReconcile(taskId) }
+            }
+        case .ended:
+            do {
+                try keepAliveAudio.resume()
+                recordAudioEvent("audio resumed")
+                if !isForeground {
+                    schedule {
+                        await self.loop?.resumeAfterPausedHeartbeat()
+                        await self.reconcile()
+                    }
+                }
+            } catch {
+                recordAudioEvent("audio resume failed")
+                if !isForeground, !isBackgroundExperimentRunning {
+                    // The audio is gone and the loop is about to stop: report "paused" like a plain background.
+                    stopKeepAliveAudio()
+                    let taskId = beginPausedBeatTask()
+                    schedule { await self.pausedBeatThenReconcile(taskId) }
+                }
+            }
         }
     }
 
@@ -661,6 +781,11 @@ final class HostController {
         guard !isForeground, backgroundExperimentEnabled else { return }
         backgroundExperiment.expiredAt = now()
         persistBackgroundExperiment()
+        if isKeepAliveAudioActive {
+            // The audio session keeps the app running: the loop and the synthetic queue continue.
+            schedule { self.endExperimentBackgroundTask() }
+            return
+        }
         backgroundEnqueueTask?.cancel()
         backgroundEnqueueTask = nil
         schedule {

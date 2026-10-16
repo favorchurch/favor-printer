@@ -7,10 +7,12 @@ options:
 
 configs:
   Debug: debug
+  Internal: release
   Release: release
 
 configFiles:
   Debug: Config/Debug.xcconfig
+  Internal: Config/Internal.xcconfig
   Release: Config/Release.xcconfig
 
 settings:
@@ -30,11 +32,15 @@ settings:
       ONLY_ACTIVE_ARCH: YES
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG"
       SWIFT_OPTIMIZATION_LEVEL: "-Onone"
-    Release:
+    Release: &releaseSettings
       DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
       ENABLE_NS_ASSERTIONS: NO
       SWIFT_COMPILATION_MODE: wholemodule
       VALIDATE_PRODUCT: YES
+    # Internal is Release plus the supported silent-audio keep-alive. Development-signed, never for the App Store.
+    Internal:
+      <<: *releaseSettings
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTERNAL_KEEPALIVE"
 
 targets:
   FavorPrinter:
@@ -64,7 +70,6 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_FILE: Config/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Favor Printer
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
@@ -77,6 +82,14 @@ targets:
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         TARGETED_DEVICE_FAMILY: "2"
+      configs:
+        # UIBackgroundModes `audio` exists only in Debug (experiment) and Internal (supported keep-alive).
+        Debug:
+          INFOPLIST_FILE: Config/Info-Debug.plist
+        Internal:
+          INFOPLIST_FILE: Config/Info-Internal.plist
+        Release:
+          INFOPLIST_FILE: Config/Info.plist
 
   FavorPrinterDriver:
     type: driver-extension
@@ -103,6 +116,8 @@ targets:
         MARKETING_VERSION: 0.1.0
         OTHER_LDFLAGS: ["-framework", "DriverKit", "-framework", "USBDriverKit"]
         PRODUCT_BUNDLE_IDENTIFIER: church.favor.printer.ios.driver
+        # The dext ships inside the app (SystemExtensions); installing it as its own archive product makes the archive non-exportable.
+        SKIP_INSTALL: YES
         SDKROOT: driverkit
         SUPPORTED_PLATFORMS: driverkit
 

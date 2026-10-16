@@ -700,7 +700,7 @@ private func relayServer(enroll: MockURLProtocol.Reply = .json(200, enrolledJSON
     }
 }
 
-private func storedCredential(_ token: String = "stored-secret-token") -> InMemorySecretStore {
+func storedCredential(_ token: String = "stored-secret-token") -> InMemorySecretStore {
     InMemorySecretStore(#"{"relayId":"relay-1","token":"\#(token)"}"#)
 }
 

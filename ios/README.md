@@ -21,6 +21,7 @@ host of the relay API (`/api/printing/relay/*`). The app refuses to start unless
 | Configuration | URL |
 | --- | --- |
 | Debug (default for simulator runs and tests) | `https://rsvp-preview.favor.church` (confirm the preview host before first device install) |
+| Internal (development-signed, Favor iPads only) | `https://rsvp.favor.church` |
 | Release | `https://rsvp.favor.church` |
 
 Override locally with an untracked `Config/Local.xcconfig`, for example
@@ -52,6 +53,42 @@ Keychain (`UITestBackend.swift`, `#if DEBUG` only) and checks every control on t
 Unit tests use a `URLProtocol` mock (`FavorPrinterTests/TestSupport.swift`) and need no network. Keychain tests use a
 unique service name per test and delete it afterwards.
 
+## Internal build
+
+The `Internal` configuration is Release plus a supported background keep-alive: it defines `INTERNAL_KEEPALIVE`, uses
+`Config/Info-Internal.plist` (`UIBackgroundModes` = `audio`; Release has none) and is development-signed (team
+3JJ4492TV8, automatic) with the same dext entitlements as Debug (`idVendor` `"*"`). It has no DEBUG code (no fake relay,
+fake transport or diagnostics) and talks to **production RSVP** (`https://rsvp.favor.church`). The host screen has a
+"Keep running in background" toggle (on by default, saved in `UserDefaults`). While it is on, the app plays a looping
+silent buffer after it goes to the background, stops it on return, and the host loop keeps running; the screen shows
+"Keep-alive: Active". With the toggle off the app is foreground-only. Job semantics are unchanged.
+The audio also stops when there is no relay (not enrolled) or the cloud refuses the credential. An audio interruption
+while backgrounded sends the "paused" heartbeat at once and "active" again when the audio resumes; a failed resume
+falls back to the plain background behavior.
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+cd ios && xcodegen generate
+xcodebuild -project FavorPrinter.xcodeproj -scheme FavorPrinter -configuration Internal \
+  -destination 'generic/platform=iOS' -archivePath /tmp/fp-internal/FavorPrinter.xcarchive \
+  -allowProvisioningUpdates archive
+xcodebuild -exportArchive -archivePath /tmp/fp-internal/FavorPrinter.xcarchive \
+  -exportOptionsPlist Config/ExportOptions.plist -exportPath /tmp/fp-internal/export -allowProvisioningUpdates
+```
+
+The result is `/tmp/fp-internal/export/FavorPrinter.ipa`.
+
+Xcode's Product > Archive uses the scheme's archive configuration (Release), so it does not produce this build: use the
+`-configuration Internal` command line above.
+
+- Every iPad's UDID must be in the team's development provisioning profile. Connect the iPad to the Mac and build with
+  `-allowProvisioningDeviceRegistration`, or add the UDID in the developer portal. Install with
+  `xcrun devicectl device install app --device <id> FavorPrinter.ipa` or Apple Configurator.
+- The development profile expires (about 1 year). Rebuild and reinstall before then.
+- After install, turn the driver on in Settings > Favor Printer > Drivers and replug the printer.
+- Silent-audio keep-alive violates App Store guideline 2.5.4. This build is internal only: never submit it to
+  TestFlight or the App Store.
+
 ## Layout
 
 - `FavorPrinter/Device/` `SecretStore` (the Keychain item holding the relay credential) and the stale-bearer cleanup.
@@ -64,7 +101,7 @@ unique service name per test and delete it afterwards.
 - `FavorPrinterDriver/` the DriverKit extension (`FavorPrinterUsbDriver`, `FavorPrinterUsbUserClient`), `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
   `FavorZplTransferGate.h` (one-transfer-at-a-time gate and the Stop ordering, plain C so Swift tests can run it).
 - `FavorPrinterUITests/` the XCUITest.
-- `Config/` xcconfig files and the Info.plist fragment holding `RSVPBaseURL`.
+- `Config/` xcconfig files, the Info.plist fragments holding `RSVPBaseURL` and `ExportOptions.plist` for the Internal export.
 
 Physical iPad and Keychain behavior on device remain manual checks.
 
@@ -183,6 +220,13 @@ expires, the loop stops after any send already in progress completes. With `-Fav
 queued every 20 seconds while backgrounded. The DEBUG-only Background experiment section records lifecycle times,
 background job outcomes and heartbeat time in UserDefaults so the observations remain visible after relaunch. It stores
 no labels or ZPL. The flag is ignored in Release and does not make background printing a supported operating mode.
+
+A second DEBUG experiment, `-FavorHostKeepAliveAudio`, implies the first and also plays a looping silent buffer
+(`.playback`, `.mixWithOthers`) while backgrounded, to try to keep the app running past the background task. Audio
+starts on `.background`, stops on `.active` and re-activates after an interruption; these events are recorded in the
+Background experiment section. The `audio` UIBackgroundModes entry exists only in the Debug and Internal Info.plists
+(`Config/Info-Debug.plist`, `Config/Info-Internal.plist`), never in Release. This is unsupported: App Store review (guideline 2.5.4) rejects silent-audio keep-alive,
+so it suits only internal or ad hoc distribution. The flag is ignored in Release.
 
 ### Fake relay and fake transport (DEBUG)
 
