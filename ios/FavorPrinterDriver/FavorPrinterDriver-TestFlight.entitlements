@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.driverkit</key>
+	<true/>
+	<!-- TestFlight configuration only. Matches the App Store distribution profile, where Apple approves a specific
+	     vendor: idVendor is the INTEGER 2655 (Zebra, 0x0A5F). The development profile (Debug, Internal, Release) takes
+	     the string "*" instead and rejects this file, so FavorPrinterDriver.entitlements stays on those configurations.
+	     Signing with this file needs Apple's approval of vendor ID 0x0A5F for team 3JJ4492TV8 (request D1). -->
+	<key>com.apple.developer.driverkit.transport.usb</key>
+	<array>
+		<dict>
+			<key>idVendor</key>
+			<integer>2655</integer>
+		</dict>
+	</array>
+	<key>com.apple.developer.driverkit.allow-third-party-userclients</key>
+	<true/>
+</dict>
+</plist>

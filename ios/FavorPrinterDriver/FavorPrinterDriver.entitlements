@@ -4,9 +4,9 @@
 <dict>
 	<key>com.apple.developer.driverkit</key>
 	<true/>
-	<!-- idVendor must be the STRING "*" to match the development profile; the integer 2655 makes installd reject
-	     the app (0xe8008015). Distribution (TestFlight/App Store) needs Apple to approve Zebra's vendor ID
-	     0x0A5F for this team. That request has not been made. -->
+	<!-- Debug, Internal and Release configurations, development profile. idVendor must be the STRING "*" to match the
+	     development profile; the integer 2655 makes installd reject the app (0xe8008015). The TestFlight configuration
+	     uses FavorPrinterDriver-TestFlight.entitlements (integer 2655) for the App Store distribution profile. -->
 	<key>com.apple.developer.driverkit.transport.usb</key>
 	<array>
 		<dict>

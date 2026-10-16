@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>3JJ4492TV8</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<!-- The keep-alive audio (guideline 2.5.4) means this build must never reach external testing or App Store review. -->
+	<key>testFlightInternalTestingOnly</key>
+	<true/>
+	<!-- Keep the build number passed at archive time (commit count); do not let Xcode renumber it. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>

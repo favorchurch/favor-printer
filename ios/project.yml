@@ -8,11 +8,13 @@ options:
 configs:
   Debug: debug
   Internal: release
+  TestFlight: release
   Release: release
 
 configFiles:
   Debug: Config/Debug.xcconfig
   Internal: Config/Internal.xcconfig
+  TestFlight: Config/TestFlight.xcconfig
   Release: Config/Release.xcconfig
 
 settings:
@@ -38,9 +40,12 @@ settings:
       SWIFT_COMPILATION_MODE: wholemodule
       VALIDATE_PRODUCT: YES
     # Internal is Release plus the supported silent-audio keep-alive. Development-signed, never for the App Store.
-    Internal:
+    Internal: &keepAliveSettings
       <<: *releaseSettings
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) INTERNAL_KEEPALIVE"
+    # TestFlight is Internal's keep-alive build signed for App Store Connect, internal testing only (guideline 2.5.4).
+    TestFlight:
+      <<: *keepAliveSettings
 
 targets:
   FavorPrinter:
@@ -71,6 +76,8 @@ targets:
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Favor Printer
+        # HTTPS only, no custom cryptography: answers App Store Connect's export compliance question.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
           UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
@@ -83,10 +90,12 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         TARGETED_DEVICE_FAMILY: "2"
       configs:
-        # UIBackgroundModes `audio` exists only in Debug (experiment) and Internal (supported keep-alive).
+        # UIBackgroundModes `audio` exists only in Debug (experiment), Internal and TestFlight (supported keep-alive).
         Debug:
           INFOPLIST_FILE: Config/Info-Debug.plist
         Internal:
+          INFOPLIST_FILE: Config/Info-Internal.plist
+        TestFlight:
           INFOPLIST_FILE: Config/Info-Internal.plist
         Release:
           INFOPLIST_FILE: Config/Info.plist
@@ -99,6 +108,7 @@ targets:
         excludes:
           - Info.plist
           - FavorPrinterDriver.entitlements
+          - FavorPrinterDriver-TestFlight.entitlements
     settings:
       base:
         # The simulator cannot load a dext and no DriverKit profile exists for it, so a simulator destination builds
@@ -120,6 +130,10 @@ targets:
         SKIP_INSTALL: YES
         SDKROOT: driverkit
         SUPPORTED_PLATFORMS: driverkit
+      configs:
+        # The App Store distribution profile needs the approved vendor as an integer; the development profile needs "*".
+        TestFlight:
+          CODE_SIGN_ENTITLEMENTS: FavorPrinterDriver/FavorPrinterDriver-TestFlight.entitlements
 
   FavorPrinterTests:
     type: bundle.unit-test

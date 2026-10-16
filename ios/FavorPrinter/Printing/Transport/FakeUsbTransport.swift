@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 /// Scriptable `UsbPrinterTransport` for tests and the DEBUG fake relay. It never touches IOKit.
@@ -50,3 +51,4 @@ actor FakeUsbTransport: UsbPrinterTransport {
         return readScript.isEmpty ? .failure(.timeout) : readScript.removeFirst()
     }
 }
+#endif
