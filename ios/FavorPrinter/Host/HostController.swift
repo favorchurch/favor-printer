@@ -583,6 +583,8 @@ final class HostController {
     /// cloud has not refused the credential.
     private func reconcile() async {
         resolveRelayIfNeeded()
+        // The audio only exists to keep a running loop alive: without a relay or after an auth refusal, let it go.
+        if !isForeground, relay == nil || authBlocked { stopKeepAliveAudio() }
         let shouldRun = (isForeground || isKeepAliveAudioActive || isBackgroundExperimentRunning) && relay != nil && !authBlocked
         guard let loop else { return }
         if shouldRun {
@@ -681,6 +683,7 @@ final class HostController {
             authBlocked = true
             error = .authRejected
             isLoopRunning = false
+            if !isForeground { stopKeepAliveAudio() }
         }
     }
 
@@ -718,10 +721,21 @@ final class HostController {
         switch event {
         case .began:
             recordAudioEvent("audio interrupted")
+            if !isForeground {
+                // The paused audio no longer holds the app awake, so tell the cloud now. The loop stays up for the resume.
+                let taskId = beginPausedBeatTask()
+                schedule { await self.pausedBeatThenReconcile(taskId) }
+            }
         case .ended:
             do {
                 try keepAliveAudio.resume()
                 recordAudioEvent("audio resumed")
+                if !isForeground {
+                    schedule {
+                        await self.loop?.resumeAfterPausedHeartbeat()
+                        await self.reconcile()
+                    }
+                }
             } catch {
                 recordAudioEvent("audio resume failed")
                 if !isForeground, !isBackgroundExperimentRunning {
