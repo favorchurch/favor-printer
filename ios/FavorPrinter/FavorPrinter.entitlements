@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Every configuration (Debug, Internal, TestFlight, Release) and both profiles use this file. Only the dext's
+	     USB vendor entry differs per configuration, in the FavorPrinterDriver entitlements files. -->
 	<key>com.apple.developer.driverkit.communicates-with-drivers</key>
 	<true/>
 </dict>

@@ -1,0 +1,2 @@
+// TestFlight builds (internal testing only) talk to RSVP production. `/` is a comment start in xcconfig, so $() splits the scheme separator.
+RSVP_BASE_URL = https:/$()/rsvp.favor.church

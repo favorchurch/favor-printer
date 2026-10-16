@@ -22,6 +22,7 @@ host of the relay API (`/api/printing/relay/*`). The app refuses to start unless
 | --- | --- |
 | Debug (default for simulator runs and tests) | `https://rsvp-preview.favor.church` (confirm the preview host before first device install) |
 | Internal (development-signed, Favor iPads only) | `https://rsvp.favor.church` |
+| TestFlight (App Store Connect, internal testing only) | `https://rsvp.favor.church` |
 | Release | `https://rsvp.favor.church` |
 
 Override locally with an untracked `Config/Local.xcconfig`, for example
@@ -87,7 +88,64 @@ Xcode's Product > Archive uses the scheme's archive configuration (Release), so 
 - The development profile expires (about 1 year). Rebuild and reinstall before then.
 - After install, turn the driver on in Settings > Favor Printer > Drivers and replug the printer.
 - Silent-audio keep-alive violates App Store guideline 2.5.4. This build is internal only: never submit it to
-  TestFlight or the App Store.
+  the App Store. Use the TestFlight configuration for internal TestFlight testing.
+
+## TestFlight build
+
+The `TestFlight` configuration is the Internal build signed for App Store Connect. It is Release settings plus
+`INTERNAL_KEEPALIVE`, `Config/Info-Internal.plist` (`UIBackgroundModes` = `audio`), `https://rsvp.favor.church` and no
+DEBUG code (no fake relay, fake transport or diagnostics). What differs:
+
+| | Internal | TestFlight | Release |
+| --- | --- | --- | --- |
+| Keep-alive and `audio` background mode | yes | yes | no |
+| Signing | development profile | App Store distribution profile (export re-signs the archive) | not distributed |
+| Dext USB entitlement | `idVendor` `"*"` | `idVendor` integer `2655` (`FavorPrinterDriver/FavorPrinterDriver-TestFlight.entitlements`) | `"*"` |
+| Export options | `Config/ExportOptions.plist` (`debugging`) | `Config/ExportOptions-TestFlight.plist` (`app-store-connect`) | none |
+| Export compliance | declared | declared (`ITSAppUsesNonExemptEncryption` false: HTTPS only) | declared |
+
+**The keep-alive makes this build internal testing only.** Silent-audio keep-alive violates App Store guideline 2.5.4:
+never add it to external TestFlight testing or submit it for App Store review. The export options set
+`testFlightInternalTestingOnly` to mark the build internal-only, but that is a safeguard, not the control: add only
+internal testers (users with an App Store Connect role on the team).
+
+Prerequisites (none of them can be done from this repo):
+
+- **D1:** Apple has approved the DriverKit USB transport entitlement for Zebra's vendor ID 0x0A5F (2655) on team
+  3JJ4492TV8, and it appears on the App Store distribution profile for `church.favor.printer.ios.driver`. Without it
+  the TestFlight archive cannot be signed for distribution, and a development profile rejects the integer `2655`.
+- An App Store Connect app record for bundle ID `church.favor.printer.ios`.
+- An Apple Distribution certificate for the team in this Mac's keychain (or a cloud-managed one through
+  `-allowProvisioningUpdates`), and an App Store Connect API key (`AuthKey_<id>.p8`) for the upload.
+
+Build number: App Store Connect rejects a build number it has seen for the same version. Pass the commit count of `HEAD`
+at archive time (it overrides `CURRENT_PROJECT_VERSION` for the app and the dext), so two uploads never collide. Bump
+`MARKETING_VERSION` in `project.yml` for a new version. Archive from a clean checkout of the commit to upload.
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+cd ios && xcodegen generate
+BUILD=$(git rev-list --count HEAD)
+
+xcodebuild -project FavorPrinter.xcodeproj -scheme FavorPrinter -configuration TestFlight \
+  -destination 'generic/platform=iOS' -archivePath /tmp/fp-testflight/FavorPrinter.xcarchive \
+  CURRENT_PROJECT_VERSION=$BUILD -allowProvisioningUpdates archive
+
+xcodebuild -exportArchive -archivePath /tmp/fp-testflight/FavorPrinter.xcarchive \
+  -exportOptionsPlist Config/ExportOptions-TestFlight.plist -exportPath /tmp/fp-testflight/export -allowProvisioningUpdates
+
+xcrun altool --upload-app --type ios -f /tmp/fp-testflight/export/FavorPrinter.ipa \
+  --apiKey <key-id> --apiIssuer <issuer-id>
+```
+
+`altool` reads the key from `~/.appstoreconnect/private_keys/AuthKey_<key-id>.p8`. Transporter also uploads the `.ipa`.
+After the upload, wait for App Store Connect to finish processing (export compliance is already answered by the
+`Info.plist`), then add internal testers only. As with Internal, Product > Archive in Xcode uses the Release configuration and does not produce this build.
+
+The app ships `FavorPrinter/PrivacyInfo.xcprivacy`: no tracking, no collected data types, and the one required-reason
+API the app uses, `UserDefaults` (reason `CA92.1`). `PrivacyManifestTests` scans the app sources for file timestamp,
+disk space, boot time and `UserDefaults` APIs and fails when one is used without being declared, so add the category
+and a reason before using such an API.
 
 ## Layout
 
@@ -101,7 +159,7 @@ Xcode's Product > Archive uses the scheme's archive configuration (Release), so 
 - `FavorPrinterDriver/` the DriverKit extension (`FavorPrinterUsbDriver`, `FavorPrinterUsbUserClient`), `FavorZplUserClientABI.h` (selector and scalar layout shared with Swift) and
   `FavorZplTransferGate.h` (one-transfer-at-a-time gate and the Stop ordering, plain C so Swift tests can run it).
 - `FavorPrinterUITests/` the XCUITest.
-- `Config/` xcconfig files, the Info.plist fragments holding `RSVPBaseURL` and `ExportOptions.plist` for the Internal export.
+- `Config/` xcconfig files, the Info.plist fragments holding `RSVPBaseURL`, `ExportOptions.plist` for the Internal export and `ExportOptions-TestFlight.plist` for the TestFlight export.
 
 Physical iPad and Keychain behavior on device remain manual checks.
 
@@ -224,9 +282,9 @@ no labels or ZPL. The flag is ignored in Release and does not make background pr
 A second DEBUG experiment, `-FavorHostKeepAliveAudio`, implies the first and also plays a looping silent buffer
 (`.playback`, `.mixWithOthers`) while backgrounded, to try to keep the app running past the background task. Audio
 starts on `.background`, stops on `.active` and re-activates after an interruption; these events are recorded in the
-Background experiment section. The `audio` UIBackgroundModes entry exists only in the Debug and Internal Info.plists
-(`Config/Info-Debug.plist`, `Config/Info-Internal.plist`), never in Release. This is unsupported: App Store review (guideline 2.5.4) rejects silent-audio keep-alive,
-so it suits only internal or ad hoc distribution. The flag is ignored in Release.
+Background experiment section. The `audio` UIBackgroundModes entry exists only in the Debug, Internal and TestFlight Info.plists
+(`Config/Info-Debug.plist`, `Config/Info-Internal.plist`, used by both Internal and TestFlight), never in Release. This is unsupported: App Store review (guideline 2.5.4) rejects silent-audio keep-alive,
+so it suits only internal or ad hoc distribution and internal TestFlight testing. The flag is ignored in Release.
 
 ### Fake relay and fake transport (DEBUG)
 
