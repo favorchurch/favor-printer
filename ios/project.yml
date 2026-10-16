@@ -194,3 +194,17 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  # Xcode Cloud archives this scheme: same targets as FavorPrinter, archived with the TestFlight configuration.
+  FavorPrinter-TestFlight:
+    build:
+      targets:
+        FavorPrinter: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: TestFlight
