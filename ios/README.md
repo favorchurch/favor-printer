@@ -146,6 +146,20 @@ xcrun altool --upload-app --type ios -f /tmp/fp-testflight/export/FavorPrinter.i
 After the upload, wait for App Store Connect to finish processing (export compliance is already answered by the
 `Info.plist`), then add internal testers only. As with Internal, Product > Archive in Xcode uses the Release configuration and does not produce this build.
 
+### Xcode Cloud
+
+`ci_scripts/ci_post_clone.sh` runs after Xcode Cloud clones the repo. It installs XcodeGen with Homebrew if missing and
+runs `xcodegen generate` in `ios/`, because the Xcode project is not committed. It does not set a build number: Xcode
+Cloud sets `CURRENT_PROJECT_VERSION` from `CI_BUILD_NUMBER`.
+
+Create the workflow once in Xcode (Product > Xcode Cloud > Create Workflow):
+
+- Start Condition: branch changes on `main`.
+- Action: Archive iOS, scheme `FavorPrinter-TestFlight` (archives with the `TestFlight` configuration).
+- Post-Action: TestFlight Internal Testing.
+
+Builds that include the driver still need the DriverKit distribution entitlement (Apple request SSX6GFD465, D1 above).
+
 The app ships `FavorPrinter/PrivacyInfo.xcprivacy`: no tracking, no collected data types, and the one required-reason
 API the app uses, `UserDefaults` (reason `CA92.1`). `PrivacyManifestTests` scans the app sources for file timestamp,
 disk space, boot time and `UserDefaults` APIs and fails when one is used without being declared, so add the category
