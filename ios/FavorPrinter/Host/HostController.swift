@@ -420,7 +420,11 @@ final class HostController {
         case .inactive: return
         @unknown default: return
         }
-        schedule { await self.reconcile() }
+        schedule {
+            // An interruption while backgrounded left the loop up with a "paused" beat sent: report "active" again.
+            if self.isForeground { await self.loop?.resumeAfterPausedHeartbeat() }
+            await self.reconcile()
+        }
     }
 
     /// Begins the short background task a "paused" beat runs under. Nil when the system refused one.

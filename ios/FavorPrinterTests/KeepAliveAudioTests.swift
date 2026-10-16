@@ -376,6 +376,26 @@ struct KeepAliveToggleTests {
         defaults.removePersistentDomain(forName: name)
     }
 
+    @Test func returningToTheForegroundAfterAnInterruptionReportsActive() async throws {
+        let (defaults, name) = try makeDefaults()
+        let relay = FakeRelay()
+        let audio = FakeKeepAliveAudio()
+        let controller = try makeController(audio: audio, preference: KeepAlivePreference(defaults: defaults), relay: relay)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.count >= 1 })
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        audio.interrupt(.began)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.last?.lifecycle == .paused })
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(await eventually { await relay.heartbeats.last?.lifecycle == .active })
+        #expect(controller.isLoopRunning)
+        defaults.removePersistentDomain(forName: name)
+    }
+
     @Test func notEnrolledBackgroundDoesNotKeepTheAudioPlaying() async throws {
         let (defaults, name) = try makeDefaults()
         let audio = FakeKeepAliveAudio()
