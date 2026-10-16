@@ -160,8 +160,9 @@ prerequisites (Apple's DriverKit USB entitlement approval on the distribution pr
 record, the distribution certificate and the API key), the build number rule and the exact commands are in the
 "TestFlight build" section of `ios/README.md` on `main`. Do not copy the commands here.
 
-1. **Archive and export.** Archive the `TestFlight` configuration from a clean checkout of the commit to upload and
-   export it with `Config/ExportOptions-TestFlight.plist`, as `ios/README.md` describes.
+1. **Archive and export.** Archive the `TestFlight` configuration from a clean, full checkout of a merged `main`
+   commit (the build number comes from the commit count) and export it with `Config/ExportOptions-TestFlight.plist`,
+   as `ios/README.md` describes.
 2. **Upload.** Upload the exported `.ipa` with `altool` or Transporter, as `ios/README.md` describes. Wait for App
    Store Connect to finish processing it.
 3. **Export compliance.** The build declares `ITSAppUsesNonExemptEncryption` false (HTTPS only), so App Store Connect
