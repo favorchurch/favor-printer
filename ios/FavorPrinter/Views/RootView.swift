@@ -12,10 +12,14 @@ struct RootView: View {
         NavigationStack {
             Group {
                 if showingOnboarding {
-                    OnboardingView(host: host) {
-                        onboardingCompleted = true
-                        showingOnboarding = false
-                    }
+                    OnboardingView(
+                        host: host,
+                        onFinish: {
+                            onboardingCompleted = true
+                            showingOnboarding = false
+                        },
+                        onExit: { showingOnboarding = false }
+                    )
                 } else {
                     HostStatusView(host: host)
                         .toolbar {
