@@ -103,7 +103,8 @@ final class ScreenshotUITests: XCTestCase {
     }
 
     func testStatusNeedsAttention() {
-        let app = launch(["-FavorUITestDriverOff"])
+        // Enrolled, so the headline reports the printer problem; an unenrolled host leads with "Not enrolled".
+        let app = launch(["-FavorUITestScenario", "enrolled", "-FavorUITestDriverOff"])
         expect(app, "host-headline", equals: "Needs attention")
         expect(app, "host-driver", equals: "Printer seen, driver not running")
         capture("status-needs-attention")

@@ -22,7 +22,7 @@ status screens, the headline).
 | `background-on.png` | Background printing step, keep-alive on |
 | `background-interrupted.png` | Background printing step after an audio interruption |
 | `status-ready.png` | Status screen "Ready" (fake relay and fake printer, so it also shows the test-build controls) |
-| `status-needs-attention.png` | Status screen "Needs attention", driver not running |
+| `status-needs-attention.png` | Status screen "Needs attention", enrolled host with the driver not running |
 
 Also verified there: the Setup guide page order and Continue/Back flow, the labels on the guide's controls, that finishing
 the guide opens the status screen, and that a relaunch or an already-enrolled host skips the guide

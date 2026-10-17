@@ -37,7 +37,7 @@ states=(
   "background-on|Setup guide, Background printing. Keep-alive is on and nothing is interrupting it."
   "background-interrupted|Setup guide, Background printing. Another app took the audio, so printing pauses in the background."
   "status-ready|Printer host status, Ready. Printer attached and driver running."
-  "status-needs-attention|Printer host status, Needs attention. Printer seen but the driver is not running."
+  "status-needs-attention|Printer host status, Needs attention. Enrolled, printer seen, but the driver is not running."
 )
 
 work="$(mktemp -d)"
