@@ -25,7 +25,7 @@ final class ScriptedDext: DextBackend, @unchecked Sendable {
     private var openedCount = 0
     private var closedCount = 0
     private let mode: Mode
-    private let visible: Bool
+    private var visible: Bool
     private let answersStatus: Bool
     private let abiVersion: UInt64
     private let candidateScripts: [CandidateScript]?
@@ -88,7 +88,9 @@ final class ScriptedDext: DextBackend, @unchecked Sendable {
         }
     }
 
-    func printerVisible() -> Bool { visible }
+    func printerVisible() -> Bool { lock.withLock { visible } }
+    /// Plug or unplug the printer between probes.
+    func setPrinterVisible(_ value: Bool) { lock.withLock { visible = value } }
 
     fileprivate func answersByItself(_ call: Call) -> Bool { call.selector == kFavorZplSelectorStatus && !answersStatus }
     fileprivate func recordPreflight() { lock.withLock { preflightCount += 1 } }
@@ -339,7 +341,7 @@ struct DriverKitUsbTransportTests {
     }
 
     @Test func transientStatusCallFailureIsUnavailableRatherThanForeign() async {
-        let dext = ScriptedDext(answersStatus: true) { _ in DextReply(code: IOReturnCode.notReady, scalars: [], data: []) }
+        let dext = ScriptedDext(printerVisible: true, answersStatus: true) { _ in DextReply(code: IOReturnCode.notReady, scalars: [], data: []) }
         let status = await DriverKitUsbTransport(backend: dext).status()
 
         #expect(status.driver == .printerPresentDriverNotRunning)
@@ -348,13 +350,42 @@ struct DriverKitUsbTransportTests {
         expectBalanced(dext)
     }
 
-    @Test func legacyShortStatusIsAnAbiMismatchRatherThanAForeignDriver() async {
-        let dext = ScriptedDext(answersStatus: true) { _ in DextReply(code: 0, scalars: [8], data: []) }
+    @Test func aShortStatusReplyWithoutOurMagicIsAForeignDriver() async {
+        let dext = ScriptedDext(printerVisible: true, answersStatus: true) { _ in DextReply(code: 0, scalars: [8], data: []) }
         let status = await DriverKitUsbTransport(backend: dext).status()
 
         #expect(status.driver == .printerPresentDriverNotRunning)
-        #expect(!status.foreignDriver)
+        #expect(status.foreignDriver)
+        #expect(status.abiVersion == nil)
+        #expect(status.lastError == nil)
+        #expect(status.debugDiagnostic?.contains("result=foreign") == true)
         expectBalanced(dext)
+    }
+
+    @Test func aForeignClientAnsweringBadArgumentIsAForeignDriverNotAnAbiMismatch() async {
+        let dext = ScriptedDext(printerVisible: true, answersStatus: true) { _ in DextReply(code: IOReturnCode.badArgument, scalars: [], data: []) }
+        let transport = DriverKitUsbTransport(backend: dext)
+        let status = await transport.status()
+
+        #expect(status.driver == .printerPresentDriverNotRunning)
+        #expect(status.foreignDriver)
+        #expect(status.abiVersion == nil)
+        #expect(status.lastError == nil)
+        #expect(await transport.send(Data("^XA^XZ".utf8)) == .failure(.driverNotFound))
+        #expect(dext.calls.map(\.selector) == [kFavorZplSelectorStatus, kFavorZplSelectorStatus])
+    }
+
+    @Test func ourMagicOnAReplyTooShortForTheVersionIsAnAbiMismatchWithNoVersion() async {
+        let short = DextReply(code: 0, scalars: [8, 0, 1, 0x81, UInt64(kFavorZplDriverMagic)], data: [])
+        let dext = ScriptedDext(printerVisible: true, candidateScripts: [.init(statusReply: short)])
+        let transport = DriverKitUsbTransport(backend: dext)
+        let status = await transport.status()
+
+        #expect(status.driver == .printerPresentDriverNotRunning)
+        #expect(!status.foreignDriver)
+        #expect(status.abiVersion == nil)
+        #expect(status.lastError == IOReturnCode.badArgument)
+        #expect(await transport.send(Data("^XA^XZ".utf8)) == .failure(.abiMismatch(expected: UInt32(kFavorZplABIVersion), actual: nil)))
     }
 
     @Test func statusKeepsADextErrorAndOmitsMissingEndpointsAndSerial() async {
@@ -375,7 +406,24 @@ struct DriverKitUsbTransportTests {
         let status = await DriverKitUsbTransport(backend: dext).status()
 
         #expect(status.driver == .unknown)
-        #expect(status.printerAttached == nil)
+        #expect(status.printerAttached == false)
+    }
+
+    @Test func aReplugFlipsPrinterAttachedBackOnTheNextProbe() async {
+        let dext = ScriptedDext(printerVisible: false, mode: .noService)
+        let transport = DriverKitUsbTransport(backend: dext)
+
+        let unplugged = await transport.status()
+        dext.setPrinterVisible(true)
+        let replugged = await transport.status()
+        dext.setPrinterVisible(false)
+        let unpluggedAgain = await transport.status()
+
+        #expect(unplugged.printerAttached == false)
+        #expect(replugged.printerAttached == true)
+        #expect(replugged.driver == .printerPresentDriverNotRunning)
+        #expect(unpluggedAgain.printerAttached == false)
+        #expect(unpluggedAgain.driver == .unknown)
     }
 
     @Test func statusSaysPrinterPresentDriverNotRunningWhenOnlyTheRegistryShowsIt() async {
@@ -389,12 +437,20 @@ struct DriverKitUsbTransportTests {
 
     @Test func statusWithAServiceThatWillNotOpenReportsTheOpenCode() async {
         let code = Int32(bitPattern: 0xE000_02E2)
-        let dext = ScriptedDext(mode: .openFailed(code))
+        let dext = ScriptedDext(printerVisible: true, mode: .openFailed(code))
         let status = await DriverKitUsbTransport(backend: dext).status()
 
         #expect(status.driver == .printerPresentDriverNotRunning)
         #expect(status.printerAttached == true)
         #expect(status.lastError == code)
+    }
+
+    @Test func aServiceThatWillNotOpenDoesNotAttachAPrinterTheRegistryDoesNotShow() async {
+        let dext = ScriptedDext(printerVisible: false, mode: .openFailed(Int32(bitPattern: 0xE000_02E2)))
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status.driver == .unknown)
+        #expect(status.printerAttached == false)
     }
 
     // MARK: send
@@ -568,14 +624,14 @@ struct DriverKitUsbTransportTests {
         #expect(dext.calls.map(\.selector) == [kFavorZplSelectorSendRaw, kFavorZplSelectorSendRaw])
     }
 
-    @Test func aStatusReplyTooShortToCarryTheVersionIsAMismatchThatSendsNothing() async {
-        let short = ScriptedDext(answersStatus: true) { call in
+    @Test func aStatusReplyTooShortToCarryTheVersionSendsNothing() async {
+        let short = ScriptedDext(printerVisible: true, answersStatus: true) { call in
             call.selector == kFavorZplSelectorStatus
                 ? DextReply(code: 0, scalars: [8, 0, 1, 0x81], data: []) : ScriptedDext.sendReply(written: call.structInput.count)
         }
         let result = await DriverKitUsbTransport(backend: short).send(Data("^XA^XZ".utf8))
 
-        #expect(result == .failure(.abiMismatch(expected: expectedABI, actual: nil)))
+        #expect(result == .failure(.driverNotFound))
         #expect(short.calls.map(\.selector) == [kFavorZplSelectorStatus])
         expectBalanced(short)
     }
@@ -593,7 +649,7 @@ struct DriverKitUsbTransportTests {
     }
 
     @Test func statusWithAnotherABIIsNeverRunningAndReportsTheVersion() async {
-        let dext = ScriptedDext(answersStatus: true) { _ in statusReply(abi: 7) }
+        let dext = ScriptedDext(printerVisible: true, answersStatus: true) { _ in statusReply(abi: 7) }
         let status = await DriverKitUsbTransport(backend: dext).status()
 
         #expect(status.driver == .printerPresentDriverNotRunning)
@@ -634,6 +690,19 @@ struct DriverKitUsbTransportTests {
         #expect(dext.calls.isEmpty)
         #expect(dext.preflights == 2)
         expectBalanced(dext, opened: 2)
+    }
+
+    @Test func aForeignCandidateWithNoVisiblePrinterAttachesNothing() async {
+        let dext = ScriptedDext(
+            printerVisible: false,
+            candidateScripts: [.init(className: "ForeignUserClient", statusReply: statusReply(magic: 0x53504B45))]
+        )
+        let status = await DriverKitUsbTransport(backend: dext).status()
+
+        #expect(status.driver == .unknown)
+        #expect(status.printerAttached == false)
+        #expect(status.foreignDriver)
+        expectBalanced(dext)
     }
 
     @Test func aCandidateWithNoIdentityPropertiesCanBeIdentifiedByItsHandshake() async {
