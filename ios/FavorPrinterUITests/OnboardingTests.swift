@@ -6,6 +6,33 @@ final class OnboardingUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    private func waitForTitle(_ title: XCUIElement, equals expected: String) {
+        let predicate = NSPredicate(format: "label == %@", expected)
+        expectation(for: predicate, evaluatedWith: title)
+        waitForExpectations(timeout: 10)
+    }
+
+    func testSkippingUnmetEnrollmentDoesNotMarkItDone() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-FavorUITestMock", "-FavorUITestScenario", "backgroundEnabled", "-FavorUITestResetOnboarding",
+        ]
+        app.launch()
+
+        let title = app.staticTexts["onboarding-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        for expectedTitle in ["Printer driver", "Connect the printer", "Enroll this printer"] {
+            app.buttons["onboarding-continue"].tap()
+            waitForTitle(title, equals: expectedTitle)
+        }
+        let enrollmentState = app.staticTexts["onboarding-step-enrollment-state"]
+        for expectedTitle in ["Guided Access and Auto-Lock", "Background printing", "You're ready"] {
+            app.buttons["onboarding-continue"].tap()
+            waitForTitle(title, equals: expectedTitle)
+        }
+        XCTAssertEqual(enrollmentState.label, "Action needed", "skipping enrollment must not mark it complete")
+    }
+
     func testFirstRunOnboardingCanReachStatusWithAccessibleControls() {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -34,6 +61,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertEqual(enroll.label, "Enroll this printer")
         let enrollmentState = app.staticTexts["onboarding-step-enrollment-state"]
         XCTAssertEqual(enrollmentState.label, "Action needed")
+
         code.tap()
         code.typeText("GOOD-CODE")
         enroll.tap()

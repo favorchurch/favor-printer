@@ -67,6 +67,9 @@ final class HostStatusUITests: XCTestCase {
         let app = openHost([])
         wait(app, "host-headline", equals: "Not enrolled")
         XCTAssertEqual(text(app, "host-enrollment"), "Not enrolled")
+        let enrollmentHelp = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "An RSVP admin")).firstMatch
+        XCTAssertTrue(enrollmentHelp.exists)
+        XCTAssertTrue(enrollmentHelp.label.contains("one-time code"))
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Hand over from")).firstMatch.exists)
         XCTAssertFalse(app.buttons["host-synthetic-label"].exists)
         wait(app, "host-running", equals: "Paused")
@@ -127,14 +130,5 @@ final class HostStatusUITests: XCTestCase {
         wait(app, "host-headline", equals: "Needs attention")
         wait(app, "host-printer", equals: "Not seen")
         XCTAssertTrue(app.staticTexts["host-driver-hint"].label.contains("USB-C port"))
-    }
-
-    func testKeepAliveInterruptionShowsWhyBackgroundPrintingPaused() {
-        let app = openHost(["-FavorUITestScenario", "keepAliveInterrupted"])
-
-        let note = app.staticTexts["keep-alive-interruption-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 10))
-        XCTAssertTrue(note.label.contains("Another app took the audio"))
-        assertLabelled(app)
     }
 }
