@@ -42,8 +42,8 @@ The menu is generated via `buildMenuTemplate(snapshot, actions)`. It contains no
 
 ```text
 +-------------------------------------------------------------------+
-| [Headline] (e.g. Ready to print / The old print relay is running) |  <- Disabled (Info)
-| [Detail]   (e.g. Move to Favor Printer to start printing.)        |  <- Disabled (Info, omitted if null)
+| [Headline] (e.g. Connected)                                      |  <- Disabled (Info)
+| [Detail]   (e.g. The old print relay is running.)                |  <- Disabled (Info, omitted if null)
 | This laptop: [Label] (e.g. Front desk laptop)                     |  <- Disabled (Info, omitted if null)
 |-------------------------------------------------------------------|  <- Separator
 | Labels this session: {sent} sent, {failed} failed[, {x} to check] |  <- Disabled (Session telemetry)
