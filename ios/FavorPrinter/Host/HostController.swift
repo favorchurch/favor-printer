@@ -187,6 +187,9 @@ final class HostController {
     let keepAlivePreference: KeepAlivePreference?
     /// True while the silent audio is playing, so the host screen can say keep-alive is active.
     private(set) var isKeepAliveAudioActive = false
+    /// True from an audio interruption until the audio resumes or stops. Always false without keep-alive.
+    private(set) var isKeepAliveInterrupted = false
+    let environment: HostEnvironment
     private(set) var backgroundExperiment: BackgroundExperimentState
     @ObservationIgnored private var backgroundTaskId: Int?
     /// Background tasks begun for a "paused" beat and not yet ended. Each begin has exactly one end.
@@ -216,8 +219,10 @@ final class HostController {
         },
         endBackgroundTask: @escaping (Int) -> Void = { UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: $0)) },
         keepAliveAudio: (any KeepAliveAudioSession)? = nil,
-        keepAlivePreference: KeepAlivePreference? = nil
+        keepAlivePreference: KeepAlivePreference? = nil,
+        environment: HostEnvironment = HostEnvironment()
     ) {
+        self.environment = environment
         self.backend = backend
         self.transport = transport
         self.spool = spool
@@ -331,6 +336,12 @@ final class HostController {
         return reading
     }
 
+    /// DEBUG only, for simulator UI tests: shows the keep-alive step as active and interrupted without audio hardware.
+    func simulateKeepAliveInterruptionForUITest() {
+        isKeepAliveAudioActive = true
+        isKeepAliveInterrupted = true
+    }
+
     var fakeRelay: FakeRelay? {
         if case .fake(let relay) = backend { relay } else { nil }
     }
@@ -362,6 +373,16 @@ final class HostController {
     }()
     #endif
 
+    /// The setup guide's steps for the current host state.
+    var setupSteps: [SetupStep] {
+        SetupGuide.steps(for: SetupSignals(
+            printerAttached: status.printerAttached, driver: status.driver, enrollment: enrollment, printerName: printerName,
+            isGuidedAccessEnabled: environment.isGuidedAccessEnabled,
+            keepAlivePreferenceEnabled: keepAlivePreference?.isEnabled,
+            isKeepAliveActive: isKeepAliveAudioActive, isKeepAliveInterrupted: isKeepAliveInterrupted
+        ))
+    }
+
     // MARK: Scene phase
 
     /// The DEBUG experiment keeps the loop alive under an iOS background task. Normal launches stay foreground-only.
@@ -370,6 +391,7 @@ final class HostController {
         switch phase {
         case .active:
             isForeground = true
+            environment.refresh()
 #if DEBUG
             if backgroundExperimentEnabled, backgroundExperiment.backgroundedAt != nil,
                backgroundExperiment.returnedToForegroundAt == nil {
@@ -716,6 +738,7 @@ final class HostController {
     private func stopKeepAliveAudio() {
         guard let keepAliveAudio, isKeepAliveAudioActive else { return }
         isKeepAliveAudioActive = false
+        isKeepAliveInterrupted = false
         keepAliveAudio.stop()
         recordAudioEvent("audio stopped")
     }
@@ -724,6 +747,7 @@ final class HostController {
         guard let keepAliveAudio, isKeepAliveAudioActive else { return }
         switch event {
         case .began:
+            isKeepAliveInterrupted = true
             recordAudioEvent("audio interrupted")
             if !isForeground {
                 // The paused audio no longer holds the app awake, so tell the cloud now. The loop stays up for the resume.
@@ -733,6 +757,7 @@ final class HostController {
         case .ended:
             do {
                 try keepAliveAudio.resume()
+                isKeepAliveInterrupted = false
                 recordAudioEvent("audio resumed")
                 if !isForeground {
                     schedule {
