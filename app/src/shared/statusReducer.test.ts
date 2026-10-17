@@ -7,6 +7,9 @@ import {
   RECOVERY_ACTIONS,
   evaluateFiveState,
   statusReducer,
+  INITIAL_PRINTER_PRESENCE,
+  PRINTER_PRESENCE_FAILURE_LIMIT,
+  printerPresenceReducer,
   type FiveState,
   type StatusSignal,
   type StatusState,
@@ -46,6 +49,44 @@ describe("statusReducer: five states and recovery actions", () => {
     expect(result).not.toBe(frozen);
     expect(result.printerAttached).toBe(true);
     expect(frozen.printerAttached).toBe(false);
+  });
+});
+
+describe("printerPresenceReducer", () => {
+  it("tracks successful attach, unplug and replug scans with the last seen time", () => {
+    const seen = printerPresenceReducer(INITIAL_PRINTER_PRESENCE, {
+      type: "printer_found",
+      seenAt: "2026-10-17T00:00:00.000Z",
+    });
+    expect(seen).toEqual({ presence: "attached", lastSeenAt: "2026-10-17T00:00:00.000Z", consecutiveFailures: 0 });
+    const unplugged = printerPresenceReducer(seen, {
+      type: "printer_absent",
+    });
+    expect(unplugged).toEqual({ presence: "detached", lastSeenAt: seen.lastSeenAt, consecutiveFailures: 0 });
+    expect(
+      printerPresenceReducer(unplugged, {
+        type: "printer_found",
+        seenAt: "2026-10-17T00:02:00.000Z",
+      }),
+    ).toEqual({ presence: "attached", lastSeenAt: "2026-10-17T00:02:00.000Z", consecutiveFailures: 0 });
+  });
+
+  it("keeps one transient failure, then expires stale presence to unknown", () => {
+    const attached = printerPresenceReducer(INITIAL_PRINTER_PRESENCE, {
+      type: "printer_found",
+      seenAt: "2026-10-17T00:00:00.000Z",
+    });
+    const firstFailure = printerPresenceReducer(attached, { type: "listing_failed" });
+    expect(firstFailure.presence).toBe("attached");
+    expect(printerPresenceReducer(firstFailure, { type: "listing_failed" })).toMatchObject({
+      presence: "unknown",
+      lastSeenAt: attached.lastSeenAt,
+      consecutiveFailures: PRINTER_PRESENCE_FAILURE_LIMIT,
+    });
+  });
+
+  it("never assumes a printer is attached before a successful scan", () => {
+    expect(printerPresenceReducer(INITIAL_PRINTER_PRESENCE, { type: "listing_failed" }).presence).toBe("unknown");
   });
 });
 
@@ -193,6 +234,26 @@ describe("statusReducer properties", () => {
       fc.property(startedArb, fc.string().filter((conflict) => conflict !== "serial_in_use"), (signals, conflict) => {
         const before = run(signals);
         expect(statusReducer(before, { type: "printer_conflict", conflict })).toEqual(before);
+      }),
+      propertyParams(),
+    );
+  });
+});
+
+describe("printerPresenceReducer properties", () => {
+  it("keeps presence and lastSeenAt consistent across scan histories", () => {
+    const signalArb = fc.oneof(
+      fc.constant({ type: "listing_failed" } as const),
+      fc.constant({ type: "printer_absent" } as const),
+      fc.constant({ type: "printer_found", seenAt: "2026-10-17T00:00:00.000Z" } as const),
+    );
+    fc.assert(
+      fc.property(fc.array(signalArb, { maxLength: 60 }), (signals) => {
+        const state = signals.reduce(printerPresenceReducer, INITIAL_PRINTER_PRESENCE);
+        expect(state.consecutiveFailures).toBeGreaterThanOrEqual(0);
+        if (state.presence === "attached") expect(state.lastSeenAt).not.toBeNull();
+        if (state.presence === "unknown" && state.consecutiveFailures === 0) expect(state.lastSeenAt).toBeNull();
+        if (state.consecutiveFailures >= PRINTER_PRESENCE_FAILURE_LIMIT) expect(state.presence).toBe("unknown");
       }),
       propertyParams(),
     );

@@ -57,10 +57,10 @@ describe("buildMenuTemplate", () => {
 
   it("shows the headline and the help line", () => {
     const items = buildMenuTemplate(
-      snapshotFor({ status: { color: "amber", headline: "No printer found", detail: "Plug in the Zebra with its USB cable." } }),
+      snapshotFor({ status: { color: "amber", headline: "Printer unplugged", detail: "Plug in the Zebra with its USB cable." } }),
       actions(),
     );
-    expect(labels(items).slice(0, 2)).toEqual(["No printer found", "Plug in the Zebra with its USB cable."]);
+    expect(labels(items).slice(0, 2)).toEqual(["Printer unplugged", "Plug in the Zebra with its USB cable."]);
     expect(items[0].enabled).toBe(false);
   });
 
