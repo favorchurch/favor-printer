@@ -110,7 +110,7 @@ The setup window guides volunteers through onboarding their MacBook to print che
 - **Lead Text:**
   - With laptop label: `This Mac is now [Laptop Label, e.g. Front Desk Laptop] in Favor RSVP.`
   - Without label: `This Mac is now connected to Favor RSVP.`
-- **Status Pill:** Green dot + `Ready to print`
+- **Status Pill:** Green dot + `Connected`
 - **Primary Action:** `Print a test label`
 
 ---
@@ -183,7 +183,7 @@ This flow appears when a MacBook has the previous background launchd relay servi
 
 ### Removed / Revoked Laptop Screen (`revoked`)
 - **Window Title (`h1`):** `This laptop was removed`
-- **Status Pill:** Red dot + `This laptop was removed. Ask an admin for a new code.`
+- **Status Pill:** Red dot + `Needs re-enrollment`
 - **Lead Text:** `Ask an admin for a new code. Printing is off until you enter it.`
 - **Primary Action:** `Enter a new code`
 

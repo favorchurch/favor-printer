@@ -38,7 +38,7 @@ const base: AppSnapshot = {
   warnings: ["Keep the lid open while printing. Closing the lid can stop labels from printing."],
 };
 
-const ready: AppSnapshot["status"] = { color: "green", headline: "Ready to print", detail: null };
+const ready: AppSnapshot["status"] = { color: "green", headline: "Connected", detail: null };
 
 const LEGACY_STATUS: AppSnapshot["status"] = {
   color: "amber",
@@ -135,7 +135,7 @@ export function fixtureFor(requested: string | null): Fixture {
     case "revoked":
       return {
         snapshot: withStep(null, {
-          status: { color: "red", headline: "This laptop was removed. Ask an admin for a new code.", detail: null },
+          status: { color: "red", headline: "Needs re-enrollment", detail: null },
           printer: oneReady,
         }),
       };
