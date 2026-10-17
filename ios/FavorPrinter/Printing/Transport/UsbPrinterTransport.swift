@@ -12,9 +12,9 @@ protocol UsbPrinterTransport: Sendable {
 enum DriverAvailability: Sendable, Equatable {
     /// A candidate user client returns this dext's magic and the expected ABI.
     case running
-    /// A candidate is present or the printer is visible, but no candidate completed our handshake.
+    /// The printer is visible, but no candidate completed our handshake.
     case printerPresentDriverNotRunning
-    /// Neither is visible, e.g. no printer attached. Whether the driver is enabled cannot be inferred.
+    /// The printer is not visible, e.g. unplugged. Whether the driver is enabled cannot be inferred.
     case unknown
 
     /// The one place the three states are derived. `printerVisible` is a best-effort IORegistry lookup.
@@ -30,8 +30,8 @@ enum DriverAvailability: Sendable, Equatable {
 
 struct UsbPrinterStatus: Sendable, Equatable {
     var driver: DriverAvailability
-    /// True when the printer is known to be attached, nil when unknown. Never false: the IORegistry lookup is
-    /// best effort, so not seeing the printer proves nothing.
+    /// Whether the printer shows up in the IORegistry (or our dext answered). False when it is not seen, e.g. unplugged.
+    /// Nil only when no probe has run. Each probe looks again, so a replug flips it back.
     var printerAttached: Bool?
     /// Start-up stage the dext reached (8 is ready), nil when the dext could not be queried.
     var stage: UInt32?
