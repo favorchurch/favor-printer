@@ -82,3 +82,21 @@ All confusing-flow improvements strictly adhere to established contract seams:
 1. **No Backend API Alterations:** RSVP cloud protocols and heartbeat contracts remain 100% untouched.
 2. **No Data Shape Mutations:** All snapshot types (`AppSnapshot`, `StatusSummary`, `JobCounts`) and IPC signatures are preserved.
 3. **No Unilateral Authority Changes:** Administrative enrollment codes, permission checks, and CUPS device handling follow existing main process services.
+
+## Issue 5: USB Cable Troubleshooting
+
+### What Confused Volunteers
+The no-printer screen said to connect the USB cable, but it did not distinguish a data cable from a charge-only cable or explain what to try after a failed scan.
+
+### What Changed
+- The printer step now says to use a USB data cable, connect it directly to the Mac, and unplug and replug it once if it is not found.
+
+## Issue 6: RSVP Enrollment Setup and Ongoing Status
+
+### What Confused Volunteers
+The code screen asked volunteers to get a code from an admin without explaining how to choose or hand over the campus printer in RSVP. The status window also omitted the last successful printer scan time and active backlog warnings, leaving volunteers without context when printing stopped.
+
+### What Changed
+- The enrollment screen guides volunteers through RSVP admin's Set up printing flow, selecting or adding the campus printer, and choosing `Hand over from <host>` when another Mac hosts it.
+- The status window shows the five-state recovery action, the last-seen time while unplugged, and an active print-backlog warning.
+- Added preview fixtures for unplugged, waiting, in-use-elsewhere, and backlog-warning states so the changed status views can be captured and reviewed.

@@ -18,6 +18,10 @@ const EXPECTED: Record<(typeof FIXTURE_NAMES)[number], ScreenId> = {
   "legacy-confirm": "legacy-confirm",
   "legacy-failed": "legacy",
   status: "status",
+  unplugged: "status",
+  waiting: "status",
+  "in-use-elsewhere": "status",
+  "backlog-warning": "status",
   "update-ready": "status",
   "update-error": "status",
 };
@@ -41,7 +45,14 @@ describe("fixture states used by the visual check", () => {
   it("uses the red copy for the revoked state", () => {
     expect(fixtureFor("revoked").snapshot.status).toMatchObject({
       color: "red",
-      headline: "This laptop was removed. Ask an admin for a new code.",
+      headline: "Needs re-enrollment",
+    });
+  });
+
+  it("uses the five-state headline for the connected state", () => {
+    expect(fixtureFor("connected").snapshot.status).toMatchObject({
+      color: "green",
+      headline: "Connected",
     });
   });
 

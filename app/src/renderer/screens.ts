@@ -78,6 +78,18 @@ const printerLine = (snapshot: AppSnapshot) => {
   return text ? h("p", { class: "hint", id: "bound-printer" }, `Printer: ${text}`) : null;
 };
 
+function lastSeenTime(snapshot: AppSnapshot): string | null {
+  const lastSeenAt = snapshot.printerPresence?.lastSeenAt;
+  if (snapshot.fiveState !== "Unplugged" || !lastSeenAt) return null;
+  const date = new Date(lastSeenAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
 /** One name to edit in RSVP. The typed text stays in the input, so a re-render does not drop it. */
 function renameForm(
   id: string,
@@ -187,7 +199,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         "Plug in your Zebra printer",
-        lead("Connect the printer to this Mac with its USB cable and turn it on. It can take a few seconds to show up."),
+        lead("Use a USB data cable, not a charge-only cable. Plug the printer straight into this Mac and turn it on. If it is not found, unplug it and plug it back in once."),
         local.codeError === "printer_not_found" ? h("p", { class: "note error", role: "alert" }, ENROLL_ERROR_COPY.printer_not_found) : null,
         actions(button("Look again", a.scanAgain, { primary: true, disabled: local.busy })),
       );
@@ -269,7 +281,8 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         snapshot.status.color === "red" ? "Enter a new code" : "Enter your code",
-        lead("Ask an admin for a six-digit code from Favor RSVP. It only works for a short time."),
+        lead("In Favor RSVP admin, open Set up printing. Pick the existing campus printer, or add it. If another Mac hosts it, choose \"Hand over from <host>\". Then type the code here."),
+        h("p", { class: "hint" }, "The six-digit code only works for a short time."),
         h(
           "form",
           {
@@ -347,7 +360,9 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         actions(button("Enter a new code", a.advance, { primary: true })),
       );
 
-    case "status":
+    case "status": {
+      const seenAt = lastSeenTime(snapshot);
+      const backlogWarning = snapshot.warnings.find((warning) => warning.startsWith("Print backlog is "));
       return frame(
         screen,
         snapshot,
@@ -357,6 +372,8 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         snapshot.fiveState && snapshot.recoveryAction
           ? h("p", { class: "recovery-action hint" }, `${snapshot.fiveState}: ${snapshot.recoveryAction}`)
           : null,
+        seenAt ? h("p", { class: "hint" }, `Not seen since ${seenAt}`) : null,
+        backlogWarning ? note(backlogWarning) : null,
         printerLine(snapshot),
         h(
           "div",
@@ -366,5 +383,6 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         ),
         actions(button("Close", a.closeWindow, { primary: true })),
       );
+    }
   }
 }
