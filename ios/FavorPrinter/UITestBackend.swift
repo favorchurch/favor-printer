@@ -29,8 +29,7 @@ enum UITestHarness {
 extension UITestHarness {
     /// A host that never reaches the network or the Keychain. With `-FavorHostFakeRelay` it runs on `FakeRelay`, and the
     /// printer is the fake one only with `-FavorHostFakeTransport` too. Otherwise it starts not enrolled, and the mocked enroll call accepts any code except `conflictCode`.
-    @MainActor static func makeHost() -> HostController? {
-        let arguments = ProcessInfo.processInfo.arguments
+    @MainActor static func makeHost(arguments: [String] = ProcessInfo.processInfo.arguments) -> HostController? {
         let scenario = Scenario.resolve(arguments: arguments)
         let transportStatus: UsbPrinterStatus
         if arguments.contains(driverOffFlag) || scenario == .driverNotRunning {

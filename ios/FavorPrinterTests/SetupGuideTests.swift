@@ -104,9 +104,11 @@ struct SetupGuideContentTests {
     @Test func enrolledShowsTheNameAndSaysRenamingIsAdminOnly() throws {
         let named = try step(.enrollment, signals(enrollment: .enrolled, name: "Kids desk"))
         #expect(named.summary.contains("Kids desk"))
-        #expect(named.instructions.joined().contains("RSVP admin"))
+        #expect(named.instructions.joined().contains("read-only"))
+        #expect(named.instructions.joined().contains("Renaming happens in RSVP admin"))
         let unnamed = try step(.enrollment, signals(enrollment: .enrolled, name: nil))
         #expect(unnamed.state == .done)
+        #expect(unnamed.summary == "Enrolled")
     }
 
     @Test func guidedAccessNamesTheSettingsPathAndTripleClick() throws {
@@ -143,6 +145,16 @@ struct SetupGuideContentTests {
     }
 }
 
+/// Polls on the main actor until `condition` holds, for up to two seconds.
+@MainActor
+private func eventually(_ condition: @MainActor () -> Bool) async -> Bool {
+    for _ in 0..<200 {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return condition()
+}
+
 @MainActor
 private final class GuidedAccessSwitch {
     var isOn = false
@@ -166,10 +178,10 @@ struct HostEnvironmentTests {
         let environment = HostEnvironment(guidedAccess: { on.isOn }, notificationCenter: center)
         on.isOn = true
         center.post(name: UIAccessibility.guidedAccessStatusDidChangeNotification, object: nil)
-        #expect(environment.isGuidedAccessEnabled)
+        #expect(await eventually { environment.isGuidedAccessEnabled })
         on.isOn = false
         center.post(name: UIAccessibility.guidedAccessStatusDidChangeNotification, object: nil)
-        #expect(!environment.isGuidedAccessEnabled)
+        #expect(await eventually { !environment.isGuidedAccessEnabled })
     }
 
     @Test func controllerReportsGuidedAccessInTheSetupSteps() throws {
@@ -187,7 +199,8 @@ struct HostEnvironmentTests {
 private final class RecordingAudio: KeepAliveAudioSession {
     var onInterruption: (@MainActor (KeepAliveAudioInterruption) -> Void)?
     var failResume = false
-    func start() throws {}
+    private(set) var startCount = 0
+    func start() throws { startCount += 1 }
     func resume() throws { if failResume { throw URLError(.unknown) } }
     func stop() {}
     func interrupt(_ event: KeepAliveAudioInterruption) { onInterruption?(event) }
@@ -197,20 +210,126 @@ private final class RecordingAudio: KeepAliveAudioSession {
 private enum SetupControllerFactory {
     static func make(
         environment: HostEnvironment = HostEnvironment(guidedAccess: { true }, notificationCenter: NotificationCenter()),
-        audio: (any KeepAliveAudioSession)? = nil, preference: KeepAlivePreference? = nil
+        audio: (any KeepAliveAudioSession)? = nil, preference: KeepAlivePreference? = nil,
+        printer: UsbPrinterStatus = FakeUsbTransport.readyStatus, enrolled: Bool = true,
+        enroll: @escaping @Sendable (RelayEnrollRequest) async throws -> RelayCredentials = { _ in throw RelayEnrollFailure.network }
     ) throws -> HostController {
         HostController(
             backend: .real(
-                credentials: SecretHostCredentialStore(secrets: storedCredential()),
+                credentials: SecretHostCredentialStore(secrets: enrolled ? storedCredential() : InMemorySecretStore(nil)),
                 makeRelay: { _ in FakeRelay() },
-                enroll: { _ in throw RelayEnrollFailure.network }
+                enroll: enroll
             ),
-            transport: FakeUsbTransport(), spool: try HostSpool(directory: TempDirectory().url),
+            transport: FakeUsbTransport(status: printer), spool: try HostSpool(directory: TempDirectory().url),
             identity: testIdentity, timing: fastTiming,
             keepAliveAudio: audio, keepAlivePreference: preference, environment: environment
         )
     }
 }
+
+@MainActor
+struct SetupControllerWiringTests {
+    private func step(_ id: SetupStepID, _ controller: HostController) throws -> SetupStep {
+        try #require(controller.setupSteps.first { $0.id == id })
+    }
+
+    @Test func unpluggedPrinterPointsToTheCable() async throws {
+        let controller = try SetupControllerFactory.make(printer: UsbPrinterStatus(driver: .unknown))
+        await controller.refreshPrinter()
+        #expect(try step(.cable, controller).state == .actionNeeded)
+        #expect(try step(.driver, controller).state == .pending)
+    }
+
+    @Test func blockedDriverShowsTheOrderedFixes() async throws {
+        let controller = try SetupControllerFactory.make(
+            printer: UsbPrinterStatus(driver: .printerPresentDriverNotRunning, printerAttached: true)
+        )
+        await controller.refreshPrinter()
+        #expect(try step(.cable, controller).state == .done)
+        let driver = try step(.driver, controller)
+        #expect(driver.state == .actionNeeded)
+        #expect(driver.instructions.count == 3)
+        #expect(driver.instructions[0].contains("Settings > Favor Printer > Drivers"))
+        #expect(driver.instructions[2].contains("restart the iPad"))
+    }
+
+    @Test func readyPrinterIsDoneForCableAndDriver() async throws {
+        let controller = try SetupControllerFactory.make()
+        await controller.refreshPrinter()
+        #expect(try step(.cable, controller).state == .done)
+        #expect(try step(.driver, controller).state == .done)
+    }
+
+    @Test func notEnrolledThenEnrolledWithThePrinterNameFromConfig() async throws {
+        let controller = try SetupControllerFactory.make(
+            enrolled: false,
+            enroll: { _ in
+                try JSONDecoder().decode(
+                    RelayCredentials.self,
+                    from: Data(#"{"relayId":"r","token":"t","printer":{"id":"p1","name":"Kids desk"}}"#.utf8)
+                )
+            }
+        )
+        #expect(try step(.enrollment, controller).state == .pending, "before the credential is read")
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(try step(.enrollment, controller).state == .actionNeeded)
+
+        #expect(await controller.enroll(code: "ABC123") == nil)
+        let enrollment = try step(.enrollment, controller)
+        #expect(enrollment.state == .done)
+        #expect(enrollment.summary.contains("Fake printer"), "the name comes from the relay config FakeRelay serves")
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+    }
+
+    @Test func autoLockStaysManualWhateverTheHostState() async throws {
+        let controller = try SetupControllerFactory.make(printer: UsbPrinterStatus(driver: .unknown), enrolled: false)
+        #expect(try step(.autoLock, controller).state == .manualCheck)
+        let ready = try SetupControllerFactory.make()
+        await ready.refreshPrinter()
+        #expect(try step(.autoLock, ready).state == .manualCheck)
+    }
+}
+
+#if DEBUG
+struct UITestScenarioTests {
+    @Test func scenarioNameFollowsTheFlag() {
+        for scenario in UITestHarness.Scenario.allCases {
+            #expect(UITestHarness.Scenario.resolve(arguments: ["-FavorUITestMock", "-FavorUITestScenario", scenario.rawValue]) == scenario)
+        }
+        #expect(UITestHarness.Scenario.resolve(arguments: ["-FavorUITestMock"]) == nil)
+        #expect(UITestHarness.Scenario.resolve(arguments: ["-FavorUITestScenario"]) == nil)
+        #expect(UITestHarness.Scenario.resolve(arguments: ["-FavorUITestScenario", "nonsense"]) == nil)
+    }
+
+    @MainActor
+    @Test func everyScenarioReachesItsGuidanceState() async throws {
+        func steps(_ scenario: UITestHarness.Scenario) async throws -> [SetupStepID: SetupStepState] {
+            let host = try #require(UITestHarness.makeHost(arguments: ["-FavorUITestMock", "-FavorUITestScenario", scenario.rawValue]))
+            host.scenePhaseChanged(.active)
+            await host.settled()
+            await host.refreshPrinter()
+            let result = Dictionary(uniqueKeysWithValues: host.setupSteps.map { ($0.id, $0.state) })
+            host.scenePhaseChanged(.background)
+            await host.settled()
+            return result
+        }
+        let driverOff = try await steps(.driverNotRunning)
+        #expect(driverOff[.driver] == .actionNeeded && driverOff[.cable] == .done)
+        let unplugged = try await steps(.unplugged)
+        #expect(unplugged[.cable] == .actionNeeded && unplugged[.driver] == .pending)
+        let notEnrolled = try await steps(.notEnrolled)
+        #expect(notEnrolled[.enrollment] == .actionNeeded && notEnrolled[.guidedAccess] == .done && notEnrolled[.background] == .notApplicable)
+        let enrolled = try await steps(.enrolled)
+        #expect(enrolled[.enrollment] == .done)
+        let interrupted = try await steps(.keepAliveInterrupted)
+        #expect(interrupted[.background] == .actionNeeded)
+        let guidedOff = try await steps(.guidedAccessOff)
+        #expect(guidedOff[.guidedAccess] == .actionNeeded)
+    }
+}
+#endif
 
 @MainActor
 struct KeepAliveInterruptionSignalTests {
@@ -224,14 +343,14 @@ struct KeepAliveInterruptionSignalTests {
         return (KeepAlivePreference(defaults: defaults), { defaults.removePersistentDomain(forName: name) })
     }
 
-    @Test func buildWithoutPreferenceHidesTheStepEvenAfterAnInterruption() async throws {
+    @Test func buildWithoutPreferenceHidesTheStepAndNeverStartsAudio() async throws {
         let audio = RecordingAudio()
         let controller = try SetupControllerFactory.make(audio: audio, preference: nil)
         controller.scenePhaseChanged(.background)
         await controller.settled()
         audio.interrupt(.began)
         #expect(backgroundStep(controller)?.state == .notApplicable)
-        #expect(!controller.isKeepAliveInterrupted)
+        #expect(audio.startCount == 0, "without a preference the audio is never started")
         controller.scenePhaseChanged(.active)
         await controller.settled()
     }
@@ -298,12 +417,20 @@ struct KeepAliveInterruptionSignalTests {
         #expect(backgroundStep(controller)?.summary == "On")
     }
 
-    @Test func switchingTheSettingOffReadsOffNotInterrupted() async throws {
+    @Test func switchingTheSettingOffWhileInterruptedReadsOff() async throws {
         let (preference, cleanup) = try makePreference()
         defer { cleanup() }
-        let controller = try SetupControllerFactory.make(audio: RecordingAudio(), preference: preference)
+        let audio = RecordingAudio()
+        let controller = try SetupControllerFactory.make(audio: audio, preference: preference)
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+        audio.interrupt(.began)
+        await controller.settled()
         preference.isEnabled = false
         #expect(backgroundStep(controller)?.state == .info)
         #expect(backgroundStep(controller)?.summary == "Off")
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(!controller.isKeepAliveInterrupted)
     }
 }
