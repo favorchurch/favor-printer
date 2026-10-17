@@ -40,6 +40,7 @@ final class HostStatusUITests: XCTestCase {
 
     func testFakeRelayShowsStatusAndPrintsTheSyntheticLabel() {
         let app = openHost(["-FavorHostFakeRelay", "-FavorHostFakeTransport"])
+        wait(app, "host-headline", equals: "Ready")
         wait(app, "host-printer", equals: "Attached")
         wait(app, "host-driver", equals: "Running")
         wait(app, "host-running", equals: "Running")
@@ -64,7 +65,9 @@ final class HostStatusUITests: XCTestCase {
 
     func testEnrollFormRefusesAConflictThenEnrollsAndUnenrolls() {
         let app = openHost([])
+        wait(app, "host-headline", equals: "Not enrolled")
         XCTAssertEqual(text(app, "host-enrollment"), "Not enrolled")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Hand over from")).firstMatch.exists)
         XCTAssertFalse(app.buttons["host-synthetic-label"].exists)
         wait(app, "host-running", equals: "Paused")
 
@@ -103,10 +106,12 @@ final class HostStatusUITests: XCTestCase {
 
     func testDriverNotRunningShowsTheSettingsHintAndRefusesEnrollment() {
         let app = openHost(["-FavorUITestDriverOff"])
+        wait(app, "host-headline", equals: "Needs attention")
         wait(app, "host-driver", equals: "Printer seen, driver not running")
         let hint = app.staticTexts["host-driver-hint"].label
         XCTAssertTrue(hint.contains("Settings > Favor Printer > Drivers"))
-        XCTAssertTrue(hint.contains("Replug after enabling"))
+        XCTAssertTrue(hint.contains("Unplug and replug the printer"))
+        XCTAssertTrue(hint.contains("restart the iPad"))
 
         let field = app.textFields["enroll-code-field"]
         field.tap()
@@ -114,5 +119,22 @@ final class HostStatusUITests: XCTestCase {
         app.buttons["enroll-button"].tap()
         XCTAssertTrue(app.staticTexts["host-error"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["host-error"].label.hasPrefix("The printer is not ready."))
+    }
+
+    func testUnpluggedPrinterShowsNotSeenAndCableSteps() {
+        let app = openHost(["-FavorUITestScenario", "unplugged"])
+
+        wait(app, "host-headline", equals: "Needs attention")
+        wait(app, "host-printer", equals: "Not seen")
+        XCTAssertTrue(app.staticTexts["host-driver-hint"].label.contains("USB-C port"))
+    }
+
+    func testKeepAliveInterruptionShowsWhyBackgroundPrintingPaused() {
+        let app = openHost(["-FavorUITestScenario", "keepAliveInterrupted"])
+
+        let note = app.staticTexts["keep-alive-interruption-note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 10))
+        XCTAssertTrue(note.label.contains("Another app took the audio"))
+        assertLabelled(app)
     }
 }
