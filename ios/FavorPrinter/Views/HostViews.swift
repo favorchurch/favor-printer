@@ -12,78 +12,24 @@ struct HostStatusView: View {
     #endif
 
     var body: some View {
-        List {
-            if let error = host.error {
-                Section {
-                    Text(error.message).foregroundStyle(.red).accessibilityIdentifier("host-error")
-                    if error == .authRejected {
-                        Button("Try again") { host.retryAfterAuthError() }
-                            .accessibilityLabel("Try the relay again")
-                            .accessibilityIdentifier("host-retry")
-                    }
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: FavorSpace.medium) {
+                headlineCard
+                if let error = host.error { errorCard(error) }
+                printerCard
+                hostCard
+                keepAliveCard
+                enrollmentCard
+                #if DEBUG
+                debugSections
+                #endif
             }
-            printerSection
-            hostSection
-            keepAliveSection
-            enrollmentSection
-            #if DEBUG
-            if host.backgroundExperimentEnabledForDisplay {
-                Section("Background experiment") {
-                    experimentRow("Backgrounded at", host.backgroundExperiment.backgroundedAt)
-                    ForEach(host.backgroundExperiment.jobs.indices, id: \.self) { index in
-                        let job = host.backgroundExperiment.jobs[index]
-                        HostRow(
-                            title: "Job sent, \(job.outcome)",
-                            value: job.at.formatted(date: .abbreviated, time: .shortened),
-                            id: "host-experiment-job-\(job.at.timeIntervalSince1970)"
-                        )
-                    }
-                    experimentRow("Background task expired", host.backgroundExperiment.expiredAt)
-                    experimentRow("Last background heartbeat", host.backgroundExperiment.lastHeartbeatAt)
-                    experimentRow("Returned to foreground", host.backgroundExperiment.returnedToForegroundAt)
-                    ForEach(host.backgroundExperiment.audioEvents.indices, id: \.self) { index in
-                        let event = host.backgroundExperiment.audioEvents[index]
-                        HostRow(
-                            title: event.name.prefix(1).uppercased() + event.name.dropFirst(),
-                            value: event.at.formatted(date: .abbreviated, time: .standard),
-                            id: "host-experiment-audio-\(index)"
-                        )
-                    }
-                }
-            }
-            Section("Printer diagnostics") {
-                if let diagnostic = host.status.driverDiagnostic {
-                    Text(diagnostic)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("host-driver-diagnostic")
-                }
-                Button("Read printer status (~HS)") {
-                    Task { printerReading = await host.readPrinterStatus() }
-                }
-                .disabled(host.isReadingPrinterStatus)
-                .accessibilityLabel("Read printer status")
-                .accessibilityIdentifier("host-read-status")
-                if let printerReading {
-                    Text(printerReading.summary)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("host-status-reading")
-                }
-            }
-            if host.fakeRelay != nil {
-                Section("Test build") {
-                    Button("Print synthetic test label") { Task { await host.printSyntheticTestLabel() } }
-                        .accessibilityLabel("Print synthetic test label")
-                        .accessibilityIdentifier("host-synthetic-label")
-                    Button("Print large synthetic label") { Task { await host.printLargeSyntheticTestLabel() } }
-                        .accessibilityLabel("Print large synthetic label")
-                        .accessibilityIdentifier("host-synthetic-label-large")
-                }
-            }
-            #endif
+            .padding(.horizontal, FavorSpace.medium)
+            .padding(.vertical, FavorSpace.medium)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
         }
+        .background(FavorColor.paper.ignoresSafeArea())
         .navigationTitle("Printer host")
         .task {
             // The loop reports the printer only while it runs; poll gently otherwise, as the pending screen does.
@@ -94,21 +40,58 @@ struct HostStatusView: View {
         }
     }
 
-#if DEBUG
-    @ViewBuilder
-    private func experimentRow(_ title: String, _ date: Date?) -> some View {
-        HostRow(title: title, value: date?.formatted(date: .abbreviated, time: .shortened) ?? "None", id: "host-experiment-\(title)")
+    private var headlineCard: some View {
+        FavorCard {
+            VStack(alignment: .leading, spacing: FavorSpace.small) {
+                Text(headline.title)
+                    .font(FavorType.display(30))
+                    .foregroundStyle(FavorColor.ink)
+                    .accessibilityIdentifier("host-headline")
+                Text(headline.detail)
+                    .font(FavorType.utility())
+                    .foregroundStyle(FavorColor.mutedInk)
+                FavorStatusBadge(status: headline.badge)
+            }
+        }
     }
-#endif
 
-    // MARK: Printer
+    private var headline: Headline {
+        if host.error != nil { return Headline(title: "Needs attention", detail: "Check the message below and try again.", badge: .attention) }
+        if host.enrollment == .notEnrolled { return Headline(title: "Not enrolled", detail: "Add this printer in Favor RSVP to start printing.", badge: .unavailable) }
+        if host.status.driver != .running || host.status.printerAttached != true {
+            return Headline(title: "Needs attention", detail: "Check the printer connection and driver.", badge: .attention)
+        }
+        if host.isLoopRunning { return Headline(title: "Ready", detail: "This iPad is connected and ready to print.", badge: .ready) }
+        return Headline(title: "Paused", detail: "Printing resumes when this app is active.", badge: .unavailable)
+    }
 
-    private var printerSection: some View {
-        Section("Printer") {
+    private func errorCard(_ error: HostError) -> some View {
+        FavorCard {
+            VStack(alignment: .leading, spacing: FavorSpace.small) {
+                Text(error.message)
+                    .font(FavorType.utility())
+                    .foregroundStyle(FavorColor.warning)
+                    .accessibilityIdentifier("host-error")
+                if error == .authRejected {
+                    Button("Try again") { host.retryAfterAuthError() }
+                        .buttonStyle(FavorPrimaryButtonStyle())
+                        .accessibilityLabel("Try the relay again")
+                        .accessibilityIdentifier("host-retry")
+                }
+            }
+        }
+    }
+
+    private var printerCard: some View {
+        card("Printer") {
             HostRow(title: "Printer", value: printerText, id: "host-printer")
             HostRow(title: "Driver", value: driverText, id: "host-driver")
-            if let hint = driverHint {
-                Text(hint).font(.caption).accessibilityIdentifier("host-driver-hint")
+            if let driverHint {
+                Text(driverHint)
+                    .font(FavorType.utility(14))
+                    .foregroundStyle(FavorColor.mutedInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("host-driver-hint")
             }
         }
     }
@@ -126,18 +109,18 @@ struct HostStatusView: View {
     }
 
     private var driverHint: String? {
-        switch host.status.driver {
-        case .running: nil
-        case .printerPresentDriverNotRunning:
-            "Turn on Settings > Favor Printer > Drivers, then unplug and replug the printer. Replug after enabling."
-        case .unknown, nil: "Attach the printer to check."
+        guard host.status.driver != .running else { return nil }
+        let printerWasSeen = host.status.printerAttached == true || host.status.driver == .printerPresentDriverNotRunning
+        let stepID: SetupStepID = printerWasSeen ? .driver : .cable
+        if let instructions = host.setupSteps.first(where: { $0.id == stepID })?.instructions, !instructions.isEmpty {
+            let guidance = instructions.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !guidance.isEmpty { return guidance }
         }
+        return "Connect the printer to check the driver."
     }
 
-    // MARK: Host
-
-    private var hostSection: some View {
-        Section("Host") {
+    private var hostCard: some View {
+        card("Host") {
             HostRow(title: "Host", value: host.isLoopRunning ? "Running" : "Paused", id: "host-running")
             if host.status.printerMoved {
                 HostRow(title: "Printer", value: "Printer moved to another host", id: "host-printer-moved")
@@ -149,15 +132,25 @@ struct HostStatusView: View {
     }
 
     @ViewBuilder
-    private var keepAliveSection: some View {
+    private var keepAliveCard: some View {
         if let preference = host.keepAlivePreference {
             @Bindable var preference = preference
-            Section {
+            card("Background printing") {
+                Text("Available in Internal builds only.")
+                    .font(FavorType.utility(14))
+                    .foregroundStyle(FavorColor.mutedInk)
+                    .accessibilityIdentifier("keep-alive-internal-note")
                 Toggle("Keep running in background", isOn: $preference.isEnabled)
                     .accessibilityIdentifier("keep-alive-toggle")
                 HostRow(title: "Keep-alive", value: keepAliveText(enabled: preference.isEnabled), id: "keep-alive-status")
-            } footer: {
-                Text("Plays silent audio while the app is in the background so printing continues. Internal builds only.")
+                if let note = host.setupSteps.first(where: { $0.id == .background })?.instructions.first,
+                   host.isKeepAliveInterrupted {
+                    Text(note)
+                        .font(FavorType.utility(14))
+                        .foregroundStyle(FavorColor.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("keep-alive-interruption-note")
+                }
             }
         }
     }
@@ -178,32 +171,36 @@ struct HostStatusView: View {
         return "\(name), \(at.formatted(date: .abbreviated, time: .shortened))"
     }
 
-    // MARK: Enrollment
+    private var enrollmentHelp: String {
+        host.setupSteps.first { $0.id == .enrollment }?.instructions.joined(separator: " ")
+            ?? "An RSVP admin creates a one-time code in the printing panel. Enter that code here to connect this iPad."
+    }
 
     @ViewBuilder
-    private var enrollmentSection: some View {
+    private var enrollmentCard: some View {
         switch host.enrollment {
         case .launching:
-            Section("Enrollment") { ProgressView().accessibilityLabel("Reading enrollment") }
+            card("Enrollment") { ProgressView().accessibilityLabel("Reading enrollment") }
         case .notEnrolled:
-            Section {
+            card("Enrollment") {
                 HostRow(title: "Status", value: "Not enrolled", id: "host-enrollment")
+                Text(enrollmentHelp)
+                    .font(FavorType.utility(14))
+                    .foregroundStyle(FavorColor.mutedInk)
+                    .fixedSize(horizontal: false, vertical: true)
                 TextField("One-time code", text: $code)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
                     .accessibilityLabel("One-time enrollment code")
                     .accessibilityIdentifier("enroll-code-field")
                 Button("Enroll") { enroll() }
+                    .buttonStyle(FavorPrimaryButtonStyle())
                     .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || host.isEnrolling)
                     .accessibilityLabel("Enroll this printer")
                     .accessibilityIdentifier("enroll-button")
-            } header: {
-                Text("Enrollment")
-            } footer: {
-                Text("An admin makes a one-time code for this printer in Favor RSVP.")
             }
         case .enrolled:
-            Section("Enrollment") {
+            card("Enrollment") {
                 HostRow(title: "Status", value: host.printerName.map { "Enrolled, \($0)" } ?? "Enrolled", id: "host-enrollment")
                 if let from = host.handedOverFrom {
                     HostRow(title: "Handover", value: from.summary, id: "host-handed-over-from")
@@ -220,7 +217,64 @@ struct HostStatusView: View {
                     }
             }
         case .fakeRelay:
-            Section("Enrollment") { HostRow(title: "Status", value: "Fake relay (test build)", id: "host-enrollment") }
+            card("Enrollment") { HostRow(title: "Status", value: "Fake relay (test build)", id: "host-enrollment") }
+        }
+    }
+
+    #if DEBUG
+    @ViewBuilder
+    private var debugSections: some View {
+        if host.backgroundExperimentEnabledForDisplay {
+            card("Background experiment") {
+                experimentRow("Backgrounded at", host.backgroundExperiment.backgroundedAt)
+                ForEach(host.backgroundExperiment.jobs.indices, id: \.self) { index in
+                    let job = host.backgroundExperiment.jobs[index]
+                    HostRow(title: "Job sent, \(job.outcome)", value: job.at.formatted(date: .abbreviated, time: .shortened), id: "host-experiment-job-\(job.at.timeIntervalSince1970)")
+                }
+                experimentRow("Background task expired", host.backgroundExperiment.expiredAt)
+                experimentRow("Last background heartbeat", host.backgroundExperiment.lastHeartbeatAt)
+                experimentRow("Returned to foreground", host.backgroundExperiment.returnedToForegroundAt)
+                ForEach(host.backgroundExperiment.audioEvents.indices, id: \.self) { index in
+                    let event = host.backgroundExperiment.audioEvents[index]
+                    HostRow(title: event.name.prefix(1).uppercased() + event.name.dropFirst(), value: event.at.formatted(date: .abbreviated, time: .standard), id: "host-experiment-audio-\(index)")
+                }
+            }
+        }
+        card("Printer diagnostics") {
+            if let diagnostic = host.status.driverDiagnostic {
+                Text(diagnostic).font(.caption.monospaced()).textSelection(.enabled).accessibilityIdentifier("host-driver-diagnostic")
+            }
+            Button("Read printer status (~HS)") { Task { printerReading = await host.readPrinterStatus() } }
+                .disabled(host.isReadingPrinterStatus)
+                .accessibilityLabel("Read printer status")
+                .accessibilityIdentifier("host-read-status")
+            if let printerReading {
+                Text(printerReading.summary).font(.caption.monospaced()).textSelection(.enabled).accessibilityIdentifier("host-status-reading")
+            }
+        }
+        if host.fakeRelay != nil {
+            card("Test build") {
+                Button("Print synthetic test label") { Task { await host.printSyntheticTestLabel() } }
+                    .accessibilityLabel("Print synthetic test label")
+                    .accessibilityIdentifier("host-synthetic-label")
+                Button("Print large synthetic label") { Task { await host.printLargeSyntheticTestLabel() } }
+                    .accessibilityLabel("Print large synthetic label")
+                    .accessibilityIdentifier("host-synthetic-label-large")
+            }
+        }
+    }
+
+    private func experimentRow(_ title: String, _ date: Date?) -> some View {
+        HostRow(title: title, value: date?.formatted(date: .abbreviated, time: .shortened) ?? "None", id: "host-experiment-\(title)")
+    }
+    #endif
+
+    private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        FavorCard {
+            VStack(alignment: .leading, spacing: FavorSpace.medium) {
+                Text(title).font(FavorType.utility(20, weight: .semibold)).foregroundStyle(FavorColor.ink)
+                content()
+            }
         }
     }
 
@@ -232,16 +286,26 @@ struct HostStatusView: View {
     }
 }
 
+private struct Headline {
+    let title: String
+    let detail: String
+    let badge: FavorStatusBadge.Status
+}
+
 private struct HostRow: View {
     let title: String
     let value: String
     let id: String
 
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing).accessibilityIdentifier(id)
+        HStack(alignment: .firstTextBaseline, spacing: FavorSpace.medium) {
+            Text(title).foregroundStyle(FavorColor.ink)
+            Spacer(minLength: FavorSpace.small)
+            Text(value)
+                .foregroundStyle(FavorColor.mutedInk)
+                .multilineTextAlignment(.trailing)
+                .accessibilityIdentifier(id)
         }
+        .font(FavorType.utility())
     }
 }
