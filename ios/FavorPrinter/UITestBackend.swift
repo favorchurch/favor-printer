@@ -10,9 +10,11 @@ enum UITestHarness {
     /// Setup guidance scenarios, each reachable without hardware. The default (no scenario) is a ready printer, not
     /// enrolled, with Guided Access on and no keep-alive.
     static let scenarioFlag = "-FavorUITestScenario"
+    static let resetOnboardingFlag = "-FavorUITestResetOnboarding"
+    static let respectOnboardingFlag = "-FavorUITestRespectOnboarding"
 
     enum Scenario: String, CaseIterable {
-        case driverNotRunning, unplugged, notEnrolled, enrolled, keepAliveInterrupted, guidedAccessOff
+        case driverNotRunning, unplugged, notEnrolled, enrolled, keepAliveInterrupted, backgroundEnabled, guidedAccessOff
 
         /// The scenario named after `-FavorUITestScenario`, if any.
         static func resolve(arguments: [String]) -> Scenario? {
@@ -53,7 +55,7 @@ extension UITestHarness {
         let relay = FakeRelay()
         let storedCredential = scenario == .enrolled
             ? #"{"relayId":"ui-relay","token":"ui-token"}"# : nil
-        let keepAlivePreference = scenario == .keepAliveInterrupted
+        let keepAlivePreference = scenario == .keepAliveInterrupted || scenario == .backgroundEnabled
             ? UserDefaults(suiteName: "ui-test-\(UUID().uuidString)").map { KeepAlivePreference(defaults: $0) } : nil
         let host = HostController(
             backend: .real(
