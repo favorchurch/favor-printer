@@ -57,10 +57,10 @@ struct HostStatusView: View {
 
     private var headline: Headline {
         if host.error != nil { return Headline(title: "Needs attention", detail: "Check the message below and try again.", badge: .attention) }
+        if host.enrollment == .notEnrolled { return Headline(title: "Not enrolled", detail: "Add this printer in Favor RSVP to start printing.", badge: .unavailable) }
         if host.status.driver != .running || host.status.printerAttached != true {
             return Headline(title: "Needs attention", detail: "Check the printer connection and driver.", badge: .attention)
         }
-        if host.enrollment == .notEnrolled { return Headline(title: "Not enrolled", detail: "Add this printer in Favor RSVP to start printing.", badge: .unavailable) }
         if host.isLoopRunning { return Headline(title: "Ready", detail: "This iPad is connected and ready to print.", badge: .ready) }
         return Headline(title: "Paused", detail: "Printing resumes when this app is active.", badge: .unavailable)
     }
