@@ -40,6 +40,7 @@ final class HostStatusUITests: XCTestCase {
 
     func testFakeRelayShowsStatusAndPrintsTheSyntheticLabel() {
         let app = openHost(["-FavorHostFakeRelay", "-FavorHostFakeTransport"])
+        wait(app, "host-headline", equals: "Ready")
         wait(app, "host-printer", equals: "Attached")
         wait(app, "host-driver", equals: "Running")
         wait(app, "host-running", equals: "Running")
@@ -64,7 +65,12 @@ final class HostStatusUITests: XCTestCase {
 
     func testEnrollFormRefusesAConflictThenEnrollsAndUnenrolls() {
         let app = openHost([])
+        wait(app, "host-headline", equals: "Not enrolled")
         XCTAssertEqual(text(app, "host-enrollment"), "Not enrolled")
+        let enrollmentHelp = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "An RSVP admin")).firstMatch
+        XCTAssertTrue(enrollmentHelp.exists)
+        XCTAssertTrue(enrollmentHelp.label.contains("one-time code"))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Hand over from")).firstMatch.exists)
         XCTAssertFalse(app.buttons["host-synthetic-label"].exists)
         wait(app, "host-running", equals: "Paused")
 
@@ -80,6 +86,7 @@ final class HostStatusUITests: XCTestCase {
         let error = app.staticTexts["host-error"]
         XCTAssertTrue(error.waitForExistence(timeout: 10))
         XCTAssertEqual(error.label, "This printer is already in use by another device.")
+        wait(app, "host-headline", equals: "Needs attention")
         XCTAssertEqual(text(app, "host-enrollment"), "Not enrolled")
 
         field.tap()
@@ -103,10 +110,12 @@ final class HostStatusUITests: XCTestCase {
 
     func testDriverNotRunningShowsTheSettingsHintAndRefusesEnrollment() {
         let app = openHost(["-FavorUITestDriverOff"])
+        wait(app, "host-headline", equals: "Not enrolled")
         wait(app, "host-driver", equals: "Printer seen, driver not running")
         let hint = app.staticTexts["host-driver-hint"].label
         XCTAssertTrue(hint.contains("Settings > Favor Printer > Drivers"))
-        XCTAssertTrue(hint.contains("Replug after enabling"))
+        XCTAssertTrue(hint.contains("Unplug and replug the printer"))
+        XCTAssertTrue(hint.contains("restart the iPad"))
 
         let field = app.textFields["enroll-code-field"]
         field.tap()
