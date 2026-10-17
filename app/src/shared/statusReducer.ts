@@ -18,6 +18,52 @@ export type FiveState =
   | "Needs re-enrollment"
   | "In use elsewhere";
 
+export type PrinterPresence = "unknown" | "attached" | "detached";
+
+export type PrinterPresenceState = {
+  presence: PrinterPresence;
+  lastSeenAt: string | null;
+  consecutiveFailures: number;
+};
+
+export type PrinterPresenceSignal =
+  | { type: "printer_found"; seenAt: string }
+  | { type: "printer_absent" }
+  | { type: "listing_failed" };
+
+export const INITIAL_PRINTER_PRESENCE: PrinterPresenceState = {
+  presence: "unknown",
+  lastSeenAt: null,
+  consecutiveFailures: 0,
+};
+
+export const PRINTER_PRESENCE_FAILURE_LIMIT = 2;
+
+/** A second consecutive failed listing expires stale presence without inventing a detach. */
+export function printerPresenceReducer(
+  current: PrinterPresenceState,
+  signal: PrinterPresenceSignal,
+): PrinterPresenceState {
+  if (signal.type === "printer_found") {
+    return {
+      presence: "attached",
+      lastSeenAt: signal.seenAt,
+      consecutiveFailures: 0,
+    };
+  }
+  if (signal.type === "printer_absent") {
+    return { ...current, presence: "detached", consecutiveFailures: 0 };
+  }
+
+  const consecutiveFailures = current.consecutiveFailures + 1;
+  return {
+    ...current,
+    presence:
+      consecutiveFailures >= PRINTER_PRESENCE_FAILURE_LIMIT ? "unknown" : current.presence,
+    consecutiveFailures,
+  };
+}
+
 export const FIVE_STATES = [
   "Connected",
   "Unplugged",
@@ -82,6 +128,7 @@ export const INITIAL_STATUS_STATE: StatusState = {
 
 export function evaluateFiveState(context: {
   printerAttached: boolean;
+  printerPresence?: PrinterPresence;
   enrolled: boolean;
   revoked: boolean;
   inUseElsewhere: boolean;
@@ -91,6 +138,9 @@ export function evaluateFiveState(context: {
 }): FiveState {
   if (context.revoked || !context.enrolled || context.cloud === "revoked") {
     return "Needs re-enrollment";
+  }
+  if (context.printerPresence === "unknown") {
+    return "Waiting";
   }
   if (!context.printerAttached) {
     return "Unplugged";

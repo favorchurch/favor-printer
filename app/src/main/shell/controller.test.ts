@@ -90,7 +90,7 @@ describe("startup", () => {
     const h = await started({ credentials: CREDENTIALS, scan: NO_PRINTER, prefs: { openAtLogin: true, setupComplete: true, queue: "Favor_S1" } });
     expect(h.forks.children).toHaveLength(1);
     expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { queue: "Favor_S1" }, printerAttached: false } });
-    expect(h.controller.snapshot().status.headline).toBe("No printer found");
+    expect(h.controller.snapshot().status.headline).toBe("Printer unplugged");
   });
 
   describe("a remembered queue is not trusted while the printer is attached", () => {
@@ -157,7 +157,7 @@ describe("startup", () => {
     const h = await started({ ...ENROLLED, legacyLoaded: true });
     expect(h.forks.children).toHaveLength(0);
     expect(h.controller.snapshot()).toMatchObject({ legacyRelayLoaded: true });
-    expect(h.controller.snapshot().status.headline).toBe("The old print relay is still running");
+    expect(h.controller.snapshot().status.headline).toBe("Waiting for connection");
   });
 
   it("starts after the legacy agent is migrated", async () => {
@@ -190,7 +190,7 @@ describe("legacy relay migration", () => {
     expect(snapshot.legacyRelayLoaded).toBe(true);
     expect(snapshot.status).toMatchObject({
       color: "amber",
-      headline: "The old print relay is still running",
+      headline: "Waiting for connection",
       detail: "Move to Favor Printer to start printing.",
     });
   });
@@ -267,7 +267,7 @@ describe("legacy relay migration", () => {
       expect(h.forks.children).toHaveLength(0);
       const snapshot = h.controller.snapshot();
       expect(snapshot.legacyRelayLoaded).toBe(true);
-      expect(snapshot.status).toMatchObject({ color: "amber", headline: "The old print relay is still running", detail: LEGACY_FAILED_DETAIL });
+      expect(snapshot.status).toMatchObject({ color: "amber", headline: "Waiting for connection", detail: LEGACY_FAILED_DETAIL });
     });
 
     it("treats a zero exit with the label still loaded as a failure", async () => {
@@ -362,14 +362,18 @@ describe("printer attach and detach", () => {
     h.state.scan = LIST_FAILED;
     await h.controller.scanPrinters();
     expect(h.forks.last().types()).toEqual(["start"]);
-    expect(h.controller.snapshot().status.headline).not.toBe("No printer found");
+    expect(h.controller.snapshot().printerPresence?.presence).toBe("attached");
+    expect(h.controller.snapshot().status.headline).toBe("Waiting for connection");
+    await h.controller.scanPrinters();
+    expect(h.controller.snapshot().printerPresence?.presence).toBe("unknown");
+    expect(h.controller.snapshot().status.headline).not.toBe("Connected");
   });
 
   it("scans again on a timer", async () => {
     const h = await started();
     h.state.scan = NO_PRINTER;
     h.timers.fire("interval");
-    await vi.waitFor(() => expect(h.controller.snapshot().status.headline).toBe("No printer found"));
+    await vi.waitFor(() => expect(h.controller.snapshot().status.headline).toBe("Printer unplugged"));
   });
 
   it("keeps the power hold in step with the printer and the last job", async () => {
@@ -380,6 +384,29 @@ describe("printer attach and detach", () => {
     h.state.scan = NO_PRINTER;
     await h.controller.scanPrinters();
     expect(h.power.update).toHaveBeenLastCalledWith({ printerAttached: false, lastJobAt: "2026-10-04T01:00:00.000Z" });
+  });
+
+  it("records the last successful printer sighting and starts unknown after failed startup scans", async () => {
+    const h = await started({ scan: LIST_FAILED });
+    expect(h.controller.snapshot().printerPresence).toEqual({ presence: "unknown", lastSeenAt: null, consecutiveFailures: 1 });
+    expect(h.controller.snapshot().status.headline).toBe("Needs re-enrollment");
+
+    h.state.scan = foundPrinter();
+    await h.controller.scanPrinters();
+    const lastSeenAt = h.controller.snapshot().printerPresence?.lastSeenAt ?? null;
+    expect(lastSeenAt).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(h.controller.snapshot().printerPresence?.presence).toBe("attached");
+
+    h.state.scan = NO_PRINTER;
+    await h.controller.scanPrinters();
+    expect(h.controller.snapshot().printerPresence).toEqual({ presence: "detached", lastSeenAt, consecutiveFailures: 0 });
+  });
+
+  it("keeps a printer found by lpinfo attached when its CUPS queue lookup fails", async () => {
+    const h = await started({ scan: { ...foundPrinter(), listFailed: true } });
+    expect(h.controller.snapshot().printerPresence?.presence).toBe("attached");
+    expect(h.controller.snapshot().status.headline).not.toBe("Printer unplugged");
+    expect(h.power.update).toHaveBeenLastCalledWith({ printerAttached: true, lastJobAt: null });
   });
 });
 
@@ -412,7 +439,7 @@ describe("the running relay follows the selected printer's queue", () => {
       expect(h.forks.last().types()).toEqual(["start", "printerAttached", "stop"]);
       expect(h.forks.last().messages[1]).toEqual({ type: "printerAttached", attached: true });
       expect(h.forks.children).toHaveLength(1);
-      expect(h.controller.snapshot().status.headline).toBe(queue === "missing" ? "Printer needs setting up" : "Printer is turned off");
+      expect(h.controller.snapshot().status.headline).toBe("Waiting for connection");
     });
 
     it("forgets the stale queue name", async () => {
@@ -817,7 +844,7 @@ describe("revocation and re-enrollment", () => {
   it("goes red, drops the dead token and stops the relay", async () => {
     const h = await revoked();
     const snapshot = h.controller.snapshot();
-    expect(snapshot.status).toMatchObject({ color: "red", headline: "This laptop was removed. Ask an admin for a new code." });
+    expect(snapshot.status).toMatchObject({ color: "red", headline: "Needs re-enrollment" });
     expect(snapshot.enrolled).toBe(false);
     expect(h.secrets.clear).toHaveBeenCalled();
     expect(h.prefsFs.saved()).toMatchObject({ revoked: true });
