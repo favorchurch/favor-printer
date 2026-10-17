@@ -112,7 +112,11 @@ struct HostStatusView: View {
         guard host.status.driver != .running else { return nil }
         let printerWasSeen = host.status.printerAttached == true || host.status.driver == .printerPresentDriverNotRunning
         let stepID: SetupStepID = printerWasSeen ? .driver : .cable
-        return host.setupSteps.first { $0.id == stepID }?.instructions.joined(separator: " ") ?? "Connect the printer to check the driver."
+        if let instructions = host.setupSteps.first(where: { $0.id == stepID })?.instructions, !instructions.isEmpty {
+            let guidance = instructions.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !guidance.isEmpty { return guidance }
+        }
+        return "Connect the printer to check the driver."
     }
 
     private var hostCard: some View {
@@ -132,6 +136,10 @@ struct HostStatusView: View {
         if let preference = host.keepAlivePreference {
             @Bindable var preference = preference
             card("Background printing") {
+                Text("Available in Internal builds only.")
+                    .font(FavorType.utility(14))
+                    .foregroundStyle(FavorColor.mutedInk)
+                    .accessibilityIdentifier("keep-alive-internal-note")
                 Toggle("Keep running in background", isOn: $preference.isEnabled)
                     .accessibilityIdentifier("keep-alive-toggle")
                 HostRow(title: "Keep-alive", value: keepAliveText(enabled: preference.isEnabled), id: "keep-alive-status")
