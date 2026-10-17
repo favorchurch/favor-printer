@@ -9,3 +9,6 @@ coverage/
 .env*
 .DS_Store
 graft/
+
+__pycache__/
+*.pyc
