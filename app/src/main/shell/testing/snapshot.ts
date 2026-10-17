@@ -15,7 +15,6 @@ export function snapshotFor(patch: Partial<AppSnapshot> = {}): AppSnapshot {
     recentJobs: { sent: 0, failed: 0, ambiguous: 0 },
     setupStep: null,
     printer: { kind: "none" },
-    printerPresence: { presence: "unknown", lastSeenAt: null, consecutiveFailures: 0 },
     legacyRelayLoaded: false,
     warnings: ["Keep the lid open while printing. Closing the lid can stop labels from printing."],
     ...patch,
