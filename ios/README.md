@@ -342,6 +342,20 @@ the wire with a job. Release builds compile neither.
 `HostStatusUITests` drives the screen with `-FavorUITestMock` plus either `-FavorHostFakeRelay -FavorHostFakeTransport` (the simulator cannot load the dext, so the fake printer is needed) or the mocked enroll
 call (code `CONFLICT` is refused with a conflict; `-FavorUITestDriverOff` fakes a printer without a running driver).
 
+### Setup guide and simulator screenshots
+
+On first launch, until the iPad is enrolled, the app opens a Setup guide (`Views/Onboarding/OnboardingView.swift`, steps from
+`Host/SetupGuide.swift`) instead of the status screen. It covers the driver, the cable, enrollment, Guided Access and
+Auto-Lock, and background printing. The **Setup guide** button on the status screen reopens it. Point operators at the
+in-app guide for the iPad steps ([IPAD-INSTALL.md](../docs/IPAD-INSTALL.md) keeps the written reference).
+
+`scripts/capture-ux-screenshots.sh [--out-dir DIR]` runs `ScreenshotUITests` on an iPad simulator (default
+`iPad Air 13-inch (M4)`, override with `SIMULATOR_NAME`) against the mocked backend, regenerates the Xcode project first,
+and writes nine state PNGs plus an `index.html` gallery to `DIR` (default `docs/verification/ipad-ux/`).
+`scripts/check-ux-gallery.sh DIR` fails unless `DIR` has all nine PNGs and a captioned figure for each. Rerun the capture
+after changing the guide or status screens and commit the new PNGs. The simulator has no driver, USB or Guided Access, so
+the README in that folder lists what is still unverified on a real iPad.
+
 ### Tests
 
 `HostLoopTests.swift` has example tests for the spool, the loop, enrollment, scene phase and relay selection, all

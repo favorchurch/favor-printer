@@ -51,6 +51,11 @@ panel).
 6. **Enter your code.** Enroll with a one-time code from an RSVP printing admin.
 7. **Keep it running.** Leave **Keep running in background** on. The app only prints in the background while it is on.
 
+The app walks through steps 3 to 7 itself. On first launch it opens a **Setup guide** that shows each step's state and
+what to do next: driver, cable, enrollment, Guided Access and Auto-Lock, and background printing. Follow the in-app guide
+for the iPad steps. Tap **Setup guide** on the status screen to reopen it. The steps above stay as the written reference.
+Simulator screenshots of the guide are in [docs/verification/ipad-ux](verification/ipad-ux/README.md).
+
 If the printer is currently set up on a Mac, the admin must confirm **Hand over from <host>** when they issue the code.
 The Mac must already be on Favor Printer v0.3.0-beta.2 or later.
 
