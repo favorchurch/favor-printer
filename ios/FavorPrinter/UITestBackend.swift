@@ -7,6 +7,19 @@ enum UITestHarness {
     static let flag = "-FavorUITestMock"
     /// The host's printer is attached but the driver extension is not running.
     static let driverOffFlag = "-FavorUITestDriverOff"
+    /// Setup guidance scenarios, each reachable without hardware. The default (no scenario) is a ready printer, not
+    /// enrolled, with Guided Access on and no keep-alive.
+    static let scenarioFlag = "-FavorUITestScenario"
+
+    enum Scenario: String, CaseIterable {
+        case driverNotRunning, unplugged, notEnrolled, enrolled, keepAliveInterrupted, guidedAccessOff
+
+        /// The scenario named after `-FavorUITestScenario`, if any.
+        static func resolve(arguments: [String]) -> Scenario? {
+            guard let index = arguments.firstIndex(of: scenarioFlag), arguments.indices.contains(index + 1) else { return nil }
+            return Scenario(rawValue: arguments[index + 1])
+        }
+    }
     /// The one enrollment code the mocked relay refuses, with a 409 printer conflict.
     static let conflictCode = "CONFLICT"
 
@@ -18,11 +31,18 @@ extension UITestHarness {
     /// printer is the fake one only with `-FavorHostFakeTransport` too. Otherwise it starts not enrolled, and the mocked enroll call accepts any code except `conflictCode`.
     @MainActor static func makeHost() -> HostController? {
         let arguments = ProcessInfo.processInfo.arguments
-        let transport = FakeUsbTransport(
-            status: arguments.contains(driverOffFlag)
-                ? UsbPrinterStatus(driver: .printerPresentDriverNotRunning, printerAttached: true)
-                : FakeUsbTransport.readyStatus
-        )
+        let scenario = Scenario.resolve(arguments: arguments)
+        let transportStatus: UsbPrinterStatus
+        if arguments.contains(driverOffFlag) || scenario == .driverNotRunning {
+            transportStatus = UsbPrinterStatus(driver: .printerPresentDriverNotRunning, printerAttached: true)
+        } else if scenario == .unplugged {
+            transportStatus = UsbPrinterStatus(driver: .unknown)
+        } else {
+            transportStatus = FakeUsbTransport.readyStatus
+        }
+        let transport = FakeUsbTransport(status: transportStatus)
+        let guidedAccessOn = scenario != .guidedAccessOff
+        let environment = HostEnvironment(guidedAccess: { guidedAccessOn })
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "ui-test-host-\(UUID().uuidString)", directoryHint: .isDirectory)
         guard let baseURL = URL(string: "https://relay.invalid") else { return nil }
@@ -32,9 +52,13 @@ extension UITestHarness {
         }
         guard let spool = try? HostSpool(directory: directory) else { return nil }
         let relay = FakeRelay()
-        return HostController(
+        let storedCredential = scenario == .enrolled
+            ? #"{"relayId":"ui-relay","token":"ui-token"}"# : nil
+        let keepAlivePreference = scenario == .keepAliveInterrupted
+            ? UserDefaults(suiteName: "ui-test-\(UUID().uuidString)").map { KeepAlivePreference(defaults: $0) } : nil
+        let host = HostController(
             backend: .real(
-                credentials: SecretHostCredentialStore(secrets: MockSecretStore(nil)),
+                credentials: SecretHostCredentialStore(secrets: MockSecretStore(storedCredential)),
                 makeRelay: { _ in relay },
                 enroll: { request in
                     if request.code == conflictCode { throw RelayEnrollFailure.printerConflict(.serialInUse) }
@@ -44,8 +68,11 @@ extension UITestHarness {
                     )
                 }
             ),
-            transport: transport, spool: spool
+            transport: transport, spool: spool,
+            keepAlivePreference: keepAlivePreference, environment: environment
         )
+        if scenario == .keepAliveInterrupted { host.simulateKeepAliveInterruptionForUITest() }
+        return host
     }
 }
 
