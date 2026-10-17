@@ -72,7 +72,7 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: FavorPrinter/Bridging-Header.h
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 3
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Favor Printer
@@ -83,7 +83,7 @@ targets:
           UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
           UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 0.2.0
         PRODUCT_BUNDLE_IDENTIFIER: church.favor.printer.ios
         SUPPORTED_PLATFORMS: iphoneos iphonesimulator
         SUPPORTS_MACCATALYST: NO
@@ -119,11 +119,11 @@ targets:
         DEXT_SIGNING_ALLOWED_iphonesimulator: "NO"
         CODE_SIGN_ENTITLEMENTS: FavorPrinterDriver/FavorPrinterDriver.entitlements
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 3
         DEVELOPMENT_TEAM: 3JJ4492TV8
         DRIVERKIT_DEPLOYMENT_TARGET: "22.0"
         INFOPLIST_FILE: FavorPrinterDriver/Info.plist
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 0.2.0
         OTHER_LDFLAGS: ["-framework", "DriverKit", "-framework", "USBDriverKit"]
         PRODUCT_BUNDLE_IDENTIFIER: church.favor.printer.ios.driver
         # The dext ships inside the app (SystemExtensions); installing it as its own archive product makes the archive non-exportable.
@@ -145,10 +145,10 @@ targets:
     settings:
       base:
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 3
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 0.2.0
         PRODUCT_BUNDLE_IDENTIFIER: church.favor.printer.ios.tests
         SUPPORTED_PLATFORMS: iphoneos iphonesimulator
         SUPPORTS_MACCATALYST: NO
@@ -165,10 +165,10 @@ targets:
     settings:
       base:
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 3
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 0.2.0
         PRODUCT_BUNDLE_IDENTIFIER: church.favor.printer.ios.uitests
         SUPPORTED_PLATFORMS: iphoneos iphonesimulator
         SUPPORTS_MACCATALYST: NO
