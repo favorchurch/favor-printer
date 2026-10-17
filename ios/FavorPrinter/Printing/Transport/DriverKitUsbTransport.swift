@@ -41,11 +41,12 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
         case .ours(let connection, let reply, let diagnostic):
             defer { connection.close() }
             return Self.runningStatus(from: reply, diagnostic: diagnostic)
-        case .unavailable(let candidatesFound, let openFailure, let statusFailure, let mismatch, let foreign, let diagnostic):
+        case .unavailable(_, let openFailure, let statusFailure, let mismatch, let foreign, let diagnostic):
+            // Candidates are every IOUserService on the device, so they say nothing about the printer: only the registry does.
             let visible = backend.printerVisible()
             var status = UsbPrinterStatus(
-                driver: candidatesFound || visible ? .printerPresentDriverNotRunning : .unknown,
-                printerAttached: candidatesFound || visible ? true : nil,
+                driver: visible ? .printerPresentDriverNotRunning : .unknown,
+                printerAttached: visible,
                 foreignDriver: foreign
             )
 #if DEBUG
@@ -63,11 +64,13 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
         }
     }
 
+    /// Not `requiring(scalars:)`: a short reply must keep whatever scalars it has, because carrying our magic is what
+    /// separates an older build of our dext from someone else's user client.
     private static func statusReply(from connection: DextConnection) -> DextReply {
         connection.call(
             selector: kFavorZplSelectorStatus,
             scalarOutputCount: Int(kFavorZplStatusFieldCount), structOutputCapacity: Int(kFavorZplMaxSerialBytes)
-        ).requiring(scalars: Int(kFavorZplStatusFieldCount))
+        )
     }
 
     private static func runningStatus(from reply: DextReply, diagnostic: String?) -> UsbPrinterStatus {
@@ -121,21 +124,13 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
                 connection.close()
                 continue
             }
-            let hasMagic = reply.code == IOReturnCode.success && reply.scalars.count > Int(kFavorZplStatusDriverMagic)
-            let magic = hasMagic ? UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusDriverMagic)]) : nil
-            let hasVersion = reply.code == IOReturnCode.success && reply.scalars.count > Int(kFavorZplStatusABIVersion)
-            let version = hasVersion ? UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusABIVersion)]) : nil
-            let stage = reply.code == IOReturnCode.success && reply.scalars.count > Int(kFavorZplStatusStage)
-                ? String(UInt32(truncatingIfNeeded: reply.scalars[Int(kFavorZplStatusStage)])) : "unavailable"
+            let magic = Self.scalar(kFavorZplStatusDriverMagic, of: reply)
+            let version = Self.scalar(kFavorZplStatusABIVersion, of: reply)
+            let stage = Self.scalar(kFavorZplStatusStage, of: reply).map(String.init) ?? "unavailable"
             let magicText = magic.map { String(format: "0x%08X", $0) } ?? "unavailable"
             let versionText = version.map(String.init) ?? "unavailable"
             let trace = "#\(index + 1) class=\(candidate.className)\(identity) open=success magic=\(magicText) abi=\(versionText) stage=\(stage)"
-            if reply.code == IOReturnCode.badArgument {
-                if mismatch == nil { mismatch = ABIMismatch(actual: nil) }
-                lines.append("\(trace) result=abi-mismatch (status=bad-argument)")
-                connection.close()
-                continue
-            }
+            // Only our magic makes an ABI problem ours. A bad-argument or short reply from anyone else is a foreign user client.
             if magic == UInt32(kFavorZplDriverMagic) {
                 if version == UInt32(kFavorZplABIVersion) {
                     lines.append("\(trace) result=ours")
@@ -158,6 +153,12 @@ final class DriverKitUsbTransport: UsbPrinterTransport {
             candidatesFound: !candidates.isEmpty, openFailure: openFailure, statusFailure: statusFailure, mismatch: mismatch,
             foreign: foreign, diagnostic: Self.debugDiagnostic(lines)
         )
+    }
+
+    /// A status scalar, nil when the call failed or the reply is too short to carry it.
+    private static func scalar(_ field: Int, of reply: DextReply) -> UInt32? {
+        guard reply.code == IOReturnCode.success, reply.scalars.count > Int(field) else { return nil }
+        return UInt32(truncatingIfNeeded: reply.scalars[Int(field)])
     }
 
     private static func debugDiagnostic(_ lines: [String]) -> String? {
