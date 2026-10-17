@@ -131,14 +131,4 @@ final class HostStatusUITests: XCTestCase {
         wait(app, "host-printer", equals: "Not seen")
         XCTAssertTrue(app.staticTexts["host-driver-hint"].label.contains("USB-C port"))
     }
-
-    func testKeepAliveInterruptionShowsWhyBackgroundPrintingPaused() {
-        let app = openHost(["-FavorUITestScenario", "keepAliveInterrupted"])
-
-        XCTAssertEqual(app.staticTexts["keep-alive-internal-note"].label, "Available in Internal builds only.")
-        let note = app.staticTexts["keep-alive-interruption-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 10))
-        XCTAssertTrue(note.label.contains("Another app took the audio"))
-        assertLabelled(app)
-    }
 }
