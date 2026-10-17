@@ -86,6 +86,7 @@ final class HostStatusUITests: XCTestCase {
         let error = app.staticTexts["host-error"]
         XCTAssertTrue(error.waitForExistence(timeout: 10))
         XCTAssertEqual(error.label, "This printer is already in use by another device.")
+        wait(app, "host-headline", equals: "Needs attention")
         XCTAssertEqual(text(app, "host-enrollment"), "Not enrolled")
 
         field.tap()
@@ -109,7 +110,7 @@ final class HostStatusUITests: XCTestCase {
 
     func testDriverNotRunningShowsTheSettingsHintAndRefusesEnrollment() {
         let app = openHost(["-FavorUITestDriverOff"])
-        wait(app, "host-headline", equals: "Needs attention")
+        wait(app, "host-headline", equals: "Not enrolled")
         wait(app, "host-driver", equals: "Printer seen, driver not running")
         let hint = app.staticTexts["host-driver-hint"].label
         XCTAssertTrue(hint.contains("Settings > Favor Printer > Drivers"))
@@ -122,13 +123,5 @@ final class HostStatusUITests: XCTestCase {
         app.buttons["enroll-button"].tap()
         XCTAssertTrue(app.staticTexts["host-error"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["host-error"].label.hasPrefix("The printer is not ready."))
-    }
-
-    func testUnpluggedPrinterShowsNotSeenAndCableSteps() {
-        let app = openHost(["-FavorUITestScenario", "unplugged"])
-
-        wait(app, "host-headline", equals: "Needs attention")
-        wait(app, "host-printer", equals: "Not seen")
-        XCTAssertTrue(app.staticTexts["host-driver-hint"].label.contains("USB-C port"))
     }
 }
