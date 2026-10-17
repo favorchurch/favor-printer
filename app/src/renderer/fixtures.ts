@@ -156,6 +156,8 @@ export function fixtureFor(requested: string | null): Fixture {
       return {
         snapshot: withStep(null, {
           ...enrolled,
+          fiveState: "Connected",
+          recoveryAction: "Run a local test print in Favor Printer to verify labels.",
           update: { kind: "idle" },
         }),
       };

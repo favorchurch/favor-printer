@@ -174,16 +174,13 @@ describe("status / about screen rendering", () => {
   });
 
   it("renders fiveState and recoveryAction hint on status screen", () => {
+    const snapshot = fixtureFor("status").snapshot;
     const rendered = renderScreen("status", {
-      snapshot: {
-        ...fixtureFor("status").snapshot,
-        fiveState: "Connected",
-        recoveryAction: "Run a local test print in Favor Printer to verify labels.",
-      },
+      snapshot,
       local: INITIAL_LOCAL,
       actions: {} as never,
     }) as unknown as FakeElement;
-    expect(text(rendered)).toContain("Connected: Run a local test print in Favor Printer to verify labels.");
+    expect(text(rendered)).toContain(`${snapshot.fiveState}: ${snapshot.recoveryAction}`);
   });
 
   it.each(["unplugged", "waiting", "in-use-elsewhere"] as const)(
@@ -206,7 +203,11 @@ describe("status / about screen rendering", () => {
     const rendered = renderScreen("status", { snapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
     expect(text(rendered)).toContain(`Not seen since ${expectedTime}`);
 
-    const connected = renderScreen("status", { snapshot: fixtureFor("status").snapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
+    const connectedSnapshot = {
+      ...fixtureFor("status").snapshot,
+      printerPresence: snapshot.printerPresence,
+    };
+    const connected = renderScreen("status", { snapshot: connectedSnapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
     expect(text(connected).some((line) => line.startsWith("Not seen since "))).toBe(false);
   });
 
