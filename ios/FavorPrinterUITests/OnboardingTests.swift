@@ -88,6 +88,13 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertEqual(app.buttons["setup-guide-button"].label, "Open setup guide")
         app.buttons["setup-guide-button"].tap()
         XCTAssertEqual(title.label, "Welcome")
+        let closeGuide = app.buttons["onboarding-close"]
+        XCTAssertEqual(closeGuide.label, "Close setup guide")
+        closeGuide.tap()
+        XCTAssertTrue(app.staticTexts["host-enrollment"].waitForExistence(timeout: 10))
+        XCTAssertFalse(title.exists)
+        app.buttons["setup-guide-button"].tap()
+        XCTAssertEqual(title.label, "Welcome")
 
         app.terminate()
         let relaunched = XCUIApplication()

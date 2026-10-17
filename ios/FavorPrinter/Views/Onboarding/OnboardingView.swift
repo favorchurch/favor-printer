@@ -3,6 +3,7 @@ import SwiftUI
 struct OnboardingView: View {
     let host: HostController
     let onFinish: () -> Void
+    let onExit: () -> Void
 
     @State private var page: Page = .welcome
     @State private var code = ""
@@ -71,6 +72,15 @@ struct OnboardingView: View {
         .background(FavorColor.paper.ignoresSafeArea())
         .navigationTitle("Setup guide")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: onExit) {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Close setup guide")
+                .accessibilityIdentifier("onboarding-close")
+            }
+        }
     }
 
     @ViewBuilder
