@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateFiveState, RECOVERY_ACTIONS, type QueueState, type StatusColor, type UpdateState } from "../../shared";
 import { propertyParams } from "../../shared/testing/property";
 import type { CloudState, RelayState, RelayStatus } from "../../../../vendor/relay/status";
-import { deriveFiveState, deriveStatus, recentJobs, REVOKED_HEADLINE, type StatusInputs } from "./statusSummary";
+import { deriveFiveState, deriveStatus, FIVE_STATE_HEADLINES, recentJobs, REVOKED_HEADLINE, type StatusInputs } from "./statusSummary";
 
 const relay = (overrides: Partial<RelayStatus> = {}): RelayStatus => ({
   state: "running",
@@ -33,17 +33,29 @@ const inputs = (overrides: Partial<StatusInputs> = {}): StatusInputs => ({
 });
 
 describe("deriveStatus copy", () => {
-  it("shows the removed-laptop message in red", () => {
+  it("uses the five-state headline for the removed laptop", () => {
     expect(deriveStatus(inputs({ revoked: true }))).toEqual({
       color: "red",
-      headline: "This laptop was removed. Ask an admin for a new code.",
+      headline: "Needs re-enrollment",
       detail: null,
     });
     expect(REVOKED_HEADLINE).toBe("This laptop was removed. Ask an admin for a new code.");
   });
 
   it("is ready when everything is on", () => {
-    expect(deriveStatus(inputs())).toEqual({ color: "green", headline: "Ready to print", detail: null });
+    expect(deriveStatus(inputs())).toEqual({ color: "green", headline: "Connected", detail: null });
+  });
+
+  it("keeps unknown printer presence out of the ready state", () => {
+    expect(deriveStatus(inputs({ printerPresence: "unknown" }))).toEqual({
+      color: "amber",
+      headline: "Waiting for connection",
+      detail: "Printer presence will update after the next scan.",
+    });
+  });
+
+  it("uses the dedicated headline when another laptop has claimed the printer", () => {
+    expect(deriveStatus(inputs({ inUseElsewhere: true })).headline).toBe("Printer in use elsewhere");
   });
 
   it("warns on green when the last label is in doubt, and when it failed", () => {
@@ -54,45 +66,55 @@ describe("deriveStatus copy", () => {
   it("says the printer moved when the relay was handed over", () => {
     const summary = deriveStatus(inputs({ relay: relay({ handedOverPrinterIds: ["printer-1"], printerIds: [] }) }));
     expect(summary.color).toBe("amber");
-    expect(summary.headline).toBe("Printer moved to another host");
+    expect(summary.headline).toBe("Connected");
   });
 
   it("mentions a ready update", () => {
     expect(deriveStatus(inputs({ update: { kind: "ready", version: "0.2.0" } })).detail).toMatch(/quit/i);
   });
 
+  it("maps all five reducer states to the approved status headlines", () => {
+    expect(FIVE_STATE_HEADLINES).toEqual({
+      Connected: "Connected",
+      Unplugged: "Printer unplugged",
+      Waiting: "Waiting for connection",
+      "Needs re-enrollment": "Needs re-enrollment",
+      "In use elsewhere": "Printer in use elsewhere",
+    });
+  });
+
   // docs/design/tray-spec.md section 2, row by row, word for word.
   it.each([
-    ["revoked", { revoked: true }, "red", "This laptop was removed. Ask an admin for a new code.", null],
-    ["revoked by the cloud", { relay: relay({ cloud: "revoked" }) }, "red", REVOKED_HEADLINE, null],
-    ["legacy", { legacyRelayLoaded: true }, "amber", "The old print relay is still running", "Move to Favor Printer to start printing."],
-    ["not enrolled", { enrolled: false, relay: null }, "amber", "Not set up yet", "Enter the six-digit code from an admin."],
-    ["restarting", { relayRestarting: true }, "amber", "Print relay is restarting", "Printing resumes in a moment."],
-    ["no printer", { printerAttached: false }, "amber", "No printer found", "Plug in the Zebra with its USB cable."],
-    ["queue missing", { queue: "missing" }, "amber", "Printer needs setting up", "Choose Set up printer to continue."],
+    ["revoked", { revoked: true }, "red", "Needs re-enrollment", null],
+    ["revoked by the cloud", { relay: relay({ cloud: "revoked" }) }, "red", "Needs re-enrollment", null],
+    ["legacy", { legacyRelayLoaded: true }, "amber", "Waiting for connection", "Move to Favor Printer to start printing."],
+    ["not enrolled", { enrolled: false, relay: null }, "amber", "Needs re-enrollment", "Enter the six-digit code from an admin."],
+    ["restarting", { relayRestarting: true }, "amber", "Waiting for connection", "Printing resumes in a moment."],
+    ["no printer", { printerAttached: false }, "amber", "Printer unplugged", "Plug in the Zebra with its USB cable."],
+    ["queue missing", { queue: "missing" }, "amber", "Waiting for connection", "Choose Set up printer to continue."],
     [
       "queue disabled",
       { queue: "disabled" },
       "amber",
-      "Printer is turned off",
+      "Waiting for connection",
       "Turn it back on in System Settings, under Printers & Scanners.",
     ],
-    ["relay stopped", { relay: null }, "amber", "Starting up", null],
-    ["relay starting", { relay: relay({ state: "starting" }) }, "amber", "Starting up", null],
-    ["unreachable", { relay: relay({ cloud: "unreachable" }) }, "amber", "Cannot reach Favor RSVP", "Printing resumes when the internet is back."],
-    ["paused", { paused: true }, "amber", "Printing is paused", "Choose Resume printing in the menu."],
-    ["relay paused", { relay: relay({ state: "paused" }) }, "amber", "Printing is paused", "Choose Resume printing in the menu."],
-    ["downloading", { update: { kind: "downloading" } }, "amber", "Updating Favor Printer", null],
+    ["relay stopped", { relay: null }, "amber", "Waiting for connection", null],
+    ["relay starting", { relay: relay({ state: "starting" }) }, "amber", "Waiting for connection", null],
+    ["unreachable", { relay: relay({ cloud: "unreachable" }) }, "amber", "Waiting for connection", "Printing resumes when the internet is back."],
+    ["paused", { paused: true }, "amber", "Connected", "Choose Resume printing in the menu."],
+    ["relay paused", { relay: relay({ state: "paused" }) }, "amber", "Waiting for connection", "Choose Resume printing in the menu."],
+    ["downloading", { update: { kind: "downloading" } }, "amber", "Connected", null],
     [
       "ambiguous",
       { relay: relay({ lastError: "send_ambiguous" }) },
       "green",
-      "Ready to print",
+      "Connected",
       "The last label may not have printed. Check the label stock.",
     ],
-    ["failed", { relay: relay({ lastError: "send_failed" }) }, "green", "Ready to print", "The last label failed to print."],
-    ["update ready", { update: { kind: "ready", version: "0.2.0" } }, "green", "Ready to print", "An update installs when you quit."],
-    ["healthy", {}, "green", "Ready to print", null],
+    ["failed", { relay: relay({ lastError: "send_failed" }) }, "green", "Connected", "The last label failed to print."],
+    ["update ready", { update: { kind: "ready", version: "0.2.0" } }, "green", "Connected", "An update installs when you quit."],
+    ["healthy", {}, "green", "Connected", null],
   ] as Array<[string, Partial<StatusInputs>, StatusColor, string, string | null]>)(
     "matches the copy deck when %s",
     (_name, overrides, color, headline, detail) => {
@@ -112,12 +134,12 @@ describe("deriveStatus priority", () => {
   });
 
   it("puts the legacy relay above setup, because nothing may start until it is gone", () => {
-    expect(deriveStatus(inputs({ legacyRelayLoaded: true, enrolled: false })).headline).toMatch(/old print relay/i);
+    expect(deriveStatus(inputs({ legacyRelayLoaded: true, enrolled: false })).headline).toBe("Needs re-enrollment");
   });
 
   it("names the printer before the cloud when both are down", () => {
     const summary = deriveStatus(inputs({ printerAttached: false, relay: relay({ cloud: "unreachable" }) }));
-    expect(summary.headline).toMatch(/no printer/i);
+    expect(summary.headline).toBe("Printer unplugged");
   });
 });
 
@@ -218,7 +240,11 @@ describe("deriveFiveState", () => {
               : "stopped",
           queue: input.queue,
         });
-        expect(deriveFiveState(input)).toEqual({ state, recoveryAction: RECOVERY_ACTIONS[state] });
+        expect(deriveFiveState(input)).toEqual({
+          state,
+          headline: FIVE_STATE_HEADLINES[state],
+          recoveryAction: RECOVERY_ACTIONS[state],
+        });
       }),
       propertyParams(),
     );

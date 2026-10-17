@@ -12,6 +12,7 @@ import {
   type QueueState,
   type StatusSummary,
   type UpdateState,
+  type PrinterPresence,
 } from "../../shared";
 import type { RelayStatus } from "../../../../vendor/relay/status";
 
@@ -27,6 +28,7 @@ export type StatusInputs = {
   /** The supervisor is waiting to restart a crashed relay. */
   relayRestarting: boolean;
   printerAttached: boolean;
+  printerPresence?: PrinterPresence;
   queue: QueueState;
   paused: boolean;
   update: UpdateState;
@@ -36,7 +38,7 @@ export type StatusInputs = {
 
 const amber = (headline: string, detail: string | null): StatusSummary => ({ color: "amber", headline, detail });
 
-export function deriveStatus(inputs: StatusInputs): StatusSummary {
+function deriveOperationalStatus(inputs: StatusInputs): StatusSummary {
   const { relay } = inputs;
 
   if (inputs.revoked || relay?.cloud === "revoked") {
@@ -47,6 +49,9 @@ export function deriveStatus(inputs: StatusInputs): StatusSummary {
   }
   if (!inputs.enrolled) return amber("Not set up yet", "Enter the six-digit code from an admin.");
   if (inputs.relayRestarting) return amber("Print relay is restarting", "Printing resumes in a moment.");
+  if (inputs.printerPresence === "unknown") {
+    return amber("Waiting for connection", "Printer presence will update after the next scan.");
+  }
   if (!inputs.printerAttached) return amber("No printer found", "Plug in the Zebra with its USB cable.");
   if (inputs.queue === "missing") return amber("Printer needs setting up", "Choose Set up printer to continue.");
   if (inputs.queue === "disabled") {
@@ -82,6 +87,13 @@ export function deriveStatus(inputs: StatusInputs): StatusSummary {
   return { color: "green", headline: "Ready to print", detail: null };
 }
 
+export function deriveStatus(inputs: StatusInputs): StatusSummary {
+  const summary = deriveOperationalStatus(inputs);
+  const { state } = deriveFiveState(inputs);
+  const color = inputs.printerPresence === "unknown" && summary.color === "green" ? "amber" : summary.color;
+  return { ...summary, color, headline: FIVE_STATE_HEADLINES[state] };
+}
+
 /** Counts only since the relay started. No names, no label content. */
 export function recentJobs(relay: RelayStatus | null): JobCounts {
   return {
@@ -93,14 +105,23 @@ export function recentJobs(relay: RelayStatus | null): JobCounts {
 
 export type FiveStateResult = {
   state: FiveState;
+  headline: string;
   recoveryAction: string;
+};
+
+export const FIVE_STATE_HEADLINES: Record<FiveState, string> = {
+  Connected: "Connected",
+  Unplugged: "Printer unplugged",
+  Waiting: "Waiting for connection",
+  "Needs re-enrollment": "Needs re-enrollment",
+  "In use elsewhere": "Printer in use elsewhere",
 };
 
 export function deriveFiveState(inputs: StatusInputs & { inUseElsewhere?: boolean }): FiveStateResult {
   const { relay } = inputs;
   const cloud = inputs.revoked || relay?.cloud === "revoked" ? "revoked" : relay?.cloud === "ok" ? "ok" : "unreachable";
   const relayState =
-    inputs.relayRestarting
+    inputs.legacyRelayLoaded || inputs.relayRestarting
       ? "restarting"
       : relay?.state === "running"
         ? "running"
@@ -110,6 +131,7 @@ export function deriveFiveState(inputs: StatusInputs & { inUseElsewhere?: boolea
 
   const state = evaluateFiveState({
     printerAttached: inputs.printerAttached,
+    printerPresence: inputs.printerPresence,
     enrolled: inputs.enrolled,
     revoked: inputs.revoked,
     inUseElsewhere: Boolean(inputs.inUseElsewhere),
@@ -120,6 +142,7 @@ export function deriveFiveState(inputs: StatusInputs & { inUseElsewhere?: boolea
 
   return {
     state,
+    headline: FIVE_STATE_HEADLINES[state],
     recoveryAction: RECOVERY_ACTIONS[state],
   };
 }

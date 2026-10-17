@@ -14,6 +14,8 @@ import {
   type MigrateLegacyResult,
   type PrinterDevice,
   type PrinterScan,
+  INITIAL_PRINTER_PRESENCE,
+  printerPresenceReducer,
   type RenameResult,
   type SetUpPrinterResult,
   type SetupStep,
@@ -134,6 +136,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   let enrolled = false;
   let legacyLoaded = false;
   let scan: PrinterScan = { kind: "none" };
+  let printerPresence = INITIAL_PRINTER_PRESENCE;
   let liveQueue: string | null = null;
   /** The last `lpinfo` listing failed, so "no printer" may mean "could not look". */
   let scanFailed = false;
@@ -228,6 +231,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       relay,
       relayRestarting: supervisorState.phase === "restarting",
       printerAttached,
+      printerPresence: printerPresence.presence,
       queue: scan.kind === "found" ? scan.queue : "ready",
       paused,
       update,
@@ -257,6 +261,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       recentJobs: recentJobs(relay),
       setupStep,
       printer: scan,
+      printerPresence,
       legacyRelayLoaded: legacyLoaded,
       warnings,
     };
@@ -328,6 +333,18 @@ export function createAppController(deps: ControllerDeps): AppController {
     const outcome = await printers.scan(prefs.get().selectedPrinterId);
     scan = outcome.scan;
     scanFailed = outcome.listFailed;
+    if (outcome.scan.kind === "found") {
+      printerPresence = printerPresenceReducer(printerPresence, {
+        type: "printer_found",
+        seenAt: new Date().toISOString(),
+      });
+    } else if (outcome.listFailed) {
+      printerPresence = printerPresenceReducer(printerPresence, { type: "listing_failed" });
+    } else {
+      printerPresence = printerPresenceReducer(printerPresence, {
+        type: "printer_absent",
+      });
+    }
     // A failed listing says nothing about the queue, so the last answer stands.
     if (!outcome.listFailed) liveQueue = outcome.queue;
 
@@ -340,8 +357,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     if (outcome.scan.kind === "found" && outcome.queue !== prefs.get().queue) patch.queue = outcome.queue;
     if (Object.keys(patch).length > 0) await prefs.update(patch).catch(() => undefined);
 
-    // A failed `lpinfo` says nothing about the printer, so it never flips the flag.
-    if (!outcome.listFailed) {
+    // A found printer is authoritative even if its queue could not be listed. An empty failed listing says nothing.
+    if (outcome.scan.kind === "found" || !outcome.listFailed) {
       const attached = outcome.scan.kind === "found";
       if (!attached) {
         inUseElsewhere = false;
