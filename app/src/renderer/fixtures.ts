@@ -38,7 +38,7 @@ const base: AppSnapshot = {
   warnings: ["Keep the lid open while printing. Closing the lid can stop labels from printing."],
 };
 
-const ready: AppSnapshot["status"] = { color: "green", headline: "Ready to print", detail: null };
+const ready: AppSnapshot["status"] = { color: "green", headline: "Connected", detail: null };
 
 const LEGACY_STATUS: AppSnapshot["status"] = {
   color: "amber",
@@ -63,6 +63,10 @@ export const FIXTURE_NAMES = [
   "legacy-confirm",
   "legacy-failed",
   "status",
+  "unplugged",
+  "waiting",
+  "in-use-elsewhere",
+  "backlog-warning",
   "update-ready",
   "update-error",
 ] as const;
@@ -131,7 +135,7 @@ export function fixtureFor(requested: string | null): Fixture {
     case "revoked":
       return {
         snapshot: withStep(null, {
-          status: { color: "red", headline: "This laptop was removed. Ask an admin for a new code.", detail: null },
+          status: { color: "red", headline: "Needs re-enrollment", detail: null },
           printer: oneReady,
         }),
       };
@@ -152,7 +156,44 @@ export function fixtureFor(requested: string | null): Fixture {
       return {
         snapshot: withStep(null, {
           ...enrolled,
+          fiveState: "Connected",
+          recoveryAction: "Run a local test print in Favor Printer to verify labels.",
           update: { kind: "idle" },
+        }),
+      };
+    case "unplugged":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          status: { color: "amber", headline: "Printer unplugged", detail: null },
+          fiveState: "Unplugged",
+          recoveryAction: "Plug in the Zebra with its USB cable.",
+          printerPresence: { presence: "detached", lastSeenAt: "2026-10-17T02:34:00.000Z", consecutiveFailures: 0 },
+        }),
+      };
+    case "waiting":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          status: { color: "amber", headline: "Waiting for connection", detail: "Check the internet connection and wait for Favor RSVP to respond." },
+          fiveState: "Waiting",
+          recoveryAction: "Check the internet connection and wait for Favor RSVP to respond.",
+        }),
+      };
+    case "in-use-elsewhere":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          status: { color: "amber", headline: "Printer in use elsewhere", detail: null },
+          fiveState: "In use elsewhere",
+          recoveryAction: "Ask an admin to disconnect this printer from the other laptop.",
+        }),
+      };
+    case "backlog-warning":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          warnings: ["Print backlog is growing: 6 jobs are waiting to print. Check the printer and label stock."],
         }),
       };
     case "update-ready":
