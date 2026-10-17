@@ -72,7 +72,7 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: FavorPrinter/Bridging-Header.h
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Favor Printer
@@ -119,7 +119,7 @@ targets:
         DEXT_SIGNING_ALLOWED_iphonesimulator: "NO"
         CODE_SIGN_ENTITLEMENTS: FavorPrinterDriver/FavorPrinterDriver.entitlements
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         DEVELOPMENT_TEAM: 3JJ4492TV8
         DRIVERKIT_DEPLOYMENT_TARGET: "22.0"
         INFOPLIST_FILE: FavorPrinterDriver/Info.plist
@@ -145,7 +145,7 @@ targets:
     settings:
       base:
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
         MARKETING_VERSION: 0.2.0
@@ -165,7 +165,7 @@ targets:
     settings:
       base:
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         DEVELOPMENT_TEAM: 3JJ4492TV8
         GENERATE_INFOPLIST_FILE: YES
         MARKETING_VERSION: 0.2.0
