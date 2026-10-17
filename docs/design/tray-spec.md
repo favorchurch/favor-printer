@@ -6,7 +6,7 @@ This document specifies the behavior, menu hierarchy, icon visual indicators, an
 
 ## 1. Architecture and State Mapping
 
-The tray view is driven purely by the system state snapshot evaluated through `deriveStatus(inputs: StatusInputs)` in `app/src/main/services/statusSummary.ts`. 
+The tray view is driven purely by the system state snapshot evaluated through `deriveStatus(inputs: StatusInputs)` in `app/src/main/services/statusSummary.ts`. Its headline always uses the five operating states from the shared reducer; the operational summary supplies the supporting detail and icon color.
 
 The core operating principle: **Red outranks amber; amber outranks green. Green requires every single operational check to pass.**
 
@@ -20,27 +20,19 @@ Status values map directly to:
 
 ---
 
-## 2. Comprehensive `deriveStatus` State Table
+## 2. Five-State Headline Table
 
-Below is the state table covering every rule and priority in `deriveStatus`:
+The same headline appears in the status pill, tray menu, and tray tooltip. `lastSeenAt` records the most recent successful scan that found the printer. Presence starts unknown; after two consecutive failed listings it becomes unknown again, and the headline is Waiting for connection. Failed listings never invent an unplug event or a ready state.
 
-| Priority | Condition / Predicate | Dot / Tray Icon | Headline | Detail Line | Primary Menu Action | Action Enabled? |
-|:---:|---|:---:|---|---|---|:---:|
-| **1** | Laptop token revoked (`inputs.revoked \|\| relay.cloud === "revoked"`) | **Red** | `This laptop was removed. Ask an admin for a new code.` | *None* | `Enter a new code...` | Yes |
-| **2** | Legacy launchd relay still running (`inputs.legacyRelayLoaded`) | **Amber** | `The old print relay is still running` | `Move to Favor Printer to start printing.` | `Move to Favor Printer...` | Yes |
-| **3** | Not yet enrolled (`!inputs.enrolled`) | **Amber** | `Not set up yet` | `Enter the six-digit code from an admin.` | `Set up Favor Printer...` | Yes |
-| **4** | Supervisor restarting relay (`inputs.relayRestarting`) | **Amber** | `Print relay is restarting` | `Printing resumes in a moment.` | *Dynamic setup / status* | Yes |
-| **5** | No Zebra detected on USB (`!inputs.printerAttached`) | **Amber** | `No printer found` | `Plug in the Zebra with its USB cable.` | *Dynamic setup / status* | Yes |
-| **6** | CUPS queue missing (`inputs.queue === "missing"`) | **Amber** | `Printer needs setting up` | `Choose Set up printer to continue.` | *Dynamic setup / status* | Yes |
-| **7** | CUPS queue disabled in macOS (`inputs.queue === "disabled"`) | **Amber** | `Printer is turned off` | `Turn it back on in System Settings, under Printers & Scanners.` | *Dynamic setup / status* | Yes |
-| **8** | Relay starting or stopped (`!relay \|\| relay.state === "starting" \|\| "stopped" \|\| "stopping"`) | **Amber** | `Starting up` | *None* | *Dynamic setup / status* | Yes |
-| **9** | RSVP cloud unreachable (`relay.cloud === "unreachable"`) | **Amber** | `Cannot reach Favor RSVP` | `Printing resumes when the internet is back.` | *Dynamic setup / status* | Yes |
-| **10** | Printing paused (`inputs.paused \|\| relay.state === "paused"`) | **Amber** | `Printing is paused` | `Choose Resume printing in the menu.` | `Resume printing` | Yes |
-| **11** | Background updater downloading (`inputs.update.kind === "downloading"`) | **Amber** | `Updating Favor Printer` | *None* | *Dynamic setup / status* | Yes |
-| **12** | Last print job unconfirmed (`relay.lastError === "send_ambiguous"`) | **Green** | `Ready to print` | `The last label may not have printed. Check the label stock.` | `Pause printing` / `Test print...` | Yes |
-| **13** | Last print job failed (`relay.lastError === "send_failed"`) | **Green** | `Ready to print` | `The last label failed to print.` | `Pause printing` / `Test print...` | Yes |
-| **14** | App update downloaded and staged (`inputs.update.kind === "ready"`) | **Green** | `Ready to print` | `An update installs when you quit.` | `Pause printing` / `Test print...` | Yes |
-| **15** | Normal healthy operating state (All checks pass) | **Green** | `Ready to print` | *None* | `Pause printing` / `Test print...` | Yes |
+| Five-state reducer value | Headline |
+|---|---|
+| `Connected` | `Connected` |
+| `Unplugged` | `Printer unplugged` |
+| `Waiting` | `Waiting for connection` |
+| `Needs re-enrollment` | `Needs re-enrollment` |
+| `In use elsewhere` | `Printer in use elsewhere` |
+
+The contextual detail continues to explain operational causes such as setup, cloud availability, pause state, or the legacy relay. The menu actions and print permission gate remain as specified below.
 
 ---
 
@@ -50,8 +42,8 @@ The menu is generated via `buildMenuTemplate(snapshot, actions)`. It contains no
 
 ```text
 +-------------------------------------------------------------------+
-| [Headline] (e.g. Ready to print / The old print relay is running) |  <- Disabled (Info)
-| [Detail]   (e.g. Move to Favor Printer to start printing.)        |  <- Disabled (Info, omitted if null)
+| [Headline] (e.g. Connected)                                      |  <- Disabled (Info)
+| [Detail]   (e.g. The old print relay is running.)                |  <- Disabled (Info, omitted if null)
 | This laptop: [Label] (e.g. Front desk laptop)                     |  <- Disabled (Info, omitted if null)
 |-------------------------------------------------------------------|  <- Separator
 | Labels this session: {sent} sent, {failed} failed[, {x} to check] |  <- Disabled (Session telemetry)
@@ -111,7 +103,7 @@ export function jobCountsLabel(jobs: AppSnapshot["recentJobs"]): string {
 ## 6. Icon and Tooltip Specification
 
 ### 1. Tray Tooltip
-Always set to `Favor Printer: ${snapshot.status.headline}`. When hovering over the macOS menu bar icon, macOS VoiceOver and pointer users receive immediate operational feedback without opening the menu.
+Always set to `Favor Printer: ${snapshot.status.headline}`, using the five-state headline above. When hovering over the macOS menu bar icon, macOS VoiceOver and pointer users receive immediate operational feedback without opening the menu.
 
 ### 2. Template Image Constraints & Rendering
 - **macOS Template Image Rules:** Tray icons are rendered purely in code as macOS template PNG images: RGB is 0 (pure black `#000000`) everywhere, and opacity is controlled strictly via the alpha channel (`pixels[(row * size + column) * 4 + 3]`). This enables macOS to automatically tint the icon for light menu bars, dark menu bars, system accent selections, and wallpaper backgrounds.
@@ -153,10 +145,10 @@ Each state corresponds to an exact mathematical geometry evaluated over normaliz
    - **Contrast with Rings:** While Green and Amber use open ring geometry ($r < 0.37$ is hollow background), Red is a solid filled silhouette disc with negative cutout space ($r < 0.37$ outside the X has alpha $> 200$), providing instant silhouette distinction even in peripheral vision.
 
 ### 4. Design Decision: Retention of Current Template Glyphs & Copy (Recorded No-Change)
-The existing template glyph implementations (`app/src/main/shell/trayIcons.ts`) and status headline/detail copy (`app/src/main/services/statusSummary.ts`, `app/src/main/shell/tray.ts`) were reviewed against the Favor 2026 design system and accessibility requirements.
+The existing template glyph implementations (`app/src/main/shell/trayIcons.ts`) were reviewed against the Favor 2026 design system and accessibility requirements.
 
 Because:
 1. The mathematical template contours (ring with check mark, ring with exclamation mark, solid disc with inverted knockout cross) provide unambiguous, color-blind accessible silhouette contrast across both macOS light and dark menu bars without relying on color tinting, and
-2. The operational headlines and detail lines established in `statusSummary.ts` and `tray.ts` strictly adhere to the warm, calm, unambiguous volunteer voice mandated by `speak-like-favor`,
+2. The five-state headlines and operational detail lines established in `statusSummary.ts` and `tray.ts` use the approved concise status language,
 
-**the current template glyphs and status copy are retained by design**. The restyle requirement is therefore met and recorded as an intentional no-change, pinned and verified by unit tests in `app/src/main/shell/trayIcons.test.ts` and `app/src/main/shell/tray.test.ts`.
+**the current template glyphs are retained by design**. Their geometry is pinned and verified by unit tests in `app/src/main/shell/trayIcons.test.ts`; headline conformance is covered in `app/src/main/services/statusSummary.test.ts` and `app/src/main/shell/tray.test.ts`.

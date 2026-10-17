@@ -5,7 +5,7 @@
  */
 
 import type { UpdateChannel } from "./constants";
-import type { FiveState } from "./statusReducer";
+import type { FiveState, PrinterPresenceState } from "./statusReducer";
 
 export type StatusColor = "green" | "amber" | "red";
 
@@ -68,6 +68,7 @@ export type AppSnapshot = {
   recentJobs: JobCounts;
   setupStep: SetupStep | null;
   printer: PrinterScan;
+  printerPresence?: PrinterPresenceState;
   /** Set while the legacy launchd relay is loaded and the migration is still to do. */
   legacyRelayLoaded: boolean;
   /** Lid, sleep and battery warnings. Never claims printing works with the lid closed. */
