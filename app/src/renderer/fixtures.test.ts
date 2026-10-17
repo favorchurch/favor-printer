@@ -18,6 +18,10 @@ const EXPECTED: Record<(typeof FIXTURE_NAMES)[number], ScreenId> = {
   "legacy-confirm": "legacy-confirm",
   "legacy-failed": "legacy",
   status: "status",
+  unplugged: "status",
+  waiting: "status",
+  "in-use-elsewhere": "status",
+  "backlog-warning": "status",
   "update-ready": "status",
   "update-error": "status",
 };

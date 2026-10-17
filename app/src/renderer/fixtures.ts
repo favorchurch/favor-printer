@@ -63,6 +63,10 @@ export const FIXTURE_NAMES = [
   "legacy-confirm",
   "legacy-failed",
   "status",
+  "unplugged",
+  "waiting",
+  "in-use-elsewhere",
+  "backlog-warning",
   "update-ready",
   "update-error",
 ] as const;
@@ -153,6 +157,41 @@ export function fixtureFor(requested: string | null): Fixture {
         snapshot: withStep(null, {
           ...enrolled,
           update: { kind: "idle" },
+        }),
+      };
+    case "unplugged":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          status: { color: "amber", headline: "Printer unplugged", detail: null },
+          fiveState: "Unplugged",
+          recoveryAction: "Plug in the Zebra with its USB cable.",
+          printerPresence: { presence: "detached", lastSeenAt: "2026-10-17T02:34:00.000Z", consecutiveFailures: 0 },
+        }),
+      };
+    case "waiting":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          status: { color: "amber", headline: "Waiting for connection", detail: "Check the internet connection and wait for Favor RSVP to respond." },
+          fiveState: "Waiting",
+          recoveryAction: "Check the internet connection and wait for Favor RSVP to respond.",
+        }),
+      };
+    case "in-use-elsewhere":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          status: { color: "amber", headline: "Printer in use elsewhere", detail: null },
+          fiveState: "In use elsewhere",
+          recoveryAction: "Ask an admin to disconnect this printer from the other laptop.",
+        }),
+      };
+    case "backlog-warning":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          warnings: ["Print backlog is growing: 6 jobs are waiting to print. Check the printer and label stock."],
         }),
       };
     case "update-ready":

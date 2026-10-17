@@ -39,7 +39,7 @@ The setup window guides volunteers through onboarding their MacBook to print che
 #### 2A. No Printer Detected (`printer-none`)
 - **Eyebrow:** `Step 1 of 5`
 - **Window Title (`h1`):** `Plug in your Zebra printer`
-- **Lead Text:** `Connect the printer to this Mac with its USB cable and turn it on. It can take a few seconds to show up.`
+- **Lead Text:** `Use a USB data cable, not a charge-only cable. Plug the printer straight into this Mac and turn it on. If it is not found, unplug it and plug it back in once.`
 - **Error Banner (if previously failed with `printer_not_found`):** `We cannot see your Zebra printer. Check that it is turned on and plugged in, then try again.`
 - **Primary Action:** `Look again`
 
@@ -82,7 +82,8 @@ The setup window guides volunteers through onboarding their MacBook to print che
 - **Window Title (`h1`):**
   - Initial setup: `Enter your code`
   - Re-enrolling after revocation: `Enter a new code`
-- **Lead Text:** `Ask an admin for a six-digit code from Favor RSVP. It only works for a short time.`
+- **Lead Text:** `In Favor RSVP admin, open Set up printing. Pick the existing campus printer, or add it. If another Mac hosts it, choose "Hand over from <host>". Then type the code here.`
+- **Helper Hint:** `The six-digit code only works for a short time.`
 - **Field Label:** `Six-digit code`
 - **Field Placeholder:** `000000`
 - **Helper Hint (idle):** `Numbers only.`
@@ -189,6 +190,9 @@ This flow appears when a MacBook has the previous background launchd relay servi
 ### Main Status Window (`status`)
 - **Window Title (`h1`):** `Favor Printer`
 - **Status Pill:** Current status pill (Color dot + Headline)
+- **Five-State Recovery Line:** `[Five-state value]: [recovery action]` (for example, `Unplugged: Plug in the Zebra with its USB cable.`)
+- **Unplugged Last-Seen Line:** `Not seen since [HH:mm]`, using the time of the most recent successful printer scan; shown only while unplugged and when that time is known.
+- **Backlog Warning:** Show the current `Print backlog is ...` warning when one exists.
 - **Detail Text:** Current status detail line (if any)
 - **Version Subtitle:** `Version [x.y.z] ([Channel])` (e.g., `Version 0.1.0 (Stable)` or `Version 0.1.0 (Preview)`)
 - **Update Channel Values:**
