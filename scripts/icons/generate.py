@@ -5,10 +5,10 @@ Usage: python3 scripts/icons/generate.py   (needs Pillow: pip install pillow; ic
 
 Source: scripts/icons/favor-app-1024.png, copied from ~/Git/rock-mobile-app
 (ios/FavorRockApp/Resources/Assets.xcassets/AppIcon.appiconset/FAVORAPP_APPLE_(1024px).png).
-The white mark is extracted from it, "CHURCH" is replaced by a printer glyph, and the
-variants are composed from that one mask.
+The diamond and FAVOR wordmark are extracted from it as masks and recoloured: RSVP red
+(#EE4924, rsvp.favor.church --color-primary) on near-black, with a printer glyph under the
+wordmark. The light, dark and tinted iPad variants and the Mac icon come from those masks.
 """
-import random
 import subprocess
 import sys
 from pathlib import Path
@@ -20,15 +20,15 @@ SRC = ROOT / "scripts/icons/favor-app-1024.png"
 APPICON = ROOT / "ios/FavorPrinter/Assets.xcassets/AppIcon.appiconset"
 ICNS = ROOT / "build/icon.icns"
 N = 1024
-ORANGE = (253, 94, 40)
+RED = (0xEE, 0x49, 0x24)
+PAPER = (254, 241, 232)
 
 
 def smoothstep(lo, hi):
     return lambda v: 0 if v <= lo else 255 if v >= hi else int(255 * ((v - lo) / (hi - lo)) ** 2 * (3 - 2 * (v - lo) / (hi - lo)))
 
 
-def mark_mask():
-    """White Favor diamond + FAVOR wordmark as an L mask, with CHURCH and specks removed."""
+def source_mask():
     b = Image.open(SRC).convert("RGB").split()[2]
     m = b.point([smoothstep(110, 200)(v) for v in range(256)]).filter(ImageFilter.MedianFilter(5))
     d = ImageDraw.Draw(m)
@@ -38,41 +38,51 @@ def mark_mask():
     return m
 
 
-def printer_mask():
-    """Printer glyph with a label coming out, drawn at the old CHURCH position."""
+def diamond_mask():
+    m = source_mask()
+    ImageDraw.Draw(m).rectangle((285, 395, 750, 530), fill=0)
+    return m
+
+
+def wordmark_mask():
+    m = source_mask()
+    d = ImageDraw.Draw(m)
+    for box in ((0, 0, N, 395), (0, 530, N, N), (0, 0, 285, N), (750, 0, N, N)):
+        d.rectangle(box, fill=0)
+    return m
+
+
+def printer_mask(cx=512, cy=640, w=230):
+    """Printer glyph with a label coming out."""
     s = 4
     m = Image.new("L", (N * s, N * s), 0)
     d = ImageDraw.Draw(m)
+    k = w / 300
+
     def R(x0, y0, x1, y1, r, fill=255):
-        d.rounded_rectangle([v * s for v in (x0, y0, x1, y1)], radius=r * s, fill=fill)
-    cx = 512
-    R(cx - 85, 545, cx + 85, 600, 8)              # paper in
-    R(cx - 150, 590, cx + 150, 665, 22)           # body
-    R(cx - 108, 640, cx + 108, 695, 8)            # label out
-    R(cx - 108, 640, cx + 108, 695, 8, 255)
-    # cut-outs: slot above label, paper gap, status light
-    R(cx - 80, 652, cx + 80, 664, 0, 0)
-    R(cx - 85, 600, cx + 85, 606, 0, 0)
-    d.ellipse([(cx + 105) * s, 612 * s, (cx + 127) * s, 634 * s], fill=0)
-    # label stripe lines
-    R(cx - 70, 672, cx + 20, 679, 3, 0)
-    R(cx - 70, 684, cx - 10, 690, 3, 0)
+        d.rounded_rectangle([int(v * s) for v in (cx + x0 * k, cy + y0 * k, cx + x1 * k, cy + y1 * k)], radius=int(r * k * s), fill=fill)
+
+    R(-85, -75, 85, -10, 8)      # paper in
+    R(-150, -30, 150, 55, 24)    # body
+    R(-108, 30, 108, 105, 8)     # label out
+    R(-85, -10, 85, -3, 0, 0)    # paper gap
+    R(-80, 40, 80, 52, 0, 0)     # label slot
+    d.ellipse([int((cx + 105 * k) * s), int((cy - 3 * k) * s), int((cx + 127 * k) * s), int((cy + 19 * k) * s)], fill=0)
+    R(-70, 66, 20, 74, 3, 0)
+    R(-70, 82, -10, 90, 3, 0)
     return m.resize((N, N), Image.LANCZOS)
 
 
-def background(light=True):
-    rnd = random.Random(7)
-    base = Image.new("RGB", (N, N), ORANGE)
-    noise = Image.effect_noise((N, N), 18).filter(ImageFilter.GaussianBlur(0.8))
-    g = Image.merge("RGB", [noise] * 3)
-    tex = ImageChops.add(base, g, scale=1, offset=-128)
-    glow = Image.radial_gradient("L").resize((N, N)).point(lambda v: 255 - v)
-    hi = Image.new("RGB", (N, N), (255, 140, 70))
-    return Image.composite(hi, tex, glow.point(lambda v: v // 5))
+def gradient(top, bottom):
+    return Image.composite(Image.new("RGB", (N, N), bottom), Image.new("RGB", (N, N), top),
+                           Image.linear_gradient("L").resize((N, N)))
 
 
-def compose(mask, bg, fg=(255, 255, 255)):
-    return Image.composite(Image.new("RGB", (N, N), fg), bg, mask)
+def compose(bg, layers):
+    im = bg
+    for mask, color in layers:
+        im = Image.composite(Image.new("RGB", (N, N), color), im, mask)
+    return im
 
 
 def squircle(img, inset=100, radius=185):
@@ -91,17 +101,14 @@ def squircle(img, inset=100, radius=185):
 
 
 def main():
-    mark = ImageChops.lighter(mark_mask(), printer_mask())
-    light = compose(mark, background())
-    dark_bg = Image.new("RGB", (N, N), (28, 20, 17))
-    dark_bg = Image.composite(Image.new("RGB", (N, N), (58, 30, 18)), dark_bg,
-                              Image.radial_gradient("L").resize((N, N)).point(lambda v: (255 - v) // 2))
-    dark = compose(mark, dark_bg, ORANGE)
-    tinted = compose(mark, Image.new("RGB", (N, N), (0, 0, 0)), (255, 255, 255))
+    diamond, word, printer = diamond_mask(), wordmark_mask(), printer_mask()
+    light = compose(gradient((30, 33, 29), (14, 16, 13)), [(diamond, RED), (word, PAPER), (printer, RED)])
+    dark = compose(gradient((18, 19, 17), (6, 7, 6)), [(diamond, RED), (word, PAPER), (printer, RED)])
+    tinted = compose(Image.new("RGB", (N, N), (0, 0, 0)), [(ImageChops.lighter(ImageChops.lighter(diamond, word), printer), (255, 255, 255))])
     APPICON.mkdir(parents=True, exist_ok=True)
     light.save(APPICON / "AppIcon-1024.png")
     dark.save(APPICON / "AppIcon-Dark-1024.png")
-    tinted.convert("L").convert("RGB").save(APPICON / "AppIcon-Tinted-1024.png")
+    tinted.save(APPICON / "AppIcon-Tinted-1024.png")
     (APPICON / "Contents.json").write_text(CONTENTS)
 
     # Mac .icns from the squircled artwork
