@@ -174,30 +174,76 @@ describe("status / about screen rendering", () => {
   });
 
   it("renders fiveState and recoveryAction hint on status screen", () => {
+    const snapshot = fixtureFor("status").snapshot;
     const rendered = renderScreen("status", {
-      snapshot: {
-        ...fixtureFor("status").snapshot,
-        fiveState: "Connected",
-        recoveryAction: "Run a local test print in Favor Printer to verify labels.",
-      },
+      snapshot,
       local: INITIAL_LOCAL,
       actions: {} as never,
     }) as unknown as FakeElement;
-    expect(text(rendered)).toContain("Connected: Run a local test print in Favor Printer to verify labels.");
+    expect(text(rendered)).toContain(`${snapshot.fiveState}: ${snapshot.recoveryAction}`);
   });
 
-  it("renders In use elsewhere state and its recovery action on status screen", () => {
+  it.each(["unplugged", "waiting", "in-use-elsewhere"] as const)(
+    "renders the %s five-state headline with its recovery action",
+    (name) => {
+      const snapshot = fixtureFor(name).snapshot;
+      const rendered = renderScreen("status", {
+        snapshot,
+        local: INITIAL_LOCAL,
+        actions: {} as never,
+      }) as unknown as FakeElement;
+      expect(text(rendered)).toContain(`${snapshot.fiveState}: ${snapshot.recoveryAction}`);
+    },
+  );
+
+  it("shows the last successful scan time only when the printer is unplugged", () => {
+    const snapshot = fixtureFor("unplugged").snapshot;
+    const expectedTime = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .format(new Date(snapshot.printerPresence?.lastSeenAt ?? ""));
+    const rendered = renderScreen("status", { snapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(`Not seen since ${expectedTime}`);
+
+    const connectedSnapshot = {
+      ...fixtureFor("status").snapshot,
+      printerPresence: snapshot.printerPresence,
+    };
+    const connected = renderScreen("status", { snapshot: connectedSnapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
+    expect(text(connected).some((line) => line.startsWith("Not seen since "))).toBe(false);
+  });
+
+  it("shows the backlog warning on the status screen", () => {
     const rendered = renderScreen("status", {
-      snapshot: {
-        ...fixtureFor("status").snapshot,
-        fiveState: "In use elsewhere",
-        recoveryAction: "Ask an admin to disconnect this printer from the other laptop.",
-      },
+      snapshot: fixtureFor("backlog-warning").snapshot,
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain("Print backlog is growing: 6 jobs are waiting to print. Check the printer and label stock.");
+  });
+});
+
+describe("setup guidance", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+
+  it("explains how to connect the printer with a data cable", () => {
+    const rendered = renderScreen("printer-none", {
+      snapshot: fixtureFor("no-printer").snapshot,
       local: INITIAL_LOCAL,
       actions: {} as never,
     }) as unknown as FakeElement;
     expect(text(rendered)).toContain(
-      "In use elsewhere: Ask an admin to disconnect this printer from the other laptop.",
+      "Use a USB data cable, not a charge-only cable. Plug the printer straight into this Mac and turn it on. If it is not found, unplug it and plug it back in once.",
+    );
+  });
+
+  it("walks the volunteer through RSVP printer enrollment", () => {
+    const rendered = renderScreen("code", {
+      snapshot: fixtureFor("enter-code").snapshot,
+      local: INITIAL_LOCAL,
+      actions: {} as never,
+    }) as unknown as FakeElement;
+    expect(text(rendered)).toContain(
+      'In Favor RSVP admin, open Set up printing. Pick the existing campus printer, or add it. If another Mac hosts it, choose "Hand over from <host>". Then type the code here.',
     );
   });
 });
