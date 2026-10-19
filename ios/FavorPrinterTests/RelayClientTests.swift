@@ -74,6 +74,33 @@ struct RelayClientTests {
         #expect(reportBody["error"] == nil)
     }
 
+    /// Malformed cloud ids cannot become bearer-authenticated REST paths. A refused
+    /// job is not sent or silently retried; the existing host recovery path handles it.
+    @Test(arguments: ["../other", "..", ".", "/wrong", "sub/job", "%2e%2e", "id?x=1", "id#fragment", "", String(repeating: "a", count: 81), "👶"])
+    func jobEndpointsRejectUnsafeIdsBeforeNetwork(id: String) async throws {
+        let server = MockServer { _ in .json(200, #"{"status":"sent"}"#) }
+        let client = try server.relayClient()
+        await #expect(throws: RelayFailure.invalidResponse) {
+            try await client.sending(jobId: id, claimToken: "test")
+        }
+        await #expect(throws: RelayFailure.invalidResponse) {
+            try await client.report(jobId: id, claimToken: "test", outcome: .ambiguous)
+        }
+        #expect(server.requests.isEmpty)
+    }
+
+    @Test func safeJobIdsStillReachCloud() async throws {
+        let server = MockServer { _ in .json(200, #"{"status":"sent"}"#) }
+        let client = try server.relayClient()
+        let id = "550e8400-e29b-41d4-a716-446655440000"
+        _ = try await client.sending(jobId: id, claimToken: "test")
+        _ = try await client.report(jobId: id, claimToken: "test", outcome: .sent)
+        #expect(server.requests.map { $0.url?.path } == [
+            "/api/printing/relay/jobs/\(id)/sending",
+            "/api/printing/relay/jobs/\(id)/report",
+        ])
+    }
+
     @Test func enrollSendsOnlyTheOneTimeCredentialWithoutBearer() async throws {
         let server = MockServer { _ in
             .json(200, #"{"relayId":"r1","token":"returned-secret","label":"Desk","printer":{"id":"p1","name":"Kids","usbSerial":"serial-1","campusId":2}}"#)
