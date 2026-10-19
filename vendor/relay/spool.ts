@@ -18,6 +18,7 @@ import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
+import { assertSafeJobId } from "./protocol";
 import type { ClaimedJob, ReportOutcome } from "./protocol";
 
 export type SpoolStage = "claimed" | "sending" | "report";
@@ -294,7 +295,7 @@ export class FileSpool {
   ) {}
 
   private file(jobId: string) {
-    return path.join(this.dir, `${jobId}.json`);
+    return path.join(this.dir, `${assertSafeJobId(jobId)}.json`);
   }
 
   private identity() {
@@ -517,7 +518,7 @@ export class FileSpool {
   }
 
   private sendFile(jobId: string) {
-    return path.join(this.dir, `${jobId}.send`);
+    return path.join(this.dir, `${assertSafeJobId(jobId)}.send`);
   }
 
   /**
