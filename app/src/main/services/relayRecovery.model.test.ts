@@ -177,6 +177,7 @@ async function assertOutcomes(model: Model, real: Harness) {
 function advance(model: Model) {
   if (model.phase === "ready") {
     model.held = true;
+    // An unsent transport returns before beforeWrite, so it skips the sending handshake.
     if (model.transportMode !== "unsent" && !model.sendingOnline) return;
     model.outcome = model.transportMode === "unsent" ? "failed" : model.transportMode;
     if (model.transportMode !== "unsent") model.writes.set(model.id!, model.writes.get(model.id!)! + 1);
@@ -308,6 +309,19 @@ describe("real vendored relay recovery model (#37)", () => {
         { id: "retry", attempt: 1, outcome: "failed" },
         { id: "retry", attempt: 2, outcome: "sent" },
       ]);
+    });
+  });
+
+  it("reports an unsent transport failure while sending is offline without a handshake", async () => {
+    await withHarness(async (r) => {
+      r.queue("offline-unsent");
+      r.transportMode = "unsent";
+      r.sendingOnline = false;
+      await r.relay.tick();
+      expect(r.accepted).toEqual([{ id: "offline-unsent", attempt: 1, outcome: "failed" }]);
+      expect(r.bytes).toEqual([]);
+      expect(r.sendingAttempts).toEqual([]);
+      expect(await r.spool.list()).toEqual([]);
     });
   });
 
