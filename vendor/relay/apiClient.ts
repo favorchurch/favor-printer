@@ -8,6 +8,8 @@
  *   "stale" results    the cloud no longer recognises this claim: drop the entry
  */
 
+import { assertSafeJobId } from "./protocol";
+
 import type {
   ClaimResponse,
   HandedOverResponse,
@@ -75,6 +77,7 @@ export class RelayApiClient {
           "x-relay-id": this.options.relayId,
         },
         body: JSON.stringify(body),
+        redirect: "error",
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       });
     } catch (error) {
@@ -144,11 +147,11 @@ export class RelayApiClient {
 
   /** Tell the cloud the printer connection is open and a write is about to start. */
   sending(jobId: string, claimToken: string) {
-    return this.jobCall(`/jobs/${jobId}/sending`, { claimToken });
+    return this.jobCall(`/jobs/${encodeURIComponent(assertSafeJobId(jobId))}/sending`, { claimToken });
   }
 
   report(jobId: string, claimToken: string, outcome: ReportOutcome, error?: string) {
-    return this.jobCall(`/jobs/${jobId}/report`, { claimToken, outcome, error });
+    return this.jobCall(`/jobs/${encodeURIComponent(assertSafeJobId(jobId))}/report`, { claimToken, outcome, error });
   }
 }
 

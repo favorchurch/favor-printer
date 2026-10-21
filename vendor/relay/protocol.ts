@@ -4,6 +4,17 @@
  * can be copied to a venue machine with nothing but Node.
  */
 
+/** IDs arrive from the cloud but also become REST path segments and spool filenames.
+ * Restrict to one unambiguous segment; rejecting an unsafe job is safer than
+ * acknowledging, losing, or printing an untrusted job.
+ */
+export function assertSafeJobId(jobId: string): string {
+  if (typeof jobId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(jobId)) {
+    throw new Error("invalid print job id");
+  }
+  return jobId;
+}
+
 export type PrinterTarget = { host: string; port: number };
 
 export type ClaimedJob = PrinterTarget & {
