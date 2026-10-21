@@ -3,7 +3,7 @@
   "source": {
     "repository": "favorchurch/rsvp.favor.church",
     "path": "relay",
-    "commit": "4f36ec476e0bbb565776d35352b4c0cbe584fcdb"
+    "commit": "824c54fe989e3c17a9dff02344636550fa637132"
   },
   "entryPoints": [
     "embedded.ts",
