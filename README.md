@@ -21,6 +21,11 @@ Download and setup steps for volunteers: https://rsvp.favor.church/printer
 - `build/` — packaging resources (`entitlements.mac.plist`).
 - `scripts/` — build, preview and vendor verification scripts.
 
+Windows work is tracked in [#42](https://github.com/favorchurch/favor-printer/issues/42).
+The [read-only discovery foundation](docs/WINDOWS-DISCOVERY.md) includes a local
+Windows probe and its limitations; it does not enable Windows printing or provide
+a Windows installer.
+
 Releases on this repository are the app's download and auto-update source.
 
 ## Development
