@@ -3,12 +3,13 @@
 import path from "node:path";
 
 import { validateCupsQueue } from "./cups";
+import { validateWindowsQueueName, validateLocalWindowsScriptPath } from "./windowsSpooler";
 
 /**
  * `tcp`: raw TCP 9100 to the address on the printer record (default).
  * `cups`: `lp -d <queue> -o raw` on this machine, for a USB-attached printer.
  */
-export type RelayTransportKind = "tcp" | "cups";
+export type RelayTransportKind = "tcp" | "cups" | "windows";
 
 export type RelayConfig = {
   apiUrl: string;
@@ -23,6 +24,8 @@ export type RelayConfig = {
   transport: RelayTransportKind;
   /** Set only when `transport` is `cups`. */
   cupsQueue: string | null;
+  windowsQueue: string | null;
+  windowsScriptPath: string | null;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -64,8 +67,8 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
   if (printerIds.length === 0) throw new Error("RELAY_PRINTER_IDS is required");
 
   const transport = (env.RELAY_TRANSPORT?.trim() || "tcp") as RelayTransportKind;
-  if (transport !== "tcp" && transport !== "cups") {
-    throw new Error("RELAY_TRANSPORT must be tcp or cups");
+  if (transport !== "tcp" && transport !== "cups" && transport !== "windows") {
+    throw new Error("RELAY_TRANSPORT must be tcp, cups or windows");
   }
   let cupsQueue: string | null = null;
   if (transport === "cups") {
@@ -77,6 +80,13 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
     }
   }
 
+  let windowsQueue: string | null = null;
+  let windowsScriptPath: string | null = null;
+  if (transport === "windows") {
+    windowsQueue = validateWindowsQueueName(required(env, "RELAY_WINDOWS_QUEUE"));
+    windowsScriptPath = validateLocalWindowsScriptPath(required(env, "RELAY_WINDOWS_SCRIPT_PATH"));
+    if (printerIds.length !== 1) throw new Error("RELAY_TRANSPORT=windows serves exactly one printer id in RELAY_PRINTER_IDS");
+  }
   return {
     apiUrl: secureApiUrl(required(env, "RELAY_API_URL")),
     relayId: required(env, "RELAY_ID"),
@@ -89,5 +99,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
     writeTimeoutMs: positiveInt(env, "RELAY_WRITE_TIMEOUT_MS", 10_000),
     transport,
     cupsQueue,
+    windowsQueue,
+    windowsScriptPath,
   };
 }

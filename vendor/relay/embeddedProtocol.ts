@@ -58,7 +58,8 @@ export function parseParentMessage(raw: unknown): ParentMessage | null {
       if (!isObject(o)) return null;
       const t = o.transport;
       const transportOk =
-        isObject(t) && (t.kind === "tcp" || (t.kind === "cups" && isString(t.queue)));
+        isObject(t) && (t.kind === "tcp" || (t.kind === "cups" && isString(t.queue)) ||
+          (t.kind === "windows" && isString(t.queue) && isString(t.scriptPath)));
       const ok =
         transportOk &&
         isString(o.apiUrl) &&

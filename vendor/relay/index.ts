@@ -19,6 +19,7 @@ import { secureApiUrl } from "./config";
 import { RELAY_VERSION } from "./createRelay";
 import { createCupsTransport, validateCupsQueue } from "./cups";
 import { createTcpTransport, type PrinterTransport } from "./printer";
+import { createWindowsSpoolerTransport, validateLocalWindowsScriptPath, validateWindowsQueueName } from "./windowsSpooler";
 import { Relay, type RelayLogger } from "./relay";
 import { FileSpool, SpoolLockedError } from "./spool";
 import {
@@ -31,7 +32,7 @@ import {
 export type { RelayErrorCode, RelayEvent, RelayState, RelayStatus, CloudState } from "./status";
 export { SpoolLockedError } from "./spool";
 
-export type EmbeddedTransport = { kind: "cups"; queue: string } | { kind: "tcp" };
+export type EmbeddedTransport = { kind: "cups"; queue: string } | { kind: "tcp" } | { kind: "windows"; queue: string; scriptPath: string };
 
 export type EmbeddedRelayOptions = {
   apiUrl: string;
@@ -95,6 +96,13 @@ function transportFor(options: EmbeddedRelayOptions): PrinterTransport {
       writeTimeoutMs: options.writeTimeoutMs,
     });
   }
+  if (options.transport.kind === "windows") {
+    return createWindowsSpoolerTransport({
+      queue: options.transport.queue,
+      scriptPath: options.transport.scriptPath,
+      writeTimeoutMs: options.writeTimeoutMs,
+    });
+  }
   return createTcpTransport({
     connectTimeoutMs: options.connectTimeoutMs,
     writeTimeoutMs: options.writeTimeoutMs,
@@ -108,6 +116,10 @@ function validate(options: EmbeddedRelayOptions) {
   if (!options.token.trim()) throw new Error("token is required");
   if (!options.spoolDir.trim()) throw new Error("spoolDir is required");
   if (options.transport.kind === "cups") validateCupsQueue(options.transport.queue);
+  if (options.transport.kind === "windows") {
+    validateWindowsQueueName(options.transport.queue);
+    validateLocalWindowsScriptPath(options.transport.scriptPath);
+  }
 }
 
 export function createEmbeddedRelay(options: EmbeddedRelayOptions): EmbeddedRelay {
@@ -197,7 +209,7 @@ export function createEmbeddedRelay(options: EmbeddedRelayOptions): EmbeddedRela
       if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) {
         printerIds = [];
         status.error("config_invalid");
-      } else if (options.transport.kind === "cups" && ids.length !== 1) {
+      } else if ((options.transport.kind === "cups" || options.transport.kind === "windows") && ids.length !== 1) {
         // One CUPS queue is one physical printer. Serving two printers' jobs
         // from it would print one's labels on the other.
         printerIds = [];

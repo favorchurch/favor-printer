@@ -71,3 +71,5 @@ Everything the app runs is bundled into `dist/`, including `electron-updater`, s
 
 The app runs with the hardened runtime and is not sandboxed, because it runs `lp` and `lpadmin`.
 `build/entitlements.mac.plist` requests only `allow-jit` and `allow-unsigned-executable-memory`.
+
+The [experimental Windows RAW/ZPL transport](docs/WINDOWS-RAW-TRANSPORT.md) is sourced from the canonical [RSVP relay PR #1002](https://github.com/favorchurch/rsvp.favor.church/pull/1002). It is tested offline but is **not yet connected to the desktop app, packaged or verified on real Windows/Zebra hardware**.

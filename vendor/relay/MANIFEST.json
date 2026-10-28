@@ -3,13 +3,13 @@
   "source": {
     "repository": "favorchurch/rsvp.favor.church",
     "path": "relay",
-    "commit": "824c54fe989e3c17a9dff02344636550fa637132"
+    "commit": "2262d3f94a9d2fc1ae0f790c5cf985821b9413cd"
   },
   "entryPoints": [
     "embedded.ts",
     "index.ts"
   ],
-  "treeSha256": "d7180378dc4abd1d1a74384c54ded4a598f8676d9ac2898ff6ef786174ff84f3",
+  "treeSha256": "fe12400e734a527bf0f8b138be4961c4c6edeb4a345a4d6861f857d4d3a5e68c",
   "files": [
     {
       "path": "apiClient.ts",
@@ -18,13 +18,13 @@
     },
     {
       "path": "config.ts",
-      "sha256": "da8d4a9811fb04f9dd7a32f621af486836c60f6c9c8fad14dd05122af868bbaa",
-      "bytes": 3172
+      "sha256": "f6f842362e1bceb60a03ab00084732f51d54fa6ac7cc4992908325655cafc0b2",
+      "bytes": 3858
     },
     {
       "path": "createRelay.ts",
-      "sha256": "a5b10373eadb58d4c96be0295957785b600f850927b8fb783431462eea27855a",
-      "bytes": 1586
+      "sha256": "74fd18c111254e829d83bc21b4cbee21c8502299b833f538206abfac9b7a9103",
+      "bytes": 1992
     },
     {
       "path": "cups.ts",
@@ -38,13 +38,13 @@
     },
     {
       "path": "embeddedProtocol.ts",
-      "sha256": "60518d05e6c2c10e44e6aa382109fdf4d9987918ec366399e47960f468c098e1",
-      "bytes": 2931
+      "sha256": "af98e0dfb104e50d78525e969a6527cd05ee72bc118463a00d230545572c5dc9",
+      "bytes": 3014
     },
     {
       "path": "index.ts",
-      "sha256": "9889b5a2920b2d4ef74e6c9f3ce14ac811424342db86e84a509e13d5e8d8ab80",
-      "bytes": 9978
+      "sha256": "3069fd33e205c0715337b4ba22e1a304a298c6f2c1ba91994209c865786f7e44",
+      "bytes": 10605
     },
     {
       "path": "printer.ts",
@@ -70,6 +70,11 @@
       "path": "status.ts",
       "sha256": "c6a9f8d9b752c19e0df77f0a046d005222f3e37a66d56abbc15b2420d3c2f0de",
       "bytes": 4948
+    },
+    {
+      "path": "windowsSpooler.ts",
+      "sha256": "8fcaca05bc585b4d2dca9c1031bf469fc57ed1dc36f82fc7ec78de38b18b5089",
+      "bytes": 4412
     }
   ]
 }
