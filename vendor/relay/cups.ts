@@ -26,7 +26,7 @@
 import { execFile } from "node:child_process";
 
 import { RelayAuthError } from "./apiClient";
-import type { PrinterTransport, ProbeResult, SendResult } from "./printer";
+import type { BatchPrinterPayload, PrinterTransport, ProbeResult, SendResult } from "./printer";
 
 /** Allowed characters for a CUPS queue name. Anything else is rejected outright. */
 const QUEUE_NAME = /^[A-Za-z0-9_.-]+$/;
@@ -160,6 +160,8 @@ export type CupsTransportOptions = {
   /** How long lp may take to accept the job once stdin is closed. */
   writeTimeoutMs?: number;
   probeTimeoutMs?: number;
+  /** Disable the multi-label CUPS optimization, retaining the original per-label submission. */
+  batchEnabled?: boolean;
 };
 
 export function createCupsTransport(options: CupsTransportOptions): PrinterTransport {
@@ -170,11 +172,10 @@ export function createCupsTransport(options: CupsTransportOptions): PrinterTrans
   const writeTimeoutMs = options.writeTimeoutMs ?? 10_000;
   const probeTimeoutMs = options.probeTimeoutMs ?? 3_000;
 
-  return {
-    statusUnknown: true,
-
-    // The printer address on the job is ignored: this relay serves one queue.
-    async send(_target, zpl, hooks): Promise<SendResult> {
+  // Each complete ZPL document remains untouched, including ^XA/^XZ and any
+  // per-label font commands. CUPS receives one raw stdin stream for the set.
+  // One exit/request-id applies to the entire submission, never to paper output.
+  async function submit(zpl: string, hooks: Parameters<NonNullable<PrinterTransport["sendBatch"]>>[1]): Promise<SendResult> {
       let child: SpawnedProcess;
       try {
         child = spawn(lp, ["-d", queue, "-o", "raw"]);
@@ -204,7 +205,23 @@ export function createCupsTransport(options: CupsTransportOptions): PrinterTrans
       } catch (error) {
         return { kind: "ambiguous", error: `lp failed after the write began: ${errorText(error)}` };
       }
+  }
+
+  return {
+    statusUnknown: true,
+
+    // The printer address on the job is ignored: this relay serves one queue.
+    async send(_target, zpl, hooks): Promise<SendResult> {
+      return submit(zpl, hooks);
     },
+    ...(options.batchEnabled === false ? {} : {
+      async sendBatch(jobs: readonly BatchPrinterPayload[], hooks: Parameters<NonNullable<PrinterTransport["sendBatch"]>>[1]): Promise<SendResult> {
+        if (jobs.length === 0) return { kind: "aborted" };
+        // Different logical printer ids must never be grouped by the relay.
+        // CUPS itself serves only one local queue, configured by its host.
+        return submit(jobs.map((job) => job.zpl).join(""), hooks);
+      },
+    }),
 
     async probe(): Promise<ProbeResult> {
       const status = "status_unknown" as const;

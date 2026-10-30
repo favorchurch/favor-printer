@@ -3,13 +3,13 @@
   "source": {
     "repository": "favorchurch/rsvp.favor.church",
     "path": "relay",
-    "commit": "2262d3f94a9d2fc1ae0f790c5cf985821b9413cd"
+    "commit": "136a9fe876b3b60ff73fbfabeabb4ce69a3abde5"
   },
   "entryPoints": [
     "embedded.ts",
     "index.ts"
   ],
-  "treeSha256": "fe12400e734a527bf0f8b138be4961c4c6edeb4a345a4d6861f857d4d3a5e68c",
+  "treeSha256": "ec32ffc371b0d4627a4ade302b480667d49d5362e3aa3604cc47779221d212db",
   "files": [
     {
       "path": "apiClient.ts",
@@ -18,18 +18,18 @@
     },
     {
       "path": "config.ts",
-      "sha256": "f6f842362e1bceb60a03ab00084732f51d54fa6ac7cc4992908325655cafc0b2",
-      "bytes": 3858
+      "sha256": "f2ad730b58fdebe16f4b1378913223f05920de56313c23d6f617d7451cbbac81",
+      "bytes": 4067
     },
     {
       "path": "createRelay.ts",
-      "sha256": "74fd18c111254e829d83bc21b4cbee21c8502299b833f538206abfac9b7a9103",
-      "bytes": 1992
+      "sha256": "bef84f5752be6b3581672a0593e903ee64d5326034206304fe01e7a9636e3528",
+      "bytes": 2037
     },
     {
       "path": "cups.ts",
-      "sha256": "089874549271c01ad13519ac2c67bd6a00e279d3f080f38a7f904e8201b28140",
-      "bytes": 8371
+      "sha256": "35b1bfb41a4c46116ea1dc30ea700386b229a843bd2d9e44cff11c8dd6bce1ee",
+      "bytes": 9409
     },
     {
       "path": "embedded.ts",
@@ -43,13 +43,13 @@
     },
     {
       "path": "index.ts",
-      "sha256": "3069fd33e205c0715337b4ba22e1a304a298c6f2c1ba91994209c865786f7e44",
-      "bytes": 10605
+      "sha256": "27df86881bebe9724c1041fca9920fb11280f06f038b2278ee00ea369ea2882b",
+      "bytes": 10732
     },
     {
       "path": "printer.ts",
-      "sha256": "d9dca0375ce11db6f1af2b3bceaba0a0d63ffb2a4ccc82ebc91db0e00ea7f40a",
-      "bytes": 4690
+      "sha256": "7336cfdcd2bf50739371e714dce5a1d545c5b6e18837cf6f657056d94a23eada",
+      "bytes": 5048
     },
     {
       "path": "protocol.ts",
@@ -58,13 +58,13 @@
     },
     {
       "path": "relay.ts",
-      "sha256": "202d684f21460ef43412e6110191a95bffe5a5afd8548db8386a4c200bac5b1b",
-      "bytes": 24842
+      "sha256": "e6919da09ac5fdca83e0e0e072a21d759fc22044a0d7f0edf83dbd39302448f7",
+      "bytes": 29550
     },
     {
       "path": "spool.ts",
-      "sha256": "baeb36dc20fe80f5ae06f39e91a32eaad7813f3ccd8f3d351bed89f4303c599b",
-      "bytes": 22137
+      "sha256": "615a2569fae75794ba4dd2c25c2f57a36c302469d90aaa9867588a5c18bbb678",
+      "bytes": 22606
     },
     {
       "path": "status.ts",
@@ -73,8 +73,8 @@
     },
     {
       "path": "windowsSpooler.ts",
-      "sha256": "8fcaca05bc585b4d2dca9c1031bf469fc57ed1dc36f82fc7ec78de38b18b5089",
-      "bytes": 4412
+      "sha256": "6953706b6ef414a2b75997fc72d3a1e8d5b8a9eda4df14194d397440f698eae0",
+      "bytes": 5580
     }
   ]
 }

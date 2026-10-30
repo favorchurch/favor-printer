@@ -32,7 +32,10 @@ import {
 export type { RelayErrorCode, RelayEvent, RelayState, RelayStatus, CloudState } from "./status";
 export { SpoolLockedError } from "./spool";
 
-export type EmbeddedTransport = { kind: "cups"; queue: string } | { kind: "tcp" } | { kind: "windows"; queue: string; scriptPath: string };
+export type EmbeddedTransport =
+  | { kind: "cups"; queue: string; /** Set false to disable CUPS batching. */ batchEnabled?: boolean }
+  | { kind: "tcp" }
+  | { kind: "windows"; queue: string; scriptPath: string };
 
 export type EmbeddedRelayOptions = {
   apiUrl: string;
@@ -94,6 +97,7 @@ function transportFor(options: EmbeddedRelayOptions): PrinterTransport {
     return createCupsTransport({
       queue: validateCupsQueue(options.transport.queue),
       writeTimeoutMs: options.writeTimeoutMs,
+      batchEnabled: options.transport.batchEnabled,
     });
   }
   if (options.transport.kind === "windows") {

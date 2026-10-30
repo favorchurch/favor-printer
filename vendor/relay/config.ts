@@ -26,6 +26,8 @@ export type RelayConfig = {
   cupsQueue: string | null;
   windowsQueue: string | null;
   windowsScriptPath: string | null;
+  /** Default on for CUPS; set RELAY_CUPS_BATCH_ENABLED=0 to roll back. */
+  cupsBatchEnabled?: boolean;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -101,5 +103,6 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
     cupsQueue,
     windowsQueue,
     windowsScriptPath,
+    cupsBatchEnabled: env.RELAY_CUPS_BATCH_ENABLED !== "0" && env.RELAY_CUPS_BATCH_ENABLED !== "false",
   };
 }

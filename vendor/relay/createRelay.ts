@@ -20,6 +20,7 @@ export function createTransportFromConfig(config: RelayConfig): PrinterTransport
     return createCupsTransport({
       queue: config.cupsQueue,
       writeTimeoutMs: config.writeTimeoutMs,
+      batchEnabled: config.cupsBatchEnabled,
     });
   }
   if (config.transport === "windows") {

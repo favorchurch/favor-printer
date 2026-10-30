@@ -33,7 +33,12 @@ export type ProbeResult = {
   status?: "status_unknown";
 };
 
+/** A single printer's independent, already rendered jobs in one physical submission. */
+export type BatchPrinterPayload = { target: PrinterTarget; zpl: string };
+
 export interface PrinterTransport {
+  /** Optional fast path: one submission for multiple labels; one outcome applies to every payload. */
+  sendBatch?(jobs: readonly BatchPrinterPayload[], hooks: SendHooks): Promise<SendResult>;
   /** True when the transport never sees printer status, so health is `status_unknown`. */
   readonly statusUnknown?: boolean;
   send(target: PrinterTarget, zpl: string, hooks: SendHooks): Promise<SendResult>;

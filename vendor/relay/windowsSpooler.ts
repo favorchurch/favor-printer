@@ -49,8 +49,33 @@ function failed(exit: ProcessExit): string {
   return "Windows spooler " + (exit.timedOut ? "timed out" : "exit " + String(exit.code ?? "unknown"));
 }
 
+/**
+ * Helper exits that print-raw.ps1 only takes before StartDocPrinter, each with
+ * the exact stderr marker it writes. Only this pairing proves that no byte
+ * reached the spooler; any other failure after the sending gate is ambiguous.
+ */
+const PRE_WRITE_EXITS: ReadonlyMap<number, ReadonlySet<string>> = new Map([
+  [2, new Set(["invalid-printer"])],
+  [3, new Set(["spooler-api-unavailable"])],
+  [4, new Set(["printer-queue-unavailable"])],
+  [5, new Set(["label-too-large", "empty-label"])],
+]);
+
+/**
+ * `powershell.exe -File` refused to load the helper (execution policy), so no
+ * helper code ran. The error id is not localized, unlike the message text.
+ */
+const POLICY_BLOCKED = /FullyQualifiedErrorId\s*:\s*UnauthorizedAccess\s*$/m;
+
 function classify(exit: ProcessExit): SendResult {
   if (exit.code === 0 && !exit.timedOut && exit.stdout.trim() === SENT_MARKER) return { kind: "sent" };
+  if (!exit.timedOut && exit.stdout.trim() === "" && exit.code !== null) {
+    const markers = PRE_WRITE_EXITS.get(exit.code);
+    if (markers?.has(exit.stderr.trim())) return { kind: "unsent", error: `Windows spooler ${exit.stderr.trim()}` };
+    if (exit.code === 1 && POLICY_BLOCKED.test(exit.stderr)) {
+      return { kind: "unsent", error: "Windows PowerShell execution policy blocked the print helper" };
+    }
+  }
   return { kind: "ambiguous", error: failed(exit) };
 }
 
