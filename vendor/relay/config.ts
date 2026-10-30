@@ -23,6 +23,8 @@ export type RelayConfig = {
   transport: RelayTransportKind;
   /** Set only when `transport` is `cups`. */
   cupsQueue: string | null;
+  /** Default on for CUPS; set RELAY_CUPS_BATCH_ENABLED=0 to roll back. */
+  cupsBatchEnabled?: boolean;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -89,5 +91,6 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayConf
     writeTimeoutMs: positiveInt(env, "RELAY_WRITE_TIMEOUT_MS", 10_000),
     transport,
     cupsQueue,
+    cupsBatchEnabled: env.RELAY_CUPS_BATCH_ENABLED !== "0" && env.RELAY_CUPS_BATCH_ENABLED !== "false",
   };
 }

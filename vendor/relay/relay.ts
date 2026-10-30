@@ -447,13 +447,36 @@ export class Relay {
     // caller went on to recover `sending` entries and let stop() release the lock.
     const settled = await Promise.allSettled(
       [...byPrinter.values()].map(async (entries) => {
-        for (const entry of entries) {
+        for (let index = 0; index < entries.length;) {
+          const entry = entries[index];
+          // A single CUPS queue may accept multiple complete ZPL documents in
+          // one lp invocation, but every job keeps its own durable send marker,
+          // cloud handshake and outcome. Never mix printers or unclaimed work.
+          const batch: ClaimedEntry[] = [];
+          if (entry.stage === "claimed" && this.options.transport.sendBatch) {
+            for (const candidate of entries.slice(index, index + this.claimLimit)) {
+              if (candidate.stage !== "claimed") break;
+              if ((await this.options.spool.sendMarker(candidate.id)) !== "none") break;
+              batch.push(candidate);
+            }
+          }
+          if (batch.length >= 2) {
+            try {
+              await this.processBatch(batch);
+            } catch (error) {
+              if (error instanceof RelayAuthError) throw error;
+              this.log("warn", `batch of ${batch.length} jobs will be recovered: ${errorText(error)}`);
+            }
+            index += batch.length;
+            continue;
+          }
           try {
             await this.processEntry(entry);
           } catch (error) {
             if (error instanceof RelayAuthError) throw error;
             this.log("warn", `job ${entry.id} will be retried: ${errorText(error)}`);
           }
+          index++;
         }
       }),
     );
@@ -491,18 +514,91 @@ export class Relay {
     // restart, or the cloud refuses its late `sending` and it is dropped.
     // A test label in progress holds the printer for a moment too.
     if (!this.mayStartSendTo(entry.printerId)) return;
-    return this.trackSend(entry, () => this.print(entry));
+    return this.trackSend([entry], () => this.print(entry));
   }
 
-  private async trackSend(entry: ClaimedEntry, run: () => Promise<void>) {
-    this.live.add(entry.id);
+  private async processBatch(entries: readonly ClaimedEntry[]) {
+    if (entries.some((entry) => this.live.has(entry.id))) return;
+    if (!this.mayStartSendTo(entries[0].printerId)) return;
+    return this.trackSend(entries, () => this.printBatch(entries));
+  }
+
+  private async trackSend(entries: readonly ClaimedEntry[], run: () => Promise<void>) {
+    for (const entry of entries) this.live.add(entry.id);
     const send = run();
     this.activeSends.add(send);
     try {
       await send;
     } finally {
       this.activeSends.delete(send);
-      this.live.delete(entry.id);
+      for (const entry of entries) this.live.delete(entry.id);
+    }
+  }
+
+  /** One CUPS submission, independently durable cloud outcomes for every label. */
+  private async printBatch(entries: readonly ClaimedEntry[]) {
+    const { spool, api, transport } = this.options;
+    if (!transport.sendBatch || entries.length < 2) return;
+    const printerId = entries[0].printerId;
+    this.markBusy(printerId);
+    try {
+      const result = await transport.sendBatch(
+        entries.map((entry) => ({ target: entry, zpl: entry.zpl })),
+        {
+          beforeWrite: async () => {
+            if (!this.mayStartSendTo(printerId)) return false;
+            const staged: ClaimedEntry[] = [];
+            let committed = false;
+            try {
+              // Stage ALL jobs as sending before the first byte reaches CUPS.
+              // If the process dies mid-submission, restart reports each staged
+              // job ambiguous instead of silently printing it again.
+              for (const entry of entries) {
+                if (!this.mayStartSendTo(printerId)) return false;
+                if (!(await spool.claimSend(entry.id))) return false;
+                staged.push(entry);
+                await spool.write({ ...stripPayload(entry), stage: "sending" });
+                if (!this.mayStartSendTo(printerId)) return false;
+                const answer = await api.sending(entry.id, entry.claimToken);
+                if (answer.kind !== "ok") {
+                  // This claim expired before any printer bytes were written.
+                  await spool.remove(entry.id);
+                  staged.pop();
+                  return false;
+                }
+              }
+              if (!this.mayStartSendTo(printerId)) return false;
+              committed = true;
+              return true;
+            } finally {
+              if (!committed) {
+                // No bytes were offered to lp: reset the other valid jobs to
+                // claimed, so their existing cloud leases can be checked again.
+                // A crash during rollback fails closed as an ambiguous send.
+                for (const entry of staged.reverse()) {
+                  await spool.write(entry);
+                  await spool.releaseSend(entry.id);
+                }
+              }
+            }
+          },
+        },
+      );
+      if (result.kind === "aborted") return;
+      const outcome: ReportOutcome = result.kind === "sent" ? "sent" : result.kind === "unsent" ? "failed" : "ambiguous";
+      // One failed cloud report must not prevent the other label results from
+      // reaching durable local report stage. Each will retry reporting later.
+      const settled = await Promise.allSettled(entries.map((entry) =>
+        this.recordAndDeliver(entry, outcome, result.kind === "sent" ? undefined : result.error),
+      ));
+      // Rejected credentials outrank a network failure on another label, so
+      // the relay still backs off instead of retrying with a dead token.
+      const rejected = settled.filter((item): item is PromiseRejectedResult => item.status === "rejected");
+      const auth = rejected.find((item) => item.reason instanceof RelayAuthError);
+      if (auth) throw auth.reason;
+      if (rejected.length > 0) throw rejected[0].reason;
+    } finally {
+      this.markIdle(printerId);
     }
   }
 
