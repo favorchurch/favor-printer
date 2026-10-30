@@ -16,6 +16,7 @@ explicit OK. Until then no volunteer's app can see the release.
 5. [Local signing and notarization](#local-signing-and-notarization)
 6. [Rollback](#rollback)
 7. [What the workflows do](#what-the-workflows-do)
+8. [Windows printer host (Preview)](#windows-printer-host-preview)
 
 ## Versions and channels
 
@@ -293,7 +294,7 @@ Volunteers who are stuck on the bad build and cannot update can install the fix-
 | --- | --- | --- |
 | `ci.yml` | pull requests, pushes to `main` (macOS) | install, lint, typecheck, test, unsigned `pnpm dist`. No secrets. |
 | `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` always. When `vendor/relay/**` changed, it also fetches `favorchurch/rsvp.favor.church` at the commit in `MANIFEST.json` (`source.commit`) with `RSVP_READ_TOKEN`. See the guarantee below. |
-| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-beta.N` on a commit that is on `main` (macOS, `release` environment) | signed build, notarization, stapling, verification, **draft** release. |
+| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-beta.N` on a commit that is on `main` (`release` environment) | `prepare` (Linux, no secrets) is the only job that creates the **draft**; then `release` (macOS: signed build, notarization, stapling, verification) and `windows` (Windows x64 NSIS, see below) upload to it. |
 | `secret-scan.yml` | every push and pull request | gitleaks over the working tree. |
 
 ### What `vendor-check` guarantees
@@ -327,3 +328,66 @@ published the release in between, the run aborts without uploading.
 Two things the release run does that `electron-builder.yml` alone does not: it signs the DMG itself, so
 it can be notarized, stapled and assessed on its own, and it refreshes the DMG checksums in the update
 manifest after stapling.
+
+## Windows printer host (Preview)
+
+Tracking: [#42](https://github.com/favorchurch/favor-printer/issues/42). The Windows app is a relay host only. Until
+physical Zebra acceptance passes on Windows, it ships **only as a Preview (`-beta.N`) pre-release**, never stable.
+
+**Assets** (job `windows` in `release.yml`): `Favor-Printer-<version>-x64[-unsigned-preview].exe` (per-user NSIS
+installer), its `.exe.blockmap`, the update manifest (`beta.yml` for Preview, `latest.yml` for stable) and
+`SHA256SUMS-windows.txt`. `scripts/verify-windows-release.mjs` fails the run unless the manifest names the tag's
+version and the installer's real sha512, the blockmap exists, and the PowerShell helpers inside the app are
+byte-identical to `scripts/windows/*.ps1`.
+
+**Channels.** Windows clients read `beta.yml`/`latest.yml`; macOS clients read only `*-mac.yml`, so a Windows asset
+can never install on a Mac, and stable clients of either platform never see a pre-release. A **Windows-only**
+`-beta.N` release has no `beta-mac.yml`: Mac Preview clients then get an update-check error (nothing installs)
+until a release with Mac assets is newer. Prefer attaching both platforms to one release. Never publish a
+**stable** draft that lacks `latest-mac.yml` (for example when the macOS job failed but `windows` succeeded):
+Mac stable clients would get update-check errors.
+
+**Signing secrets** (`release` environment only): `WINDOWS_CERTIFICATE_PFX_BASE64` and
+`WINDOWS_CERTIFICATE_PASSWORD` (an OV/EV code-signing certificate, or replace this step with Azure Trusted
+Signing). Without them the job fails, unless the tag is `-beta.N` **and** the repository variable
+`ALLOW_UNSIGNED_WINDOWS_PREVIEW` is `true`; then the build is unsigned and every file name says
+`unsigned-preview`. An unsigned build is a pilot artifact, not production-safe:
+
+- **Windows 11 Smart App Control** (on by default on clean installs) blocks unsigned executables outright,
+  including the installer and `Favor Printer.exe`, with no "Run anyway". Turning it off cannot be undone without
+  reinstalling Windows; do not ask volunteers to do that.
+- SmartScreen shows "Windows protected your PC" on other machines.
+- electron-updater does not verify publisher signatures for unsigned builds. Once signed, set
+  `win.signtoolOptions.publisherName` so updates must carry the same publisher.
+
+**PowerShell execution policy.** The helpers run with `powershell.exe -File`, so execution policy applies.
+Stock Windows client policy is `Restricted`. The installer asks for explicit consent to set only the
+**CurrentUser** policy to `RemoteSigned` (`build/installer.nsh`), never under Group Policy, never over
+`AllSigned`, never silently, never `-ExecutionPolicy Bypass`; uninstall restores the earlier value. Without
+consent the app shows that printing is off and why.
+
+**Local fallback** (Actions unavailable): build on a Windows x64 PC **without** Smart App Control enforcement
+(`Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy` → `VerifiedAndReputablePolicyState` must be
+0), from the tag, with `pnpm` on PATH:
+
+```sh
+git checkout vX.Y.Z-beta.N && pnpm install --frozen-lockfile
+pnpm verify:vendor && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+cat > electron-builder.release.yml <<'YAML'
+extends: ./electron-builder.yml
+publish:
+  provider: github
+  owner: favorchurch
+  repo: favor-printer
+  releaseType: draft
+  channel: beta
+win:
+  artifactName: "Favor-Printer-${version}-${arch}-unsigned-preview.${ext}"
+YAML
+CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --config electron-builder.release.yml --win nsis --x64 --publish never
+node scripts/verify-windows-release.mjs --dir release --channel beta --version X.Y.Z-beta.N
+(cd release && sha256sum Favor-Printer-*.exe beta.yml > SHA256SUMS-windows.txt)
+gh release upload vX.Y.Z-beta.N release/Favor-Printer-*.exe release/Favor-Printer-*.exe.blockmap release/beta.yml release/SHA256SUMS-windows.txt
+```
+
+Upload only to an existing **draft**, then publish per [Publishing the draft](#publishing-the-draft).

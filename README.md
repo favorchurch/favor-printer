@@ -21,6 +21,15 @@ Download and setup steps for volunteers: https://rsvp.favor.church/printer
 - `build/` — packaging resources (`entitlements.mac.plist`).
 - `scripts/` — build, preview and vendor verification scripts.
 
+Windows support is being integrated in [#42](https://github.com/favorchurch/favor-printer/issues/42)
+and draft [PR #75](https://github.com/favorchurch/favor-printer/pull/75). Windows uses
+an existing Zebra ZPL USB queue with a verified hardware serial and the canonical
+RAW relay from [RSVP draft PR #1002](https://github.com/favorchurch/rsvp.favor.church/pull/1002).
+See [Windows host architecture](docs/WINDOWS-RAW-TRANSPORT.md) and
+[Windows laptop hardware acceptance](docs/WINDOWS-HARDWARE-ACCEPTANCE.md). **A
+successful software build does not mean the Windows app, signing or physical
+Zebra labels are release-approved.**
+
 Releases on this repository are the app's download and auto-update source.
 
 ## Development
@@ -66,3 +75,8 @@ Everything the app runs is bundled into `dist/`, including `electron-updater`, s
 
 The app runs with the hardened runtime and is not sandboxed, because it runs `lp` and `lpadmin`.
 `build/entitlements.mac.plist` requests only `allow-jit` and `allow-unsigned-executable-memory`.
+
+For Windows **unsigned validation only**, run `pnpm build` then
+`CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --win nsis --x64 --publish never`
+on a Windows build host. Windows installer signing, Windows-side PowerShell/Winspool
+and real Zebra label acceptance remain separate gates. No Windows release is published here.

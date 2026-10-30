@@ -53,6 +53,8 @@ export function memoryPrefsFs(initial?: Partial<Prefs>) {
 }
 
 export type HarnessOptions = {
+  platform?: NodeJS.Platform;
+  windowsScriptPath?: string;
   prefs?: Partial<Prefs>;
   credentials?: StoredCredentials | null;
   scan?: ScanOutcome;
@@ -161,7 +163,9 @@ export function createControllerHarness(options: HarnessOptions = {}) {
 
   const deps: ControllerDeps = {
     version: "0.1.0",
-    osVersion: "macOS 15",
+    osVersion: options.platform === "win32" ? "Windows 11" : "macOS 15",
+    platform: options.platform,
+    windowsScriptPath: options.windowsScriptPath,
     appSupportDir: "/Users/v/Library/Application Support/Favor Printer",
     prefs,
     secrets,

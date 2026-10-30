@@ -32,6 +32,9 @@ import {
   createLegacyRelay,
   createPowerController,
   createPrinterService,
+  createWindowsPrinterService,
+  windowsResourcePaths,
+  noLegacyMacAgent,
   createSecretStore,
   createUpdateController,
   enroll,
@@ -53,9 +56,9 @@ import { trayIconPng } from "./shell/trayIcons";
 import { createUpdaterAdapter, type AutoUpdaterLike } from "./shell/updaterAdapter";
 import { createSetupWindowManager, type WindowLike, type WindowOptions } from "./shell/windows";
 
-const PRINTER_SETTINGS_URL = "x-apple.systempreferences:com.apple.Print-Scan-Settings.extension";
+const PRINTER_SETTINGS_URL = process.platform === "win32" ? "ms-settings:printers" : "x-apple.systempreferences:com.apple.Print-Scan-Settings.extension";
 
-const osVersion = () => `macOS ${process.getSystemVersion()}`;
+const osVersion = () => `${process.platform === "win32" ? "Windows" : "macOS"} ${process.getSystemVersion()}`;
 
 const relayForker = () =>
   createUtilityRelayForker({
@@ -92,7 +95,7 @@ async function runSelfTestMode(apiUrl: string): Promise<void> {
 }
 
 async function runApp(): Promise<void> {
-  const supportDir = appSupportDir(os.homedir());
+  const supportDir = appSupportDir(os.homedir(), process.platform, process.env.APPDATA);
   app.setPath("userData", supportDir);
 
   const setupWindowRef: { current: ReturnType<typeof createSetupWindowManager> | null } = { current: null };
@@ -150,14 +153,24 @@ async function runApp(): Promise<void> {
   });
 
   const run = createCommandRunner();
+  const isWindows = process.platform === "win32";
+  const windowsPaths = windowsResourcePaths({
+    packaged: app.isPackaged,
+    resourcesDir: process.resourcesPath,
+    projectDir: path.resolve(__dirname, ".."),
+  });
   const controller = createAppController({
     version: app.getVersion(),
     osVersion: osVersion(),
+    platform: process.platform,
+    windowsScriptPath: isWindows ? windowsPaths.printPath : undefined,
     appSupportDir: supportDir,
     prefs,
     secrets: createSecretStore({ file: path.join(supportDir, "relay-token.bin"), safeStorage }),
-    printers: createPrinterService({ run }),
-    legacy: createLegacyRelay({
+    printers: isWindows
+      ? createWindowsPrinterService({ run, powershellPath: windowsPaths.powershellPath, probePath: windowsPaths.probePath })
+      : createPrinterService({ run }),
+    legacy: isWindows ? noLegacyMacAgent() : createLegacyRelay({
       run,
       homeDir: os.homedir(),
       uid: process.getuid?.() ?? 0,

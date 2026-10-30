@@ -1,3 +1,4 @@
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseParentMessage } from "../../../../vendor/relay/embeddedProtocol";
@@ -23,13 +24,28 @@ describe("appSupportDir", () => {
   });
 });
 
+describe("Windows relay path", () => {
+  it("uses an existing Windows RAW queue, fixed local packaged helper, and standard app data", () => {
+    expect(appSupportDir("C:\\Users\\volunteer", "win32", "C:\\Users\\volunteer\\AppData\\Roaming")).toBe("C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer");
+    const options = buildRelayStartOptions(input({
+      platform: "win32", appSupportDir: "C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer",
+      queue: "Zebra ZD421", windowsScriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1",
+    }));
+    expect(options.transport).toEqual({ kind: "windows", queue: "Zebra ZD421", scriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1" });
+    expect(parseParentMessage({ type: "start", options })?.type).toBe("start");
+    for (const scriptPath of ["print-raw.ps1", "\\\\server\\helper.ps1", "C:\\scripts\\bad\n.ps1"]) {
+      expect(() => buildRelayStartOptions(input({ platform: "win32", queue: "Zebra ZD421", windowsScriptPath: scriptPath }))).toThrow();
+    }
+  });
+});
+
 describe("buildRelayStartOptions", () => {
   it("matches the relay start options snapshot", () => {
     expect(buildRelayStartOptions(input())).toEqual({
       apiUrl: "https://rsvp.favor.church",
       relayId: "relay-1",
       token: "tok-super-secret-123",
-      spoolDir: "/Users/volunteer/Library/Application Support/Favor Printer/spool",
+      spoolDir: path.join("/Users/volunteer/Library/Application Support/Favor Printer", "spool"),
       transport: { kind: "cups", queue: "Favor_D2J190800123" },
       appVersion: "0.1.0",
       osVersion: "26.0",
@@ -59,7 +75,7 @@ describe("buildRelayStartOptions", () => {
     expect(text).not.toContain("from-the-environment");
     expect(options.apiUrl).toBe("https://rsvp.favor.church");
     expect(options.transport).toEqual({ kind: "cups", queue: "Favor_D2J190800123" });
-    expect(options.spoolDir).toContain("/Library/Application Support/Favor Printer/spool");
+    expect(options.spoolDir).toBe(path.join("/Users/volunteer/Library/Application Support/Favor Printer", "spool"));
   });
 
   it("is accepted by the relay's own message parser", () => {

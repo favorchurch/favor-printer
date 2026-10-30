@@ -2,6 +2,7 @@ import { RelayApiClient } from "./apiClient";
 import type { RelayConfig } from "./config";
 import { createCupsTransport } from "./cups";
 import { createTcpTransport, type PrinterTransport } from "./printer";
+import { createWindowsSpoolerTransport } from "./windowsSpooler";
 import { Relay, type RelayLogger } from "./relay";
 import { FileSpool } from "./spool";
 
@@ -20,6 +21,14 @@ export function createTransportFromConfig(config: RelayConfig): PrinterTransport
       queue: config.cupsQueue,
       writeTimeoutMs: config.writeTimeoutMs,
       batchEnabled: config.cupsBatchEnabled,
+    });
+  }
+  if (config.transport === "windows") {
+    if (!config.windowsQueue || !config.windowsScriptPath) throw new Error("Windows queue and helper path are required");
+    return createWindowsSpoolerTransport({
+      queue: config.windowsQueue,
+      scriptPath: config.windowsScriptPath,
+      writeTimeoutMs: config.writeTimeoutMs,
     });
   }
   return createTcpTransport({
