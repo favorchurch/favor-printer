@@ -35,6 +35,8 @@ public static class FavorWinspool {
     public static extern bool EndPagePrinter(IntPtr handle);
     [DllImport("winspool.drv", SetLastError=true)]
     public static extern bool WritePrinter(IntPtr handle, byte[] input, uint size, out uint written);
+    [DllImport("winspool.drv", SetLastError=true)]
+    public static extern bool AbortPrinter(IntPtr handle);
 }
 '@ -ErrorAction Stop
 } catch {
@@ -89,7 +91,9 @@ try {
   [Console]::Error.WriteLine('spooler-submit-failed')
   exit 6
 } finally {
-  if ($pageStarted) { [void][FavorWinspool]::EndPagePrinter($handle) }
-  if ($docStarted) { [void][FavorWinspool]::EndDocPrinter($handle) }
+  # A document still open here means the submission failed part-way. Delete
+  # the partial spool job instead of ending (and so submitting) it. Bytes may
+  # already have streamed to the printer, so exit 6 stays ambiguous.
+  if ($docStarted) { [void][FavorWinspool]::AbortPrinter($handle) }
   if ($handle -ne [IntPtr]::Zero) { [void][FavorWinspool]::ClosePrinter($handle) }
 }

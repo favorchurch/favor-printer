@@ -343,7 +343,9 @@ byte-identical to `scripts/windows/*.ps1`.
 **Channels.** Windows clients read `beta.yml`/`latest.yml`; macOS clients read only `*-mac.yml`, so a Windows asset
 can never install on a Mac, and stable clients of either platform never see a pre-release. A **Windows-only**
 `-beta.N` release has no `beta-mac.yml`: Mac Preview clients then get an update-check error (nothing installs)
-until a release with Mac assets is newer. Prefer attaching both platforms to one release.
+until a release with Mac assets is newer. Prefer attaching both platforms to one release. Never publish a
+**stable** draft that lacks `latest-mac.yml` (for example when the macOS job failed but `windows` succeeded):
+Mac stable clients would get update-check errors.
 
 **Signing secrets** (`release` environment only): `WINDOWS_CERTIFICATE_PFX_BASE64` and
 `WINDOWS_CERTIFICATE_PASSWORD` (an OV/EV code-signing certificate, or replace this step with Azure Trusted

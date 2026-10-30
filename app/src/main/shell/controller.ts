@@ -542,7 +542,10 @@ export function createAppController(deps: ControllerDeps): AppController {
           return { ok: false, reason: "disabled" };
         }
         const { label, printer } = outcome.credentials;
-        await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false, ...(isWindows ? { pairedUsbSerial: usbSerial } : {}) }).catch(() => undefined);
+        await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false, ...(isWindows ? { pairedUsbSerial: usbSerial } : {}) }).catch(() => {
+          // On Windows the relay stays stopped without the saved serial: say why.
+          log("warn", "enroll", "could not save the enrolled printer; printing stays off until it is saved");
+        });
         log("info", "enroll", "enrolled this laptop");
         enrolled = true;
         inUseElsewhere = false;

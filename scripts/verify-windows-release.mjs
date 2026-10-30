@@ -16,6 +16,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const HELPERS = ["probe-printers.ps1", "print-raw.ps1"];
 
@@ -45,7 +46,9 @@ export function verifyWindowsRelease({ dir, channel, version, sourceDir = path.j
   return { manifest: manifests[0], installer, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+// fileURLToPath decodes %20 and drive letters; a mismatch here would skip every
+// check and exit 0, so the release gate would fail open.
+const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const arg = (name) => {
     const index = process.argv.indexOf(`--${name}`);

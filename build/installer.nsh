@@ -23,6 +23,9 @@
 !macroend
 
 !macro customInstall
+  ; Auto-updates run the installer non-silently (quitAndInstall), so /SD alone
+  ; would not stop the prompt. Ask only on a fresh install or manual reinstall.
+  ${IfNot} ${isUpdated}
   !insertmacro favorPowerShell $R9
   ; Prints gpo | ok | allsigned | needs:<current CurrentUser value>, with no newline.
   nsExec::ExecToStack `"$R9" -NoLogo -NoProfile -NonInteractive -Command "$$m = Get-ExecutionPolicy -Scope MachinePolicy; $$u = Get-ExecutionPolicy -Scope UserPolicy; $$e = Get-ExecutionPolicy; if ($$m -ne 'Undefined' -or $$u -ne 'Undefined') { $$r = 'gpo' } elseif ($$e -eq 'Restricted' -or $$e -eq 'Undefined') { $$r = 'needs:' + (Get-ExecutionPolicy -Scope CurrentUser) } elseif ($$e -eq 'AllSigned') { $$r = 'allsigned' } else { $$r = 'ok' }; [Console]::Out.Write($$r)"`
@@ -44,6 +47,7 @@
     ${EndIf}
   ${EndIf}
   favorPolicyDone:
+  ${EndIf}
 !macroend
 
 !macro customUnInstall

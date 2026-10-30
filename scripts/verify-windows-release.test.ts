@@ -1,5 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,6 +54,16 @@ describe("verifyWindowsRelease", () => {
     expect(() => verifyWindowsRelease({ dir: build({ version: "1.2.3-beta.3" }), channel: "beta", version: VERSION })).toThrow(/version/);
     expect(() => verifyWindowsRelease({ dir: build({ sha: "AAAA" }), channel: "beta", version: VERSION })).toThrow(/sha512/);
     expect(() => verifyWindowsRelease({ dir: build({ blockmap: false }), channel: "beta", version: VERSION })).toThrow(/blockmap/);
+  });
+
+  it("fails the CLI, never exits 0 unchecked, when run from a path with a space", () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), "favor win release "));
+    dirs.push(home);
+    const script = path.join(home, "verify-windows-release.mjs");
+    copyFileSync(path.join("scripts", "verify-windows-release.mjs"), script);
+    const run = spawnSync(process.execPath, [script, "--dir", path.join(home, "missing"), "--channel", "beta", "--version", VERSION], { encoding: "utf8" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("::error::");
   });
 
   it("refuses a packaged PowerShell helper that differs from the reviewed source", () => {
