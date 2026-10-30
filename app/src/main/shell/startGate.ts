@@ -16,6 +16,8 @@ export type StartGateDeps = {
   /** The CUPS queue bound to the printer, or null before one exists. */
   queue(): string | null;
   printerAttached(): boolean;
+  platform?: NodeJS.Platform;
+  windowsScriptPath?: string;
   appSupportDir: string;
   appVersion: string;
   osVersion: string;
@@ -45,6 +47,8 @@ export function createStartResolver(deps: StartGateDeps): () => Promise<StartRes
         appVersion: deps.appVersion,
         osVersion: deps.osVersion,
         printerAttached: deps.printerAttached(),
+        platform: deps.platform,
+        windowsScriptPath: deps.windowsScriptPath,
       });
     } catch {
       return { ok: false, reason: "unavailable" };

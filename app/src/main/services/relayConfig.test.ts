@@ -23,6 +23,21 @@ describe("appSupportDir", () => {
   });
 });
 
+describe("Windows relay path", () => {
+  it("uses an existing Windows RAW queue, fixed local packaged helper, and standard app data", () => {
+    expect(appSupportDir("C:\\Users\\volunteer", "win32", "C:\\Users\\volunteer\\AppData\\Roaming")).toBe("C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer");
+    const options = buildRelayStartOptions(input({
+      platform: "win32", appSupportDir: "C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer",
+      queue: "Zebra ZD421", windowsScriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1",
+    }));
+    expect(options.transport).toEqual({ kind: "windows", queue: "Zebra ZD421", scriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1" });
+    expect(parseParentMessage({ type: "start", options })?.type).toBe("start");
+    for (const scriptPath of ["print-raw.ps1", "\\\\server\\helper.ps1", "C:\\scripts\\bad\n.ps1"]) {
+      expect(() => buildRelayStartOptions(input({ platform: "win32", queue: "Zebra ZD421", windowsScriptPath: scriptPath }))).toThrow();
+    }
+  });
+});
+
 describe("buildRelayStartOptions", () => {
   it("matches the relay start options snapshot", () => {
     expect(buildRelayStartOptions(input())).toEqual({

@@ -59,6 +59,8 @@ export type SupervisorFactory = (hooks: {
 export type ControllerDeps = {
   version: string;
   osVersion: string;
+  platform?: NodeJS.Platform;
+  windowsScriptPath?: string;
   appSupportDir: string;
   apiUrl?: string;
   prefs: PrefsStore;
@@ -125,13 +127,14 @@ export type AppController = {
 /** Shown under the status while the old relay could not be turned off. Printing stays off. */
 export const LEGACY_FAILED_DETAIL = "The old relay could not be turned off. Printing stays off. Ask an admin for help.";
 
-const ASLEEP_WARNING = "This Mac went to sleep. Labels wait until it wakes.";
+const ASLEEP_WARNING = "This computer went to sleep. Labels wait until it wakes.";
 const LOCKED_WARNING = "The screen is locked. Keep the lid open so printing is not interrupted.";
 
 export function createAppController(deps: ControllerDeps): AppController {
   const { prefs, secrets, printers, legacy, log } = deps;
   const timers = deps.timers ?? systemTimers;
   const apiUrl = deps.apiUrl ?? "https://rsvp.favor.church";
+  const isWindows = deps.platform === "win32";
 
   let enrolled = false;
   let legacyLoaded = false;
@@ -167,6 +170,17 @@ export function createAppController(deps: ControllerDeps): AppController {
    * A scan that failed says nothing, so it does not unlock the remembered queue either.
    */
   const queueForRelay = (): string | null => {
+    // On Windows a cached queue name can point to a *different* USB device after
+    // unplug or queue reassignment; don't claim work until a current scan verifies
+    // the original enrollment serial. Pending cloud jobs stay pending instead.
+    if (isWindows) {
+      if (scanFailed || scan.kind !== "found") return null;
+      const current = scan;
+      const selected = current.devices.find((device) => device.id === current.selectedId);
+      const paired = prefs.get().pairedUsbSerial;
+      if (enrolled && (!paired || selected?.usbSerial !== paired)) return null;
+      return liveQueue;
+    }
     if (scan.kind === "found" || scanFailed) return liveQueue;
     return liveQueue ?? prefs.get().queue;
   };
@@ -182,6 +196,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     legacy,
     queue: queueForRelay,
     printerAttached: () => printerAttached,
+    platform: deps.platform,
+    windowsScriptPath: deps.windowsScriptPath,
     appSupportDir: deps.appSupportDir,
     appVersion: deps.version,
     osVersion: deps.osVersion,
@@ -195,7 +211,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       const resolution = await resolveRelayStart();
       if (resolution.ok) {
         relayHeldForQueue = false;
-        startedQueue = resolution.options.transport.kind === "cups" ? resolution.options.transport.queue : null;
+        startedQueue = resolution.options.transport.kind === "cups" || resolution.options.transport.kind === "windows" ? resolution.options.transport.queue : null;
       }
       return resolution;
     },
@@ -246,6 +262,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     const backlogWarning = backlogMonitor.update(relay?.counts ?? null);
     if (backlogWarning) warnings.push(backlogWarning);
     return {
+      ...(isWindows ? { platform: "win32" as const } : {}),
       version: deps.version,
       status,
       fiveState: fiveStateResult.state,
@@ -346,7 +363,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       });
     }
     // A failed listing says nothing about the queue, so the last answer stands.
-    if (!outcome.listFailed) liveQueue = outcome.queue;
+    if (!outcome.listFailed || isWindows) liveQueue = outcome.listFailed ? null : outcome.queue;
 
     const patch: { selectedPrinterId?: string; queue?: string | null } = {};
     if (outcome.scan.kind === "found" && outcome.scan.selectedId && outcome.scan.selectedId !== prefs.get().selectedPrinterId) {
@@ -359,7 +376,10 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     // A found printer is authoritative even if its queue could not be listed. An empty failed listing says nothing.
     if (outcome.scan.kind === "found" || !outcome.listFailed) {
-      const attached = outcome.scan.kind === "found";
+      const attached = isWindows
+        ? outcome.scan.kind === "found" && outcome.scan.queue === "ready" && !!outcome.scan.selectedId &&
+          (!enrolled || (!!prefs.get().pairedUsbSerial && selectedDevice()?.usbSerial === prefs.get().pairedUsbSerial))
+        : outcome.scan.kind === "found";
       if (!attached) {
         inUseElsewhere = false;
       }
@@ -372,13 +392,13 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     // A successful scan says what the selected printer's queue is now. The running relay keeps the
     // queue it started with, and that name may now belong to another printer, so make them agree.
-    if (!outcome.listFailed && outcome.scan.kind === "found" && !shuttingDown && enrolled) {
+    if ((isWindows || (!outcome.listFailed && outcome.scan.kind === "found")) && !shuttingDown && enrolled) {
       const active = ["starting", "running", "restarting"].includes(supervisorState.phase);
-      if (active && !liveQueue) {
+      if (active && !queueForRelay()) {
         log("warn", "printer", "the printer has no ready queue; stopping the relay until it does");
         relayHeldForQueue = true;
         await supervisor.stop();
-      } else if (active && liveQueue !== startedQueue) {
+      } else if (active && queueForRelay() !== startedQueue) {
         log("info", "printer", "the printer's queue changed; restarting the relay");
         await supervisor.restart();
       }
@@ -519,7 +539,7 @@ export function createAppController(deps: ControllerDeps): AppController {
           return { ok: false, reason: "disabled" };
         }
         const { label, printer } = outcome.credentials;
-        await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false }).catch(() => undefined);
+        await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false, ...(isWindows ? { pairedUsbSerial: usbSerial } : {}) }).catch(() => undefined);
         log("info", "enroll", "enrolled this laptop");
         enrolled = true;
         inUseElsewhere = false;

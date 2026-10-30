@@ -23,8 +23,8 @@ describe("Windows discovery identity and queue observations", () => {
     expect(report.inspectedQueues).toBe(1);
     expect(report.candidates).toEqual([{
       queueName: printer.queueName, driverName: printer.driverName, portName: "USB001",
-      pnpDeviceId: printer.pnpDeviceId, selectionKey: `windows-pnp:${printer.pnpDeviceId.toUpperCase()}`,
-      queueState: "available", problems: [],
+      pnpDeviceId: printer.pnpDeviceId, verifiedUsbSerial: null, selectionKey: null,
+      queueState: "available", problems: ["serial-unverified"],
     }]);
   });
 
@@ -43,7 +43,7 @@ describe("Windows discovery identity and queue observations", () => {
     expect(report.inspectedQueues).toBe(2);
     expect(report.candidates).toHaveLength(1);
     expect(report.candidates[0].selectionKey).toBeNull();
-    expect(report.candidates[0].problems).toEqual(["hardware-id-unverified"]);
+    expect(report.candidates[0].problems).toEqual(["hardware-id-unverified", "serial-unverified"]);
   });
 
   it("does not infer identity from queue names or reused USB ports", () => {
@@ -92,8 +92,30 @@ describe("Windows discovery identity and queue observations", () => {
     ] as const) {
       const candidate = parseWindowsPrinterProbe(probe([{ ...printer, ...patch }])).candidates[0];
       expect(candidate.queueState).toBe(expected);
-      expect(candidate.selectionKey).not.toBeNull();
+      expect(candidate.selectionKey).toBeNull();
     }
+  });
+
+  it("enables only proven unique USB parents, not spooler names or synthetic PnP instance tails", () => {
+    const verified = { ...printer, verifiedUsbSerial: "D2J190800123", serialEvidence: "unique-usb-parent" };
+    expect(parseWindowsPrinterProbe(probe([verified])).candidates[0]).toMatchObject({
+      verifiedUsbSerial: "D2J190800123", selectionKey: `windows-pnp:${printer.pnpDeviceId.toUpperCase()}`, problems: [],
+    });
+    for (const patch of [
+      { serialEvidence: null }, { serialEvidence: "source-unknown" }, { verifiedUsbSerial: "6&123&0&USB001" },
+      { verifiedUsbSerial: null }, { verifiedUsbSerial: "new\nline" },
+    ]) {
+      const raw = { ...verified, ...patch };
+      if (raw.verifiedUsbSerial === "new\nline") {
+        expect(() => parseWindowsPrinterProbe(probe([raw]))).toThrow("invalid-probe");
+      } else {
+        const candidate = parseWindowsPrinterProbe(probe([raw])).candidates[0];
+        expect(candidate.selectionKey).toBeNull();
+        expect(candidate.problems).toContain("serial-unverified");
+      }
+    }
+    const duplicated = parseWindowsPrinterProbe(probe([verified, { ...verified, queueName: "Second Zebra", pnpDeviceId: "USB\\VID_0A5F&PID_0185\\OTHER" }])).candidates;
+    expect(duplicated.every((row) => row.problems.includes("duplicate-usb-serial") && row.selectionKey === null)).toBe(true);
   });
 
   it("accepts a UTF-8 BOM but rejects oversized, control-bearing, or mistyped data", () => {
@@ -115,7 +137,7 @@ describe("Windows discovery identity and queue observations", () => {
   it("cannot change identity by renaming a queue or changing its USB port", () => {
     fc.assert(fc.property(fc.stringMatching(/^[A-Za-z0-9]{1,32}$/), fc.integer({ min: 1, max: 999 }), (name, port) => {
       const row = { ...printer, queueName: name, portName: `USB${String(port).padStart(3, "0")}` };
-      expect(parseWindowsPrinterProbe(probe([row])).candidates[0].selectionKey).toBe(`windows-pnp:${printer.pnpDeviceId.toUpperCase()}`);
+      expect(parseWindowsPrinterProbe(probe([row])).candidates[0].selectionKey).toBeNull();
     }), propertyParams());
   });
 });

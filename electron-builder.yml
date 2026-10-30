@@ -53,3 +53,28 @@ mac:
 dmg:
   # The app inside is signed and notarized; the disk image itself is not signed.
   sign: false
+
+# Windows is a printer-host-only app. A private per-user NSIS installer is
+# unsigned in PR builds; publish signed installers only after review and with
+# an authorized code-signing certificate. No automatic production deployment.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  icon: build/icon.ico
+  # Packaged resource lives outside ASAR for PowerShell -File. Windows-only.
+  extraResources:
+    - from: scripts/windows
+      to: windows
+      filter:
+        - "*.ps1"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: false
+  createStartMenuShortcut: true

@@ -2,7 +2,7 @@
 
 **Tracking:** [Favor Printer issue #42](https://github.com/favorchurch/favor-printer/issues/42), [RSVP relay PR #1002](https://github.com/favorchurch/rsvp.favor.church/pull/1002), [Favor Printer PR #75](https://github.com/favorchurch/favor-printer/pull/75).
 
-**Status:** Transport foundation only. The Electron app is still macOS/CUPS-only. There is NO working or signed Windows installer yet.
+**Status:** Windows Electron host integration and unsigned NSIS configuration implemented on draft Favor Printer PR #75, pending verified Windows-native packaging, serial discovery and physical Zebra acceptance. There is NO signed or released Windows installer yet.
 
 ## Architecture
 
@@ -15,10 +15,10 @@
 
 ## Remaining blockers
 
-1. Verify actual Zebra ZD421 hardware serial on a Windows PC independently of queue, port and PnP instance; fail closed when missing. Implement proper device binding and secure RSVP OTP enrollment, with campus scoping and no duplicate cloud printer.
-2. Integrate Windows printer discovery/transport into the Electron main process, platform-specific app data and secure credentials. Keep macOS CUPS behavior unchanged.
-3. Install the fixed helper from a trusted local app resource; keep approved PowerShell execution policy. Package and sign Windows installer, startup/update/uninstall/re-enrollment lifecycle.
-4. With non-production credentials, physically print a cloud-routed test and Kids parent/child labels; test unplug/replug, restart, queued/ambiguous jobs, revocation, no duplicates and macOS regression.
+1. Validate the new fail-closed Windows `Get-PnpDevice` unique-USB-parent serial evidence against actual ZD421 hardware. It rejects queue names/ports/ambiguous PnP fragments and only enrolls a uniquely verified device; review actual Windows-driver behavior and repair only with evidence.
+2. Independently validate the newly wired Electron service, platform-specific AppData and `safeStorage` credentials on a real Windows system. Mac CUPS paths are unchanged.
+3. Confirm the fixed PowerShell scripts are packaged as immutable app `extraResources`, execute under approved PowerShell policy, and verify NSIS installer/startup/update/uninstall/re-enrollment. Obtain an approved signing certificate before any production release.
+4. With non-production credentials, physically print a cloud-routed test and Kids parent/child labels; test unplug/replug, restart, queued/ambiguous jobs, revocation, no duplicates and macOS regression. See [hands-on acceptance guide](WINDOWS-HARDWARE-ACCEPTANCE.md).
 5. Independent exact-SHA review and CI/release approval before merging. PRs remain draft.
 
 ## Offline evidence — October 28, 2026

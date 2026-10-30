@@ -12,3 +12,5 @@ export * from "./secretStore";
 export * from "./statusSummary";
 export * from "./timers";
 export * from "./updates";
+export * from "./windowsPrinterService";
+export * from "./windowsPlatform";

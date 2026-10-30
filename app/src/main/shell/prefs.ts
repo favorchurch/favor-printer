@@ -15,8 +15,10 @@ export type Prefs = {
   openAtLogin: boolean | null;
   channel: UpdateChannel;
   selectedPrinterId: string | null;
-  /** Last CUPS queue bound to the printer, so the relay can start with the printer unplugged. */
+  /** Last platform queue bound to the printer (not a credential or a cloud ID). */
   queue: string | null;
+  /** USB serial that was verified when Windows enrollment succeeded; fail closed if a new device replaces it. */
+  pairedUsbSerial: string | null;
   /** Admin-chosen name of this laptop. */
   label: string | null;
   /** Name of the printer the cloud bound this laptop to, as of the last enrollment. */
@@ -33,6 +35,7 @@ export const DEFAULT_PREFS: Prefs = {
   channel: "stable",
   selectedPrinterId: null,
   queue: null,
+  pairedUsbSerial: null,
   label: null,
   printerName: null,
   campusId: null,
@@ -73,6 +76,7 @@ export function parsePrefs(raw: unknown): Prefs {
     channel: isUpdateChannel(source.channel) ? source.channel : DEFAULT_PREFS.channel,
     selectedPrinterId: text(source.selectedPrinterId),
     queue: text(source.queue, 127),
+    pairedUsbSerial: text(source.pairedUsbSerial, 64),
     label: text(source.label, 200),
     printerName: text(source.printerName, 200),
     campusId: typeof source.campusId === "number" && Number.isInteger(source.campusId) ? source.campusId : null,

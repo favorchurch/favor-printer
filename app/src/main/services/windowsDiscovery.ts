@@ -6,6 +6,7 @@
 
 import path from "node:path";
 
+import { isUsableUsbSerial } from "../../shared";
 import type { CommandRunner } from "./command";
 
 export type WindowsDiscoveryProblem =
@@ -14,7 +15,9 @@ export type WindowsDiscoveryProblem =
   | "non-usb-port"
   | "hardware-id-unverified"
   | "duplicate-queue-name"
-  | "duplicate-hardware-id";
+  | "duplicate-hardware-id"
+  | "serial-unverified"
+  | "duplicate-usb-serial";
 
 export type WindowsQueueState = "available" | "offline" | "attention" | "unknown";
 
@@ -24,6 +27,8 @@ export type WindowsZebraCandidate = {
   portName: string;
   /** Original Windows value for local comparison; no serial number is inferred. */
   pnpDeviceId: string | null;
+  /** Hardware serial from a present Zebra USB parent with CM_DEVCAP_UNIQUEID; never inferred from queue/PnP IDs. */
+  verifiedUsbSerial: string | null;
   /** Null unless this probe identifies one unambiguous local USB instance. */
   selectionKey: string | null;
   /** Spooler observation only: even `available` is not proof of attached hardware. */
@@ -41,6 +46,8 @@ type ProbePrinter = {
   driverName: string;
   portName: string;
   pnpDeviceId: string | null;
+  verifiedUsbSerial: string | null;
+  serialEvidence: "unique-usb-parent" | null;
   isLocal: boolean;
   isNetwork: boolean;
   workOffline: boolean;
@@ -92,6 +99,8 @@ function readPrinter(value: unknown): ProbePrinter {
     driverName: textField(row.driverName, 256)!,
     portName: textField(row.portName, 256)!,
     pnpDeviceId: textField(row.pnpDeviceId, 512, true),
+    verifiedUsbSerial: row.verifiedUsbSerial === undefined ? null : textField(row.verifiedUsbSerial, 64, true),
+    serialEvidence: row.serialEvidence === "unique-usb-parent" ? "unique-usb-parent" : null,
     isLocal: booleanField(row.isLocal),
     isNetwork: booleanField(row.isNetwork),
     workOffline: booleanField(row.workOffline),
@@ -139,6 +148,7 @@ export function parseWindowsPrinterProbe(stdout: string): WindowsDiscoveryReport
   const rows = payload.printers.map(readPrinter);
   const queueNames = counts(rows.map((row) => row.queueName.toUpperCase()));
   const instanceIds = counts(rows.map((row) => windowsZebraInstanceId(row.pnpDeviceId)).filter((id): id is string => id !== null));
+  const serials = counts(rows.filter((row) => row.serialEvidence === "unique-usb-parent" && isUsableUsbSerial(row.verifiedUsbSerial)).map((row) => row.verifiedUsbSerial!.toUpperCase()));
   const candidates: WindowsZebraCandidate[] = [];
   for (const row of rows) {
     const instanceId = windowsZebraInstanceId(row.pnpDeviceId);
@@ -149,6 +159,9 @@ export function parseWindowsPrinterProbe(stdout: string): WindowsDiscoveryReport
     if (!row.isLocal) problems.push("not-local");
     if (!/^USB\d{3,}$/i.test(row.portName)) problems.push("non-usb-port");
     if (!instanceId) problems.push("hardware-id-unverified");
+    const serial = row.serialEvidence === "unique-usb-parent" && isUsableUsbSerial(row.verifiedUsbSerial) ? row.verifiedUsbSerial : null;
+    if (!serial) problems.push("serial-unverified");
+    if (serial && (serials.get(serial.toUpperCase()) ?? 0) > 1) problems.push("duplicate-usb-serial");
     if ((queueNames.get(row.queueName.toUpperCase()) ?? 0) > 1) problems.push("duplicate-queue-name");
     if (instanceId && (instanceIds.get(instanceId) ?? 0) > 1) problems.push("duplicate-hardware-id");
     candidates.push({
@@ -156,6 +169,7 @@ export function parseWindowsPrinterProbe(stdout: string): WindowsDiscoveryReport
       driverName: row.driverName,
       portName: row.portName,
       pnpDeviceId: row.pnpDeviceId,
+      verifiedUsbSerial: serial,
       selectionKey: problems.length === 0 ? `windows-pnp:${instanceId}` : null,
       queueState: queueState(row),
       problems,

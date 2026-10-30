@@ -1244,3 +1244,53 @@ describe("rename", () => {
     expect(h.enroll).not.toHaveBeenCalled();
   });
 });
+
+
+describe("Windows relay launch and device binding", () => {
+  const WINDOWS = { platform: "win32" as const, windowsScriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1" };
+  const current = { ...ENROLLED, ...WINDOWS, prefs: { openAtLogin: true, setupComplete: true, pairedUsbSerial: DEVICE.usbSerial, queue: "Favor_S1" } };
+
+  it("starts the Windows RAW relay for an enrolled printer with a verified matching USB serial", async () => {
+    const h = await started(current);
+    expect(h.forks.children).toHaveLength(1);
+    expect(parseParentMessage(h.forks.last().messages[0])).toMatchObject({
+      type: "start", options: {
+        transport: { kind: "windows", queue: "Favor_S1", scriptPath: WINDOWS.windowsScriptPath },
+        printerAttached: true,
+      },
+    });
+  });
+
+  it("fails closed when a prior Windows enrollment lacks proof of the serial or the selected printer changed", async () => {
+    for (const pairedUsbSerial of [null, "S2"]) {
+      const h = await started({ ...current, prefs: { ...current.prefs, pairedUsbSerial } });
+      expect(h.forks.children).toHaveLength(0);
+      expect(h.supervisorPhase()).toBe("blocked");
+    }
+  });
+
+  it("does not trust cached Windows spooler queue names after an unplug or failed discovery", async () => {
+    for (const scan of [NO_PRINTER, LIST_FAILED]) {
+      const h = await started({ ...current, scan });
+      expect(h.forks.children).toHaveLength(0);
+      h.state.scan = foundPrinter();
+      await h.controller.scanPrinters();
+      expect(h.forks.children).toHaveLength(1);
+    }
+  });
+
+  it("refuses to launch against an invalid helper path without forwarding a token", async () => {
+    const h = await started({ ...current, windowsScriptPath: "https://untrusted.example/print-raw.ps1" });
+    expect(h.forks.children).toHaveLength(0);
+    expect(h.supervisorPhase()).toBe("blocked");
+    expect(h.logLines.join(" ")).not.toContain(CREDENTIALS.token);
+  });
+
+  it("records the verified serial of a Windows OTP enrollment before launching a relay", async () => {
+    const h = await started({ ...WINDOWS, scan: foundPrinter(), prefs: { openAtLogin: true } });
+    await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: true });
+    expect(h.prefsFs.saved()).toMatchObject({ pairedUsbSerial: "S1", campusId: 7 });
+    expect(h.forks.children).toHaveLength(1);
+    expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { kind: "windows" } } });
+  });
+});
