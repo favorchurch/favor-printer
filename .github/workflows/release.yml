@@ -21,7 +21,74 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The only job that creates the draft release, so the macOS and Windows jobs
+  # never race to create it. Reads no secret. Same gates as before: tag on main,
+  # tag == v + package.json version, X.Y.Z or X.Y.Z-beta.N only, never touch a
+  # published release.
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    env:
+      TAG: ${{ github.ref_name }}
+    outputs:
+      channel: ${{ steps.version.outputs.channel }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tagged commit is on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::tagged commit is not on main"; exit 1; }
+
+      - name: Check the tag matches package.json
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [ "${TAG}" != "v${version}" ]; then
+            echo "::error::Tag ${TAG} does not match package.json version ${version}."
+            exit 1
+          fi
+          if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            channel=beta
+          elif [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            channel=latest
+          else
+            echo "::error::Unsupported version ${version}. Use X.Y.Z or X.Y.Z-beta.N."
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create the draft release once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+            --jq ".[] | select(.tag_name == \"${TAG}\") | {draft, html_url}" | jq -s '.[0]')"
+          if [ "${release}" != "null" ] && [ -n "${release}" ]; then
+            if [ "$(printf '%s' "${release}" | jq -r '.draft')" != "true" ]; then
+              echo "::error::A published release already exists for ${TAG}. Roll forward with a higher version instead."
+              exit 1
+            fi
+            echo "Reusing the existing draft for ${TAG}."
+          else
+            gh release create "${TAG}" --draft --verify-tag --title "Favor Printer ${TAG#v}" \
+              --notes "Draft built by the release workflow. Not published until a maintainer gives an explicit OK (docs/RELEASING.md)."
+          fi
+          case "${TAG}" in
+            *-beta.*) gh release edit "${TAG}" --draft --prerelease ;;
+            *) gh release edit "${TAG}" --draft --prerelease=false ;;
+          esac
+
   release:
+    needs: prepare
     runs-on: macos-latest
     timeout-minutes: 90
     # Every signing and notarization secret below exists only in this environment,
@@ -373,3 +440,168 @@ jobs:
             security list-keychains -d user -s $(cat "${RUNNER_TEMP}/keychain-search-list.txt") || true
           fi
           rm -f "${P12_PATH:-}" "${CERT_PEM_PATH:-}" "${KEY_PEM_PATH:-}" "${APPLE_API_KEY:-}" "${RUNNER_TEMP}/keychain-search-list.txt" electron-builder.release.yml
+
+  # Windows x64 printer host (issue #42): NSIS installer, its blockmap and the
+  # channel manifest (latest.yml for stable, beta.yml for Preview). macOS clients
+  # only read *-mac.yml, so nothing here can install on a Mac, and stable Windows
+  # clients never see a pre-release.
+  #
+  # Signing: WINDOWS_CERTIFICATE_PFX_BASE64 + WINDOWS_CERTIFICATE_PASSWORD in the
+  # release environment. Without them the job fails, except for a -beta.N tag
+  # when the repository variable ALLOW_UNSIGNED_WINDOWS_PREVIEW is "true": then
+  # the installer is built unsigned and its file name says so. An unsigned build
+  # is a pilot artifact only; Windows 11 Smart App Control blocks it outright.
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 60
+    environment: release
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.ref_name }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Again, before anything reads a secret.
+      - name: Check the tagged commit is on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::tagged commit is not on main"; exit 1; }
+          [ "${TAG}" = "v${VERSION}" ] || { echo "::error::Tag ${TAG} does not match version ${VERSION}."; exit 1; }
+
+      - name: Decide signed or unsigned preview
+        env:
+          WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          ALLOW_UNSIGNED: ${{ vars.ALLOW_UNSIGNED_WINDOWS_PREVIEW }}
+        run: |
+          set -euo pipefail
+          if [ -n "${WINDOWS_CERTIFICATE_PFX_BASE64}" ] && [ -n "${WINDOWS_CERTIFICATE_PASSWORD}" ]; then
+            echo "WINDOWS_SIGNED=true" >> "${GITHUB_ENV}"
+          elif [ "${CHANNEL}" = "beta" ] && [ "${ALLOW_UNSIGNED}" = "true" ]; then
+            echo "::warning::No Windows signing certificate: building an UNSIGNED pilot preview. Never publish it as stable."
+            echo "WINDOWS_SIGNED=false" >> "${GITHUB_ENV}"
+          else
+            echo "::error::Windows signing secrets are not set. Unsigned builds are allowed only for -beta.N tags with ALLOW_UNSIGNED_WINDOWS_PREVIEW=true."
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify vendor, lint, typecheck and test
+        run: |
+          set -euo pipefail
+          pnpm verify:vendor
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+
+      - name: Write the signing certificate
+        if: env.WINDOWS_SIGNED == 'true'
+        env:
+          WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+        run: |
+          set -euo pipefail
+          pfx="${RUNNER_TEMP}/windows-signing.pfx"
+          echo "WIN_CSC_LINK=${pfx}" >> "${GITHUB_ENV}"
+          (umask 077 && printf '%s' "${WINDOWS_CERTIFICATE_PFX_BASE64}" | base64 --decode > "${pfx}")
+
+      # Same settings as electron-builder.yml plus draft-only publishing and the
+      # update channel. An unsigned build says so in every artifact name.
+      - name: Write the release builder config
+        run: |
+          set -euo pipefail
+          suffix=""
+          [ "${WINDOWS_SIGNED}" = "true" ] || suffix="-unsigned-preview"
+          {
+            echo "extends: ./electron-builder.yml"
+            echo "publish:"
+            echo "  provider: github"
+            echo "  owner: favorchurch"
+            echo "  repo: favor-printer"
+            echo "  releaseType: draft"
+            echo "  channel: ${CHANNEL}"
+            echo "win:"
+            echo "  artifactName: \"Favor-Printer-\${version}-\${arch}${suffix}.\${ext}\""
+          } > electron-builder.release.yml
+          cat electron-builder.release.yml
+
+      - name: Build the Windows installer
+        env:
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ "${WINDOWS_SIGNED}" != "true" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
+          pnpm build
+          pnpm exec electron-builder --config electron-builder.release.yml --win nsis --x64 --publish never
+
+      - name: Verify the installer, update manifest and bundled helpers
+        run: node scripts/verify-windows-release.mjs --dir release --channel "${CHANNEL}" --version "${VERSION}"
+
+      - name: Verify the Authenticode state matches the build mode
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem release -Filter 'Favor-Printer-*.exe' -File) + @(Get-Item 'release/win-unpacked/Favor Printer.exe')
+          foreach ($f in $files) {
+            $s = Get-AuthenticodeSignature $f.FullName
+            Write-Host "$($f.Name): $($s.Status) $($s.SignerCertificate.Subject)"
+            if ($env:WINDOWS_SIGNED -eq 'true' -and $s.Status -ne 'Valid') { throw "$($f.Name) is not validly signed" }
+            if ($env:WINDOWS_SIGNED -ne 'true' -and $s.Status -ne 'NotSigned') { throw "$($f.Name) has unexpected signature state $($s.Status)" }
+          }
+
+      - name: Write checksums
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum Favor-Printer-*.exe "${CHANNEL}.yml" > SHA256SUMS-windows.txt
+          cat SHA256SUMS-windows.txt
+
+      # The prepare job created the draft. Upload only to that draft, and re-check
+      # that nobody published it while this job was building.
+      - name: Upload to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+            --jq ".[] | select(.tag_name == \"${TAG}\") | .draft" | head -n 1)"
+          if [ "${draft}" != "true" ]; then
+            echo "::error::No draft release for ${TAG}, or it was published while this job was building. Nothing was uploaded."
+            exit 1
+          fi
+          gh release upload "${TAG}" --clobber release/Favor-Printer-*.exe release/Favor-Printer-*.exe.blockmap \
+            "release/${CHANNEL}.yml" release/SHA256SUMS-windows.txt
+
+      - name: Check the release is still a draft with the Windows assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+            --jq ".[] | select(.tag_name == \"${TAG}\")" | jq -s '.[0]')"
+          [ "$(printf '%s' "${release}" | jq -r '.draft')" = "true" ] || { echo "::error::${TAG} is not a draft."; exit 1; }
+          case "${TAG}" in *-beta.*) want=true ;; *) want=false ;; esac
+          [ "$(printf '%s' "${release}" | jq -r '.prerelease')" = "${want}" ] || { echo "::error::wrong pre-release flag"; exit 1; }
+          names="$(printf '%s' "${release}" | jq -r '.assets[].name')"
+          for pattern in 'x64.*\.exe$' 'x64.*\.exe\.blockmap$' "^${CHANNEL}\.yml$" '^SHA256SUMS-windows\.txt$'; do
+            printf '%s\n' "${names}" | grep -Eq "${pattern}" || { echo "::error::Release is missing an asset matching ${pattern}."; exit 1; }
+          done
+
+      - name: Remove the signing certificate
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/windows-signing.pfx" electron-builder.release.yml

@@ -1,8 +1,9 @@
 # Windows discovery foundation — issue #42
 
-This is a **partial, read-only foundation**, not a Windows Favor Printer release.
-The app still starts its existing macOS CUPS service. Nothing in this change is
-wired into enrollment, the relay, the renderer, installers, or automatic updates.
+This page documents the read-only discovery contract. It was written as a
+foundation; the Windows host is now wired into enrollment, the relay and an
+unsigned NSIS installer on PR #75. Current status and native Windows evidence:
+[WINDOWS-RAW-TRANSPORT.md](WINDOWS-RAW-TRANSPORT.md).
 
 ## What is implemented
 
