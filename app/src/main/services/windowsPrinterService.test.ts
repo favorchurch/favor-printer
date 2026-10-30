@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createWindowsPrinterService } from "./windowsPrinterService";
+import { createWindowsPrinterService, POWERSHELL_BLOCKED_WARNING, WINDOWS_SCAN_FAILED_WARNING } from "./windowsPrinterService";
 import type { CommandRunner } from "./command";
 
 const DEVICE = "USBPRINT\\Zebra_TechnologiesZTCZD421\\7&ABCDEF&0&USB001";
@@ -74,8 +74,11 @@ describe("Windows printer host binding", () => {
   it("fails closed on PowerShell failure, bad probe JSON or wrong platform", async () => {
     for (const answer of [ok("bad-json"), { code: 1, stdout: "", stderr: "denied", timedOut: false }]) {
       const service = createWindowsPrinterService(input(vi.fn().mockResolvedValue(answer)));
-      expect(await service.scan(null)).toEqual({ scan: { kind: "none" }, queue: null, listFailed: true });
+      expect(await service.scan(null)).toEqual({ scan: { kind: "none" }, queue: null, listFailed: true, failureWarning: WINDOWS_SCAN_FAILED_WARNING });
     }
+    const blocked = { code: 1, stdout: "", stderr: "    + FullyQualifiedErrorId : UnauthorizedAccess\r\n", timedOut: false };
+    expect(await createWindowsPrinterService(input(vi.fn().mockResolvedValue(blocked))).scan(null))
+      .toEqual({ scan: { kind: "none" }, queue: null, listFailed: true, failureWarning: POWERSHELL_BLOCKED_WARNING });
     const service = createWindowsPrinterService({ ...input(vi.fn()), platform: "darwin" });
     expect((await service.scan(null)).listFailed).toBe(true);
   });

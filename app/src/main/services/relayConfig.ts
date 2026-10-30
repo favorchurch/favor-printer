@@ -18,7 +18,7 @@ export const DEFAULT_API_URL = "https://rsvp.favor.church";
 /** `~/Library/Application Support/Favor Printer` */
 export function appSupportDir(homeDir: string, platform: NodeJS.Platform = "darwin", appData?: string): string {
   if (platform === "win32") return path.win32.join(appData ?? path.win32.join(homeDir, "AppData", "Roaming"), PRODUCT_NAME);
-  return path.join(homeDir, "Library", "Application Support", PRODUCT_NAME);
+  return path.posix.join(homeDir, "Library", "Application Support", PRODUCT_NAME);
 }
 
 export type RelayConfigInput = {

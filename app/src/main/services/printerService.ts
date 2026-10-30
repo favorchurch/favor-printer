@@ -39,6 +39,8 @@ export type ScanOutcome = {
   queue: string | null;
   /** `lpinfo` or `lpstat` failed, so the result may mean "could not look". The queue is then never "ready". */
   listFailed: boolean;
+  /** Operator-facing reason a failed listing could not look, when it is known and actionable. */
+  failureWarning?: string;
 };
 
 export type SetUpOutcome = SetUpPrinterResult & { queue: string | null };

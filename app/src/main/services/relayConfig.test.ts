@@ -1,3 +1,4 @@
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseParentMessage } from "../../../../vendor/relay/embeddedProtocol";
@@ -44,7 +45,7 @@ describe("buildRelayStartOptions", () => {
       apiUrl: "https://rsvp.favor.church",
       relayId: "relay-1",
       token: "tok-super-secret-123",
-      spoolDir: "/Users/volunteer/Library/Application Support/Favor Printer/spool",
+      spoolDir: path.join("/Users/volunteer/Library/Application Support/Favor Printer", "spool"),
       transport: { kind: "cups", queue: "Favor_D2J190800123" },
       appVersion: "0.1.0",
       osVersion: "26.0",
@@ -74,7 +75,7 @@ describe("buildRelayStartOptions", () => {
     expect(text).not.toContain("from-the-environment");
     expect(options.apiUrl).toBe("https://rsvp.favor.church");
     expect(options.transport).toEqual({ kind: "cups", queue: "Favor_D2J190800123" });
-    expect(options.spoolDir).toContain("/Library/Application Support/Favor Printer/spool");
+    expect(options.spoolDir).toBe(path.join("/Users/volunteer/Library/Application Support/Favor Printer", "spool"));
   });
 
   it("is accepted by the relay's own message parser", () => {

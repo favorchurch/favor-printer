@@ -56,7 +56,7 @@ type ProbePrinter = {
 };
 
 export class WindowsDiscoveryError extends Error {
-  constructor(public readonly reason: "unsupported-platform" | "invalid-path" | "probe-failed" | "probe-timeout" | "invalid-probe") {
+  constructor(public readonly reason: "unsupported-platform" | "invalid-path" | "probe-failed" | "probe-timeout" | "invalid-probe" | "policy-blocked") {
     super(`Windows printer discovery: ${reason}`);
     this.name = "WindowsDiscoveryError";
   }
@@ -191,6 +191,11 @@ export async function discoverWindowsPrinters(deps: {
   }
   const result = await deps.run(deps.powershellPath, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", deps.probePath], { timeoutMs: 15_000 });
   if (result.timedOut) throw new WindowsDiscoveryError("probe-timeout");
+  // powershell.exe refused to load the script (execution policy). The error id
+  // is not localized; the message is. Nothing ran, so this says nothing about printers.
+  if (result.code === 1 && /FullyQualifiedErrorId\s*:\s*UnauthorizedAccess\s*$/m.test(result.stderr)) {
+    throw new WindowsDiscoveryError("policy-blocked");
+  }
   if (result.code !== 0) throw new WindowsDiscoveryError("probe-failed");
   return parseWindowsPrinterProbe(result.stdout);
 }

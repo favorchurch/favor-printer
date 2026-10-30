@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -97,6 +98,6 @@ describe("the fork the app makes in production", () => {
 
 describe("relayEntryPath", () => {
   it("is dist/relay.js next to main.js", () => {
-    expect(relayEntryPath("/app/dist")).toBe("/app/dist/relay.js");
+    expect(relayEntryPath("/app/dist")).toBe(path.join("/app/dist", "relay.js"));
   });
 });

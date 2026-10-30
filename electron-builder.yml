@@ -16,7 +16,7 @@ files:
 asar: true
 
 # Releases of this repository are the download and auto-update source.
-# Channels: tag vX.Y.Z is stable, vX.Y.Z-preview.N is a prerelease.
+# Channels: tag vX.Y.Z is stable, vX.Y.Z-beta.N is a prerelease (docs/RELEASING.md).
 publish:
   provider: github
   owner: favorchurch
@@ -78,3 +78,5 @@ nsis:
   allowToChangeInstallationDirectory: false
   createDesktopShortcut: false
   createStartMenuShortcut: true
+  # Consent-only per-user PowerShell policy step for the printer helpers.
+  include: build/installer.nsh

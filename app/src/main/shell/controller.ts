@@ -143,6 +143,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   let liveQueue: string | null = null;
   /** The last `lpinfo` listing failed, so "no printer" may mean "could not look". */
   let scanFailed = false;
+  let scanWarning: string | null = null;
   let printerAttached = false;
   let inUseElsewhere = false;
   let paused = false;
@@ -257,6 +258,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     const fiveStateResult = deriveFiveState(statusInputs);
     const status = legacyLoaded && migrationFailed && derived.color !== "red" ? { ...derived, detail: LEGACY_FAILED_DETAIL } : derived;
     const warnings = powerWarnings({ onBattery: power.onBattery === true });
+    if (scanWarning) warnings.push(scanWarning);
     if (power.asleep) warnings.push(ASLEEP_WARNING);
     if (power.locked) warnings.push(LOCKED_WARNING);
     const backlogWarning = backlogMonitor.update(relay?.counts ?? null);
@@ -350,6 +352,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     const outcome = await printers.scan(prefs.get().selectedPrinterId);
     scan = outcome.scan;
     scanFailed = outcome.listFailed;
+    scanWarning = outcome.listFailed ? outcome.failureWarning ?? null : null;
     if (outcome.scan.kind === "found") {
       printerPresence = printerPresenceReducer(printerPresence, {
         type: "printer_found",

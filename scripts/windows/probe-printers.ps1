@@ -16,7 +16,7 @@ function Get-VerifiedZebraUsbSerial([string]$instanceId) {
         try {
             $device = Get-PnpDevice -InstanceId $instanceId -ErrorAction Stop
             if ($null -eq $device -or $device.Status -ne 'OK') { return $null }
-            $match = [regex]::Match($instanceId, '^USB\VID_0A5F&PID_[0-9A-F]{4}\([A-Za-z0-9._-]{1,64})$', 'IgnoreCase')
+            $match = [regex]::Match($instanceId, '^USB\\VID_0A5F&PID_[0-9A-F]{4}\\([A-Za-z0-9._-]{1,64})$', 'IgnoreCase')
             if ($match.Success) {
                 $cap = Get-PnpDeviceProperty -InstanceId $instanceId -KeyName 'DEVPKEY_Device_Capabilities' -ErrorAction Stop
                 if (($null -eq $cap.Data) -or (([int]$cap.Data -band 16) -ne 16)) { return $null }

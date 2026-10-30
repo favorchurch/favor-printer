@@ -3,8 +3,14 @@
  * A failed probe cannot be interpreted as an empty list or a ready printer. */
 import type { PrinterDevice } from "../../shared";
 import type { PrinterService } from "./printerService";
-import { discoverWindowsPrinters, type WindowsDiscoveryReport, type WindowsZebraCandidate } from "./windowsDiscovery";
+import { discoverWindowsPrinters, WindowsDiscoveryError, type WindowsDiscoveryReport, type WindowsZebraCandidate } from "./windowsDiscovery";
 import type { CommandRunner } from "./command";
+
+/** Shown while Windows PowerShell refuses to run Favor Printer's bundled helpers. */
+export const POWERSHELL_BLOCKED_WARNING =
+  "Windows is blocking Favor Printer's printer helper scripts for this account, so printing stays off. " +
+  "Reinstall Favor Printer and allow the PowerShell setting, or ask IT.";
+export const WINDOWS_SCAN_FAILED_WARNING = "Favor Printer could not check Windows printers. Printing stays off until it can.";
 
 export function eligibleWindowsZebras(report: WindowsDiscoveryReport): WindowsZebraCandidate[] {
   return report.candidates.filter((candidate) => candidate.selectionKey !== null && candidate.verifiedUsbSerial !== null);
@@ -21,7 +27,11 @@ export function createWindowsPrinterService(deps: {
   const scan: PrinterService["scan"] = async (selectedId) => {
       let report: WindowsDiscoveryReport;
       try { report = await discover(); }
-      catch { return { scan: { kind: "none" }, queue: null, listFailed: true }; }
+      catch (error) {
+        const failureWarning = error instanceof WindowsDiscoveryError && error.reason === "policy-blocked"
+          ? POWERSHELL_BLOCKED_WARNING : WINDOWS_SCAN_FAILED_WARNING;
+        return { scan: { kind: "none" }, queue: null, listFailed: true, failureWarning };
+      }
       const candidates = eligibleWindowsZebras(report);
       const devices: PrinterDevice[] = candidates.map((candidate) => ({
         id: candidate.selectionKey!,

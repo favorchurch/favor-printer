@@ -166,6 +166,9 @@ describe("Windows probe process boundary", () => {
     for (const [result, reason] of [
       [{ ...ok, code: 1 }, "probe-failed"], [{ ...ok, code: null }, "probe-failed"], [{ ...ok, timedOut: true }, "probe-timeout"],
       [{ ...ok, stdout: "not-json" }, "invalid-probe"],
+      // Execution policy refused the script: nothing ran, which is not an empty inventory.
+      [{ ...ok, code: 1, stdout: "", stderr: "File C:\\x.ps1 cannot be loaded.\r\n    + FullyQualifiedErrorId : UnauthorizedAccess\r\n" }, "policy-blocked"],
+      [{ ...ok, code: 2, stdout: "", stderr: "    + FullyQualifiedErrorId : UnauthorizedAccess\r\n" }, "probe-failed"],
     ] as const) {
       const run = vi.fn().mockResolvedValue(result);
       await expect(discoverWindowsPrinters({ platform: "win32", run, ...paths })).rejects.toMatchObject({ reason });

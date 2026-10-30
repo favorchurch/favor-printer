@@ -1279,6 +1279,17 @@ describe("Windows relay launch and device binding", () => {
     }
   });
 
+  it("keeps printing off and says why while PowerShell blocks the helpers, then recovers", async () => {
+    const blocked = { ...LIST_FAILED, failureWarning: "Windows is blocking the helpers" };
+    const h = await started({ ...current, scan: blocked });
+    expect(h.forks.children).toHaveLength(0);
+    expect(h.controller.snapshot().warnings).toContain("Windows is blocking the helpers");
+    h.state.scan = foundPrinter();
+    await h.controller.scanPrinters();
+    expect(h.forks.children).toHaveLength(1);
+    expect(h.controller.snapshot().warnings).not.toContain("Windows is blocking the helpers");
+  });
+
   it("refuses to launch against an invalid helper path without forwarding a token", async () => {
     const h = await started({ ...current, windowsScriptPath: "https://untrusted.example/print-raw.ps1" });
     expect(h.forks.children).toHaveLength(0);
