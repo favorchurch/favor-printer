@@ -27,10 +27,15 @@ export type SpoolStage = "claimed" | "sending" | "report";
 type Payload = "zpl" | "label";
 
 /** Everything a later stage needs: ids and the claim token, never the label. */
-type SlimJob = Omit<ClaimedJob, Payload> & { claimedAt: string };
+type SlimJob = Omit<ClaimedJob, Payload> & { claimedAt: string; claimSeq?: number };
 
 /** Claimed, nothing written to the printer. The only stage that holds the ZPL and label. */
-export type ClaimedEntry = ClaimedJob & { stage: "claimed"; claimedAt: string };
+export type ClaimedEntry = ClaimedJob & {
+  stage: "claimed";
+  claimedAt: string;
+  /** Position within the cloud's claim order. Older spool files lack it. */
+  claimSeq?: number;
+};
 /** Bytes may have gone out. The payload is gone; the job is never resent. */
 export type SendingEntry = SlimJob & { stage: "sending" };
 /** Outcome known, waiting to reach the cloud. */
@@ -332,10 +337,20 @@ export class FileSpool {
     await rename(temp, target);
   }
 
+  private claimSeq = 0;
+
   /** Add a freshly claimed job unless one with that id is already held. */
   async addClaimed(job: ClaimedJob, now: Date): Promise<boolean> {
     if (await this.get(job.id)) return false;
-    await this.write({ ...job, stage: "claimed", claimedAt: now.toISOString() });
+    // Every job of one claim shares a timestamp; the sequence keeps the
+    // cloud's order (a multi-label batch prints in that order).
+    this.claimSeq += 1;
+    await this.write({
+      ...job,
+      stage: "claimed",
+      claimedAt: now.toISOString(),
+      claimSeq: this.claimSeq,
+    });
     return true;
   }
 
@@ -569,6 +584,11 @@ export class FileSpool {
       }
       entries.push(entry);
     }
-    return entries.sort((a, b) => a.claimedAt.localeCompare(b.claimedAt));
+    return entries.sort(
+      (a, b) =>
+        a.claimedAt.localeCompare(b.claimedAt) ||
+        (a.claimSeq ?? 0) - (b.claimSeq ?? 0) ||
+        a.id.localeCompare(b.id),
+    );
   }
 }
