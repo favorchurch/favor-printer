@@ -90,6 +90,8 @@ export type RelayOptions = {
   authBackoffMs?: number;
   log?: RelayLogger;
   now?: () => Date;
+  /** Monotonic elapsed milliseconds for heartbeat cadence; never the host wall clock. */
+  monotonicNow?: () => number;
 };
 
 const errorText = (error: unknown) =>
@@ -103,6 +105,7 @@ export class Relay {
   private readonly authBackoffMs: number;
   private readonly log: RelayLogger;
   private readonly now: () => Date;
+  private readonly monotonicNow: () => number;
 
   private chain: Promise<unknown> = Promise.resolve();
   private stopped = true;
@@ -121,7 +124,7 @@ export class Relay {
   private startup: Promise<void> | null = null;
   private stopping: Promise<void> | null = null;
 
-  private lastHeartbeatAt = 0;
+  private lastHeartbeatAt: number | null = null;
   private knownPrinters: Array<PrinterTarget & { id: string }> = [];
   /** True once a heartbeat answer has been received by this process. */
   private heartbeatAnswered = false;
@@ -139,6 +142,7 @@ export class Relay {
     this.authBackoffMs = options.authBackoffMs ?? 30_000;
     this.log = options.log ?? (() => undefined);
     this.now = options.now ?? (() => new Date());
+    this.monotonicNow = options.monotonicNow ?? (() => performance.now());
   }
 
   /** One full cycle. Calls are serialized, so ticks never overlap. */
@@ -249,7 +253,7 @@ export class Relay {
   private forgetPrinters() {
     this.knownPrinters = [];
     this.heartbeatAnswered = false;
-    this.lastHeartbeatAt = 0;
+    this.lastHeartbeatAt = null;
   }
 
   /** Why a test label cannot go out right now, or null. Cheap, so callers can ask before fetching one. */
@@ -726,8 +730,8 @@ export class Relay {
   }
 
   private async heartbeatIfDue() {
-    const nowMs = this.now().getTime();
-    if (this.lastHeartbeatAt && nowMs - this.lastHeartbeatAt < this.heartbeatMs) return;
+    const nowMs = this.monotonicNow();
+    if (this.lastHeartbeatAt !== null && nowMs - this.lastHeartbeatAt < this.heartbeatMs) return;
 
     const printerIds = this.printerIds;
     if (printerIds.length === 0) return;
@@ -748,7 +752,7 @@ export class Relay {
     } catch (error) {
       // Nothing is known about the printers yet, so try again next cycle
       // rather than waiting out the heartbeat interval.
-      if (!this.heartbeatAnswered) this.lastHeartbeatAt = 0;
+      if (!this.heartbeatAnswered) this.lastHeartbeatAt = null;
       throw error;
     }
     const hadAddresses = this.knownPrinters.length > 0;

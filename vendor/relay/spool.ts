@@ -27,7 +27,7 @@ export type SpoolStage = "claimed" | "sending" | "report";
 type Payload = "zpl" | "label";
 
 /** Everything a later stage needs: ids and the claim token, never the label. */
-type SlimJob = Omit<ClaimedJob, Payload> & { claimedAt: string; claimSeq?: number };
+type SlimJob = Omit<ClaimedJob, Payload> & { claimedAt: string; claimSeq?: number; claimOrderVersion?: 1 };
 
 /** Claimed, nothing written to the printer. The only stage that holds the ZPL and label. */
 export type ClaimedEntry = ClaimedJob & {
@@ -35,6 +35,7 @@ export type ClaimedEntry = ClaimedJob & {
   claimedAt: string;
   /** Position within the cloud's claim order. Older spool files lack it. */
   claimSeq?: number;
+  claimOrderVersion?: 1;
 };
 /** Bytes may have gone out. The payload is gone; the job is never resent. */
 export type SendingEntry = SlimJob & { stage: "sending" };
@@ -338,10 +339,18 @@ export class FileSpool {
   }
 
   private claimSeq = 0;
+  private claimSeqInitialized = false;
 
   /** Add a freshly claimed job unless one with that id is already held. */
   async addClaimed(job: ClaimedJob, now: Date): Promise<boolean> {
     if (await this.get(job.id)) return false;
+    // Claim positions survive relay restarts, unlike the host clock or an in-memory counter.
+    // This process owns the spool lock; no second writer may allocate a sequence here.
+    if (!this.claimSeqInitialized) {
+      const prior = await this.list();
+      this.claimSeq = prior.reduce((highest, entry) => Math.max(highest, entry.claimOrderVersion === 1 ? entry.claimSeq ?? 0 : 0), 0);
+      this.claimSeqInitialized = true;
+    }
     // Every job of one claim shares a timestamp; the sequence keeps the
     // cloud's order (a multi-label batch prints in that order).
     this.claimSeq += 1;
@@ -350,6 +359,7 @@ export class FileSpool {
       stage: "claimed",
       claimedAt: now.toISOString(),
       claimSeq: this.claimSeq,
+      claimOrderVersion: 1,
     });
     return true;
   }
@@ -584,11 +594,17 @@ export class FileSpool {
       }
       entries.push(entry);
     }
-    return entries.sort(
-      (a, b) =>
-        a.claimedAt.localeCompare(b.claimedAt) ||
-        (a.claimSeq ?? 0) - (b.claimSeq ?? 0) ||
-        a.id.localeCompare(b.id),
-    );
+    return entries.sort((a, b) => {
+      // Older relays reset their sequence on restart. Preserve their original
+      // timestamp-first order and keep them ahead of durable-sequence claims.
+      const aLegacy = a.claimOrderVersion !== 1;
+      const bLegacy = b.claimOrderVersion !== 1;
+      if (aLegacy !== bLegacy) return aLegacy ? -1 : 1;
+      if (!aLegacy && !bLegacy) {
+        const bySequence = a.claimSeq! - b.claimSeq!;
+        if (bySequence !== 0) return bySequence;
+      }
+      return a.claimedAt.localeCompare(b.claimedAt) || (a.claimSeq ?? 0) - (b.claimSeq ?? 0) || a.id.localeCompare(b.id);
+    });
   }
 }
