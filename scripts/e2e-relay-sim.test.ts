@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // @ts-expect-error plain .mjs script without type declarations
-import { assertJobRecordClaim, assertSpoolEmpty, DEFAULT_RSVP_DIR, resolveRsvpDir, runE2eRelaySim } from "./e2e-relay-sim.mjs";
+import { assertFreshEnrollmentRegistry, assertJobRecordClaim, assertSpoolEmpty, DEFAULT_RSVP_DIR, resolveRsvpDir, runE2eRelaySim } from "./e2e-relay-sim.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -88,6 +88,76 @@ describe("assertJobRecordClaim", () => {
         "relay-a",
       ),
     ).toThrow(/claimed by 'helper-relay', expected 'relay-a'/);
+  });
+});
+
+describe("assertFreshEnrollmentRegistry", () => {
+  it("passes when exactly one relay record exists and is bound to the single matching printer", () => {
+    const registry = {
+      relays: [{ id: "r1", relayId: "relay-1", label: "Laptop" }],
+      printers: [{ id: "p1", relayId: "relay-1", usbSerial: "ZD421-001", name: "Zebra" }],
+    };
+    const printer = assertFreshEnrollmentRegistry(registry, "relay-1", "ZD421-001");
+    expect(printer.id).toBe("p1");
+  });
+
+  it("fails when duplicate relay records exist for the relayId", () => {
+    const registry = {
+      relays: [
+        { id: "r1", relayId: "relay-1", label: "Laptop" },
+        { id: "r2", relayId: "relay-1", label: "Laptop duplicate" },
+      ],
+      printers: [{ id: "p1", relayId: "relay-1", usbSerial: "ZD421-001", name: "Zebra" }],
+    };
+    expect(() => assertFreshEnrollmentRegistry(registry, "relay-1", "ZD421-001")).toThrow(
+      /Expected exactly one registry relay record for 'relay-1', found 2/,
+    );
+  });
+
+  it("fails when no relay record exists for the relayId", () => {
+    const registry = {
+      relays: [],
+      printers: [{ id: "p1", relayId: "relay-1", usbSerial: "ZD421-001", name: "Zebra" }],
+    };
+    expect(() => assertFreshEnrollmentRegistry(registry, "relay-1", "ZD421-001")).toThrow(
+      /Expected exactly one registry relay record for 'relay-1', found 0/,
+    );
+  });
+
+  it("fails when multiple printers are bound to the relayId", () => {
+    const registry = {
+      relays: [{ id: "r1", relayId: "relay-1", label: "Laptop" }],
+      printers: [
+        { id: "p1", relayId: "relay-1", usbSerial: "ZD421-001", name: "Zebra 1" },
+        { id: "p2", relayId: "relay-1", usbSerial: "ZD421-002", name: "Zebra 2" },
+      ],
+    };
+    expect(() => assertFreshEnrollmentRegistry(registry, "relay-1", "ZD421-001")).toThrow(
+      /Expected only printer 'p1' bound to relay 'relay-1', found 2/,
+    );
+  });
+
+  it("fails when the printer is bound to a different relayId", () => {
+    const registry = {
+      relays: [{ id: "r1", relayId: "relay-1", label: "Laptop" }],
+      printers: [{ id: "p1", relayId: "relay-2", usbSerial: "ZD421-001", name: "Zebra" }],
+    };
+    expect(() => assertFreshEnrollmentRegistry(registry, "relay-1", "ZD421-001")).toThrow(
+      /Printer 'p1' is bound to relay 'relay-2', expected 'relay-1'/,
+    );
+  });
+
+  it("fails when duplicate printers exist with the same serial", () => {
+    const registry = {
+      relays: [{ id: "r1", relayId: "relay-1", label: "Laptop" }],
+      printers: [
+        { id: "p1", relayId: "relay-1", usbSerial: "ZD421-001", name: "Zebra" },
+        { id: "p2", relayId: "relay-1", usbSerial: "ZD421-001", name: "Zebra dup" },
+      ],
+    };
+    expect(() => assertFreshEnrollmentRegistry(registry, "relay-1", "ZD421-001")).toThrow(
+      /Expected exactly one printer with serial 'ZD421-001', found 2/,
+    );
   });
 });
 

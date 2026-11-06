@@ -68,6 +68,41 @@ export function assertJobRecordClaim(job, expectedRelayId) {
 }
 
 /**
+ * Asserts that fresh enrollment created exactly one relay record for relayId
+ * and exactly one canonical printer binding for usbSerial.
+ */
+export function assertFreshEnrollmentRegistry(registry, relayId, usbSerial) {
+  if (!registry || typeof registry !== "object") {
+    throw new Error("Registry snapshot was not returned from harness");
+  }
+  const matchingRelays = (registry.relays ?? []).filter((r) => r.relayId === relayId);
+  if (matchingRelays.length !== 1) {
+    throw new Error(
+      `Expected exactly one registry relay record for '${relayId}', found ${matchingRelays.length}`,
+    );
+  }
+  const matchingPrinters = (registry.printers ?? []).filter((p) => p.usbSerial === usbSerial);
+  if (matchingPrinters.length !== 1) {
+    throw new Error(
+      `Expected exactly one printer with serial '${usbSerial}', found ${matchingPrinters.length}`,
+    );
+  }
+  const printer = matchingPrinters[0];
+  if (printer.relayId !== relayId) {
+    throw new Error(
+      `Printer '${printer.id}' is bound to relay '${printer.relayId}', expected '${relayId}'`,
+    );
+  }
+  const boundPrinters = (registry.printers ?? []).filter((p) => p.relayId === relayId);
+  if (boundPrinters.length !== 1 || boundPrinters[0].id !== printer.id) {
+    throw new Error(
+      `Expected only printer '${printer.id}' bound to relay '${relayId}', found ${boundPrinters.length}`,
+    );
+  }
+  return printer;
+}
+
+/**
  * Asserts that the spool directory has no leftover .zpl, .send, or .json files,
  * and no file containing ZPL payload content after reporting.
  */
@@ -286,8 +321,7 @@ export async function runE2eRelaySim(options = {}) {
     const initial = await enrollWith(await issue({ intent: "new", campusId: 7, printerName: "E2E Zebra" }, "First laptop"));
     requireThat(initial.ok, `Fresh enrollment failed: ${JSON.stringify(initial)}`);
     let registry = (await json("/__control/registry")).value;
-    const printer = registry.printers.find((p) => p.usbSerial === "ZD421-E2E-001");
-    requireThat(printer && registry.printers.filter((p) => p.usbSerial === printer.usbSerial).length === 1 && printer.relayId === initial.credentials.relayId, "Fresh enrollment did not create one canonical binding");
+    const printer = assertFreshEnrollmentRegistry(registry, initial.credentials.relayId, "ZD421-E2E-001");
     const pairing = (await json(`/__control/registry?printerId=${printer.id}`)).value.pairing;
     requireThat(pairing?.pointer, "Could not mint pairing pointer");
     const fixtureZpl = "^XA^FO20,20^FDFavor Printer Bundled Relay E2E^FS^XZ";
