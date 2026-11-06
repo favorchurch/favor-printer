@@ -111,3 +111,13 @@ describe("renameInCloud", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+
+describe("invalid cloud configuration", () => {
+  it("treats missing or malformed names as unreachable", async () => {
+    for (const body of [{ label: "Desk" }, { label: "Desk", printers: [{}] }, { label: 42, printers: [] }]) {
+      const fetcher: typeof fetch = async () => new Response(JSON.stringify(body), { status: 200 });
+      await expect(readCloudNames({ apiUrl: "https://rsvp.favor.church", credentials: { relayId: "r", token: "t" }, fetch: fetcher })).resolves.toEqual({ ok: false, reason: "unreachable" });
+    }
+  });
+});

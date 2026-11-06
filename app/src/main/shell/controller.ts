@@ -336,8 +336,8 @@ export function createAppController(deps: ControllerDeps): AppController {
       if (outcome.reason === "revoked") await handleRevoked();
       return;
     }
-    if (cloudPrinterIds.length === 0) cloudPrinterIds = outcome.printers.map((printer) => printer.id);
-    const printerId = supervisorState.relay?.printerIds[0] ?? cloudPrinterIds[0];
+    cloudPrinterIds = outcome.printers.map((printer) => printer.id);
+    const printerId = cloudPrinterIds[0];
     const printer = outcome.printers.find((item) => item.id === printerId);
     await prefs.update({ label: outcome.label, printerName: printer?.name ?? null }).catch(() => undefined);
     emit();
@@ -589,7 +589,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       return withRename(async () => {
         const credentials = await pairing();
         if (!credentials) return { ok: false, reason: "not_enrolled" };
-        const printerId = supervisorState.relay?.printerIds[0] ?? cloudPrinterIds[0];
+        const printerId = cloudPrinterIds[0] ?? supervisorState.relay?.printerIds[0];
         if (!printerId) return { ok: false, reason: "printer_not_ready" };
         return renameCloud({ printerId, name: trimmed }, credentials);
       });

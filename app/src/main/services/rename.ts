@@ -42,6 +42,9 @@ export async function readCloudNames(deps: RenameCloudDeps): Promise<CloudNamesO
       fetch: deps.fetch,
     });
     const { label, printers } = await api.config();
+    if (typeof label !== "string" || !Array.isArray(printers) || printers.some((printer) => !printer || typeof printer.id !== "string" || typeof printer.name !== "string")) {
+      return { ok: false, reason: "unreachable" };
+    }
     return { ok: true, label, printers };
   } catch (error) {
     return { ok: false, reason: error instanceof RelayAuthError ? "revoked" : "unreachable" };

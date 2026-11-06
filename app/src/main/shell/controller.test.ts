@@ -1257,6 +1257,17 @@ describe("cloud name synchronization", () => {
     expect(h.rename).toHaveBeenCalledWith({ printerId: "cloud-printer", name: "Local Zebra" }, expect.anything());
   });
 
+  it("tracks a changed cloud printer binding between reads", async () => {
+    let current = names;
+    const h = await started({ ...ENROLLED, readCloudNames: async () => current });
+    await h.controller.refresh();
+    current = { ok: true, label: "Cloud desk", printers: [{ id: "new-printer", name: "New Zebra" }] };
+    await h.controller.refresh();
+    expect(h.controller.snapshot().printerName).toBe("New Zebra");
+    await h.controller.renamePrinter("Renamed");
+    expect(h.rename).toHaveBeenCalledWith({ printerId: "new-printer", name: "Renamed" }, expect.anything());
+  });
+
   it("reads on opening setup and on a healthy relay report", async () => {
     const read = vi.fn(async () => names);
     const h = await started({ ...ENROLLED, readCloudNames: read });
