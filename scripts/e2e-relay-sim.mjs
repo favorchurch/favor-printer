@@ -103,6 +103,70 @@ export function assertFreshEnrollmentRegistry(registry, relayId, usbSerial) {
 }
 
 /**
+ * Asserts that re-enrolling/joining an existing printer transferred ownership
+ * to a distinct relay and preserved the printer UUID, campusId, name, pairing,
+ * and queued backlog.
+ */
+export function assertExistingPrinterRebind(registry, { initialRelayId, joinedRelayId, originalPrinter, queuedJobId }) {
+  if (!registry || typeof registry !== "object") {
+    throw new Error("Registry snapshot was not returned from harness");
+  }
+  if (!joinedRelayId || joinedRelayId === initialRelayId) {
+    throw new Error(
+      `Expected joined relayId to differ from initial relayId '${initialRelayId}', but got '${joinedRelayId}'`,
+    );
+  }
+  const rebound = (registry.printers ?? []).find((p) => p.id === originalPrinter.id);
+  if (!rebound) {
+    throw new Error(`Printer '${originalPrinter.id}' was not found in registry after rebind`);
+  }
+  if (rebound.relayId !== joinedRelayId) {
+    throw new Error(
+      `Rebound printer '${rebound.id}' is bound to relay '${rebound.relayId}', expected '${joinedRelayId}'`,
+    );
+  }
+  if (rebound.campusId !== originalPrinter.campusId) {
+    throw new Error(
+      `Rebound printer '${rebound.id}' has campusId ${rebound.campusId}, expected ${originalPrinter.campusId}`,
+    );
+  }
+  if (rebound.name !== originalPrinter.name) {
+    throw new Error(
+      `Rebound printer '${rebound.id}' has name '${rebound.name}', expected '${originalPrinter.name}'`,
+    );
+  }
+  if (registry.pairedPrinter?.id !== originalPrinter.id) {
+    throw new Error(
+      `Paired printer pointer did not resolve to '${originalPrinter.id}', got '${registry.pairedPrinter?.id}'`,
+    );
+  }
+  const hasQueuedJob = (registry.jobs ?? []).some(
+    (j) => j.id === queuedJobId && j.printerId === originalPrinter.id && j.status === "queued",
+  );
+  if (!hasQueuedJob) {
+    throw new Error(
+      `Queued backlog job '${queuedJobId}' for printer '${originalPrinter.id}' was not preserved in registry`,
+    );
+  }
+  return rebound;
+}
+
+/**
+ * Asserts that a claim attempt from a superseded relay is rejected
+ * with status 403 and reason printer_handed_over.
+ */
+export function assertHandoverClaimRejected(claimResult) {
+  if (!claimResult || typeof claimResult !== "object") {
+    throw new Error("Claim response was not returned");
+  }
+  if (claimResult.status !== 403 || claimResult.value?.reason !== "printer_handed_over") {
+    throw new Error(
+      `Expected claim rejected with status 403 printer_handed_over, got status ${claimResult.status}: ${JSON.stringify(claimResult.value)}`,
+    );
+  }
+}
+
+/**
  * Asserts that the spool directory has no leftover .zpl, .send, or .json files,
  * and no file containing ZPL payload content after reporting.
  */
@@ -329,9 +393,16 @@ export async function runE2eRelaySim(options = {}) {
     const joined = await enrollWith(await issue({ intent: "existing", targetPrinterId: printer.id, campusId: 7, handover: true }, "Second laptop"));
     requireThat(joined.ok, `Rebind failed: ${JSON.stringify(joined)}`);
     const credentials = joined.credentials;
+    requireThat(credentials.relayId !== initial.credentials.relayId, `Joined relayId '${credentials.relayId}' must differ from initial relayId '${initial.credentials.relayId}'`);
+    const initialClaim = await json("/api/printing/relay/claim", { printerIds: [printer.id] }, initial.credentials);
+    assertHandoverClaimRejected(initialClaim);
     registry = (await json(`/__control/registry?pointer=${encodeURIComponent(pairing.pointer)}`)).value;
-    const rebound = registry.printers.find((p) => p.id === printer.id);
-    requireThat(rebound?.relayId === credentials.relayId && rebound.campusId === 7 && rebound.name === printer.name && registry.pairedPrinter?.id === printer.id && registry.jobs.some((j) => j.id === queuedJob.id && j.printerId === printer.id && j.status === "queued"), "Rebind did not preserve printer, pairing and backlog");
+    assertExistingPrinterRebind(registry, {
+      initialRelayId: initial.credentials.relayId,
+      joinedRelayId: credentials.relayId,
+      originalPrinter: printer,
+      queuedJobId: queuedJob.id,
+    });
     const rename = await renameInCloud({ printerId: printer.id, name: "Renamed from laptop" }, { apiUrl, credentials });
     requireThat(rename.ok && rename.printerName === "Renamed from laptop", "Laptop rename failed");
     const admin = await json("/__control/admin-rename", { printerId: printer.id, name: "Renamed by admin" });
@@ -432,7 +503,7 @@ export async function runE2eRelaySim(options = {}) {
     const moved = await enrollWith(await issue({ intent: "existing", targetPrinterId: printer.id, campusId: 7, handover: true }, "Third laptop"));
     requireThat(moved.ok, "Handover enrollment failed");
     const oldClaim = await json("/api/printing/relay/claim", { printerIds: [printer.id] }, credentials);
-    requireThat(oldClaim.status === 403 && oldClaim.value.reason === "printer_handed_over", `Expected printer_handed_over: ${JSON.stringify(oldClaim)}`);
+    assertHandoverClaimRejected(oldClaim);
 
     // 4. Revoked (401) run yields revoked event
     console.log("[e2e-relay-sim] testing revoked relay credentials (401)...");

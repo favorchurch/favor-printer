@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // @ts-expect-error plain .mjs script without type declarations
-import { assertFreshEnrollmentRegistry, assertJobRecordClaim, assertSpoolEmpty, DEFAULT_RSVP_DIR, resolveRsvpDir, runE2eRelaySim } from "./e2e-relay-sim.mjs";
+import { assertExistingPrinterRebind, assertFreshEnrollmentRegistry, assertHandoverClaimRejected, assertJobRecordClaim, assertSpoolEmpty, DEFAULT_RSVP_DIR, resolveRsvpDir, runE2eRelaySim } from "./e2e-relay-sim.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -158,6 +158,156 @@ describe("assertFreshEnrollmentRegistry", () => {
     expect(() => assertFreshEnrollmentRegistry(registry, "relay-1", "ZD421-001")).toThrow(
       /Expected exactly one printer with serial 'ZD421-001', found 2/,
     );
+  });
+});
+
+describe("assertExistingPrinterRebind", () => {
+  const basePrinter = { id: "p1", relayId: "relay-1", campusId: 7, name: "Zebra", usbSerial: "ZD421-001" };
+  const baseRegistry = {
+    printers: [{ ...basePrinter, relayId: "relay-2" }],
+    pairedPrinter: { id: "p1" },
+    jobs: [{ id: "job-1", printerId: "p1", status: "queued" }],
+  };
+
+  it("passes when rebind transfers ownership to new relay and preserves UUID, campusId, name, pairing, and backlog", () => {
+    const rebound = assertExistingPrinterRebind(baseRegistry, {
+      initialRelayId: "relay-1",
+      joinedRelayId: "relay-2",
+      originalPrinter: basePrinter,
+      queuedJobId: "job-1",
+    });
+    expect(rebound.id).toBe("p1");
+    expect(rebound.relayId).toBe("relay-2");
+  });
+
+  it("fails when joined relayId is identical to initial relayId", () => {
+    expect(() =>
+      assertExistingPrinterRebind(baseRegistry, {
+        initialRelayId: "relay-1",
+        joinedRelayId: "relay-1",
+        originalPrinter: basePrinter,
+        queuedJobId: "job-1",
+      }),
+    ).toThrow(/Expected joined relayId to differ from initial relayId 'relay-1', but got 'relay-1'/);
+  });
+
+  it("fails when joined relayId is missing", () => {
+    expect(() =>
+      assertExistingPrinterRebind(baseRegistry, {
+        initialRelayId: "relay-1",
+        joinedRelayId: "",
+        originalPrinter: basePrinter,
+        queuedJobId: "job-1",
+      }),
+    ).toThrow(/Expected joined relayId to differ from initial relayId/);
+  });
+
+  it("fails when printer is missing from registry", () => {
+    expect(() =>
+      assertExistingPrinterRebind(
+        { ...baseRegistry, printers: [] },
+        {
+          initialRelayId: "relay-1",
+          joinedRelayId: "relay-2",
+          originalPrinter: basePrinter,
+          queuedJobId: "job-1",
+        },
+      ),
+    ).toThrow(/Printer 'p1' was not found in registry after rebind/);
+  });
+
+  it("fails when printer is not bound to joined relayId", () => {
+    expect(() =>
+      assertExistingPrinterRebind(
+        { ...baseRegistry, printers: [{ ...basePrinter, relayId: "relay-3" }] },
+        {
+          initialRelayId: "relay-1",
+          joinedRelayId: "relay-2",
+          originalPrinter: basePrinter,
+          queuedJobId: "job-1",
+        },
+      ),
+    ).toThrow(/Rebound printer 'p1' is bound to relay 'relay-3', expected 'relay-2'/);
+  });
+
+  it("fails when printer campusId changed", () => {
+    expect(() =>
+      assertExistingPrinterRebind(
+        { ...baseRegistry, printers: [{ ...basePrinter, relayId: "relay-2", campusId: 8 }] },
+        {
+          initialRelayId: "relay-1",
+          joinedRelayId: "relay-2",
+          originalPrinter: basePrinter,
+          queuedJobId: "job-1",
+        },
+      ),
+    ).toThrow(/Rebound printer 'p1' has campusId 8, expected 7/);
+  });
+
+  it("fails when printer name changed", () => {
+    expect(() =>
+      assertExistingPrinterRebind(
+        { ...baseRegistry, printers: [{ ...basePrinter, relayId: "relay-2", name: "Renamed" }] },
+        {
+          initialRelayId: "relay-1",
+          joinedRelayId: "relay-2",
+          originalPrinter: basePrinter,
+          queuedJobId: "job-1",
+        },
+      ),
+    ).toThrow(/Rebound printer 'p1' has name 'Renamed', expected 'Zebra'/);
+  });
+
+  it("fails when paired printer does not match original printer ID", () => {
+    expect(() =>
+      assertExistingPrinterRebind(
+        { ...baseRegistry, pairedPrinter: { id: "p2" } },
+        {
+          initialRelayId: "relay-1",
+          joinedRelayId: "relay-2",
+          originalPrinter: basePrinter,
+          queuedJobId: "job-1",
+        },
+      ),
+    ).toThrow(/Paired printer pointer did not resolve to 'p1', got 'p2'/);
+  });
+
+  it("fails when queued backlog job is missing or not queued", () => {
+    expect(() =>
+      assertExistingPrinterRebind(
+        { ...baseRegistry, jobs: [{ id: "job-1", printerId: "p1", status: "sent" }] },
+        {
+          initialRelayId: "relay-1",
+          joinedRelayId: "relay-2",
+          originalPrinter: basePrinter,
+          queuedJobId: "job-1",
+        },
+      ),
+    ).toThrow(/Queued backlog job 'job-1' for printer 'p1' was not preserved in registry/);
+  });
+});
+
+describe("assertHandoverClaimRejected", () => {
+  it("passes when claim response status is 403 and reason is printer_handed_over", () => {
+    expect(() =>
+      assertHandoverClaimRejected({ status: 403, value: { reason: "printer_handed_over" } }),
+    ).not.toThrow();
+  });
+
+  it("fails when claim response status is 200", () => {
+    expect(() =>
+      assertHandoverClaimRejected({ status: 200, value: { jobs: [] } }),
+    ).toThrow(/Expected claim rejected with status 403 printer_handed_over, got status 200/);
+  });
+
+  it("fails when reason is not printer_handed_over", () => {
+    expect(() =>
+      assertHandoverClaimRejected({ status: 403, value: { reason: "unauthorized" } }),
+    ).toThrow(/Expected claim rejected with status 403 printer_handed_over, got status 403: {"reason":"unauthorized"}/);
+  });
+
+  it("fails when claim response is null", () => {
+    expect(() => assertHandoverClaimRejected(null)).toThrow("Claim response was not returned");
   });
 });
 
