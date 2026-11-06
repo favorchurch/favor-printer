@@ -12,3 +12,6 @@ graft/
 
 __pycache__/
 *.pyc
+
+# Local iOS UI-test performance artifacts
+ios/.ui-test-profile/
