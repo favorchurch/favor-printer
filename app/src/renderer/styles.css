@@ -398,3 +398,56 @@ body[data-preview] .screen {
   }
 }
 
+
+/*
+ * Compact Mac utility window / external-display scaling.
+ * Allow the whole page to scroll at short heights instead of centering a
+ * taller card above the viewport (hiding the first setup step and focus).
+ */
+@media (max-height: 560px) {
+  body {
+    align-items: flex-start;
+  }
+
+  .screen {
+    min-height: 100vh;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .actions {
+    margin-top: 8px;
+  }
+}
+
+/* macOS Increase Contrast and forced-color accessibility fallback. */
+@media (prefers-contrast: more) {
+  :root {
+    --line: currentColor;
+  }
+
+  .button,
+  .code-input,
+  .choice,
+  .pill {
+    border-width: 2px;
+  }
+
+  .button:focus-visible,
+  .code-input:focus-visible,
+  .choice:focus-within {
+    outline-width: 4px;
+  }
+}
+
+@media (forced-colors: active) {
+  .choice.selected,
+  .fixture-bar button[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+
+  .pill .dot {
+    background: CanvasText;
+  }
+}
