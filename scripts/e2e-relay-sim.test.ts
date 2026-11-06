@@ -26,10 +26,24 @@ describe("resolveRsvpDir", () => {
     );
   });
 
+  it("uses the sibling RSVP checkout when the integration checkout is absent", async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "rsvp-fallback-"));
+    try {
+      const preferred = path.join(tmp, "rsvp-favor-printer-int");
+      const fallback = path.join(tmp, "rsvp.favor.church");
+      await mkdir(fallback);
+      expect(resolveRsvpDir("", preferred)).toBe(fallback);
+      await mkdir(preferred);
+      expect(resolveRsvpDir("", preferred)).toBe(preferred);
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("falls back to DEFAULT_RSVP_DIR or null if unset", () => {
     const resolved = resolveRsvpDir(undefined);
     if (resolved !== null) {
-      expect(resolved).toBe(path.resolve(DEFAULT_RSVP_DIR));
+      expect([path.resolve(DEFAULT_RSVP_DIR), path.resolve(path.dirname(DEFAULT_RSVP_DIR), "rsvp.favor.church")]).toContain(resolved);
     } else {
       expect(resolved).toBeNull();
     }
@@ -200,7 +214,7 @@ describe("runE2eRelaySim live integration", () => {
       const result = await runE2eRelaySim();
       expect(result.ok).toBe(true);
       expect(result.skipped).toBe(false);
-      expect(result.claimedBy).toBe("relay-a");
+      expect(result.claimedBy).toMatch(/^relay-/);
       expect(result.labelsReceived).toBeGreaterThanOrEqual(1);
     },
     60_000,

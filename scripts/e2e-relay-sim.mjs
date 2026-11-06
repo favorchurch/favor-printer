@@ -35,16 +35,17 @@ export const DEFAULT_RSVP_DIR = "/Users/rico/Git/rsvp-favor-printer-int";
  * If RSVP_DIR is explicitly passed/set, it must exist.
  * Otherwise, checks DEFAULT_RSVP_DIR. Returns null if neither is available.
  */
-export function resolveRsvpDir(customDir = process.env.RSVP_DIR) {
+export function resolveRsvpDir(customDir = process.env.RSVP_DIR, defaultDir = DEFAULT_RSVP_DIR) {
   if (customDir) {
     const resolved = path.resolve(customDir);
     if (existsSync(resolved)) return resolved;
     throw new Error(`RSVP_DIR was explicitly set to '${customDir}', but that directory does not exist.`);
   }
-  if (existsSync(DEFAULT_RSVP_DIR)) {
-    return path.resolve(DEFAULT_RSVP_DIR);
+  if (existsSync(defaultDir)) {
+    return path.resolve(defaultDir);
   }
-  return null;
+  const fallback = path.resolve(path.dirname(defaultDir), "rsvp.favor.church");
+  return existsSync(fallback) ? fallback : null;
 }
 
 /**
@@ -151,7 +152,7 @@ export async function runE2eRelaySim(options = {}) {
   const rsvpDir = resolveRsvpDir(options.rsvpDir);
 
   if (!rsvpDir) {
-    const reason = `RSVP_DIR is unset and default '${DEFAULT_RSVP_DIR}' does not exist`;
+    const reason = `RSVP_DIR is unset and neither default checkout nor rsvp.favor.church exists`;
     return { ok: true, skipped: true, reason };
   }
 
@@ -176,6 +177,12 @@ export async function runE2eRelaySim(options = {}) {
     throw new Error(`tsx CLI not found at '${tsxCli}' in RSVP checkout`);
   }
 
+  const stopProcess = async (child) => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill("SIGTERM");
+    await exited;
+  };
   const cleanupTasks = [];
   const runCleanup = async () => {
     while (cleanupTasks.length > 0) {
@@ -213,11 +220,7 @@ export async function runE2eRelaySim(options = {}) {
         stdio: "ignore",
       },
     );
-    cleanupTasks.push(async () => {
-      if (simProcess.exitCode === null && simProcess.signalCode === null) {
-        simProcess.kill("SIGTERM");
-      }
-    });
+    cleanupTasks.push(() => stopProcess(simProcess));
 
     const inspectUrl = `http://127.0.0.1:${inspectPort}/received`;
     await waitFor(async () => {
@@ -230,13 +233,10 @@ export async function runE2eRelaySim(options = {}) {
     const harnessServerScript = path.join(root, "e2e/harness-server.ts");
     const harnessProcess = spawn(process.execPath, [tsxCli, harnessServerScript], {
       cwd: rsvpDir,
+      env: { ...process.env, PRINT_ENROLLMENT_HMAC_SECRET: "e2e-only-enrollment-secret-0123456789" },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
-    cleanupTasks.push(async () => {
-      if (harnessProcess.exitCode === null && harnessProcess.signalCode === null) {
-        harnessProcess.kill("SIGTERM");
-      }
-    });
+    cleanupTasks.push(() => stopProcess(harnessProcess));
 
     const readyInfo = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Timeout waiting for harness-server ready")), 20_000);
@@ -261,31 +261,51 @@ export async function runE2eRelaySim(options = {}) {
     const apiUrl = `http://127.0.0.1:${apiPort}`;
     console.log(`[e2e-relay-sim] cloud harness listening at ${apiUrl}`);
 
-    // Point printer "p1" at the simulated sink port
-    await new Promise((resolve, reject) => {
-      harnessProcess.send({ type: "pointPrinter", printerId: "p1", port: sinkPort });
-      harnessProcess.once("message", (msg) => {
-        if (msg && typeof msg === "object" && msg.type === "pointPrinterOk") resolve(null);
-        else reject(new Error(`Unexpected pointPrinter response: ${JSON.stringify(msg)}`));
+    const json = async (route, body, credentials) => {
+      const response = await fetch(`${apiUrl}${route}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { "content-type": "application/json", ...(credentials ? { "x-relay-id": credentials.relayId, authorization: `Bearer ${credentials.token}` } : {}) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-    });
-
-    // Enqueue a fixture print job
+      const value = await response.json();
+      return { status: response.status, value };
+    };
+    const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
+    const loadService = async (file) => {
+      const result = await esbuild({ absWorkingDir: root, entryPoints: [file], bundle: true, write: false, format: "esm", platform: "node" });
+      return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+    };
+    const { enroll } = await loadService("app/src/main/services/cloud.ts");
+    const { renameInCloud, readCloudNames } = await loadService("app/src/main/services/rename.ts");
+    const issue = async (target, label) => {
+      const { status, value } = await json("/__control/issue-code", { target, label });
+      requireThat(status === 200 && /^\d{6}$/.test(value.code), "Issue code failed");
+      return value.code;
+    };
+    const enrollWith = async (code) => enroll({ apiUrl, code, usbSerial: "ZD421-E2E-001", appVersion: "0.1.0", osVersion: "macOS" });
+    const initial = await enrollWith(await issue({ intent: "new", campusId: 7, printerName: "E2E Zebra" }, "First laptop"));
+    requireThat(initial.ok, `Fresh enrollment failed: ${JSON.stringify(initial)}`);
+    let registry = (await json("/__control/registry")).value;
+    const printer = registry.printers.find((p) => p.usbSerial === "ZD421-E2E-001");
+    requireThat(printer && registry.printers.filter((p) => p.usbSerial === printer.usbSerial).length === 1 && printer.relayId === initial.credentials.relayId, "Fresh enrollment did not create one canonical binding");
+    const pairing = (await json(`/__control/registry?printerId=${printer.id}`)).value.pairing;
+    requireThat(pairing?.pointer, "Could not mint pairing pointer");
     const fixtureZpl = "^XA^FO20,20^FDFavor Printer Bundled Relay E2E^FS^XZ";
-    const queuedJob = await new Promise((resolve, reject) => {
-      harnessProcess.send({
-        type: "enqueue",
-        stationId: "s1",
-        actionId: "act-e2e-claim-send-report",
-        zpl: fixtureZpl,
-      });
-      harnessProcess.once("message", (msg) => {
-        if (msg && typeof msg === "object" && msg.type === "enqueueOk") resolve(msg.job);
-        else reject(new Error(`Unexpected enqueue response: ${JSON.stringify(msg)}`));
-      });
-    });
-
-    console.log(`[e2e-relay-sim] enqueued fixture job ${queuedJob.id}`);
+    const queuedJob = (await json("/_control/enqueue", { stationId: printer.id, actionId: "act-e2e-claim-send-report", zpl: fixtureZpl })).value.job;
+    const joined = await enrollWith(await issue({ intent: "existing", targetPrinterId: printer.id, campusId: 7, handover: true }, "Second laptop"));
+    requireThat(joined.ok, `Rebind failed: ${JSON.stringify(joined)}`);
+    const credentials = joined.credentials;
+    registry = (await json(`/__control/registry?pointer=${encodeURIComponent(pairing.pointer)}`)).value;
+    const rebound = registry.printers.find((p) => p.id === printer.id);
+    requireThat(rebound?.relayId === credentials.relayId && rebound.campusId === 7 && rebound.name === printer.name && registry.pairedPrinter?.id === printer.id && registry.jobs.some((j) => j.id === queuedJob.id && j.printerId === printer.id && j.status === "queued"), "Rebind did not preserve printer, pairing and backlog");
+    const rename = await renameInCloud({ printerId: printer.id, name: "Renamed from laptop" }, { apiUrl, credentials });
+    requireThat(rename.ok && rename.printerName === "Renamed from laptop", "Laptop rename failed");
+    const admin = await json("/__control/admin-rename", { printerId: printer.id, name: "Renamed by admin" });
+    const names = await readCloudNames({ apiUrl, credentials });
+    requireThat(admin.status === 200 && names.ok && names.printers.some((p) => p.id === printer.id && p.name === "Renamed by admin"), "Admin rename did not reach laptop");
+    const conflict = await enrollWith(await issue({ intent: "new", campusId: 7, printerName: "Duplicate Zebra" }, "Conflict laptop"));
+    requireThat(!conflict.ok && conflict.status === 409 && conflict.conflict === "serial_in_use", "Expected serial_in_use conflict");
+    await json("/_control/pointPrinter", { printerId: printer.id, port: sinkPort });
 
     // Build start options using the app's relayConfig builder
     const buildOptions = await loadRelayConfigBuilder(root);
@@ -294,7 +314,7 @@ export async function runE2eRelaySim(options = {}) {
 
     const startOptions = buildOptions({
       apiUrl,
-      credentials: { relayId: "relay-a", token: tokens["relay-a"] },
+      credentials,
       queue: "Favor_ZD421",
       appSupportDir: relaySupportDir,
       appVersion: "0.1.0",
@@ -313,11 +333,7 @@ export async function runE2eRelaySim(options = {}) {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
-    cleanupTasks.push(async () => {
-      if (relayChild.exitCode === null && relayChild.signalCode === null) {
-        relayChild.kill("SIGKILL");
-      }
-    });
+    cleanupTasks.push(() => stopProcess(relayChild));
 
     const relayEvents = [];
     let relayStopped = false;
@@ -335,10 +351,10 @@ export async function runE2eRelaySim(options = {}) {
     const receivedLabels = await waitFor(async () => {
       const res = await fetch(inspectUrl);
       const list = await res.json();
-      return Array.isArray(list) && list.length > 0 ? list : null;
+      return Array.isArray(list) && list.some((item) => item.zpl === fixtureZpl) ? list : null;
     }, "label receipt at simulated printer");
 
-    if (receivedLabels[0].zpl !== fixtureZpl) {
+    if (!receivedLabels.some((item) => item.zpl === fixtureZpl)) {
       throw new Error(`Received ZPL mismatch: expected '${fixtureZpl}', got '${receivedLabels[0].zpl}'`);
     }
     console.log("[e2e-relay-sim] ok: fake Zebra sink received matching ZPL");
@@ -358,8 +374,17 @@ export async function runE2eRelaySim(options = {}) {
       });
     }, "server job record sent status");
 
-    assertJobRecordClaim(finalJobRecord, "relay-a");
-    console.log("[e2e-relay-sim] ok: job claim belongs to Favor Printer relay id (relay-a), never helper relay");
+    assertJobRecordClaim(finalJobRecord, credentials.relayId);
+    console.log("[e2e-relay-sim] ok: job claim belongs to the enrolled Favor Printer relay");
+
+    const testPrintResult = new Promise((resolve) => {
+      relayChild.on("message", (msg) => { if (msg?.type === "testPrintResult") resolve(msg); });
+    });
+    relayChild.send({ type: "testPrint", printerId: printer.id });
+    const testPrint = await Promise.race([testPrintResult, new Promise((_, reject) => setTimeout(() => reject(new Error("Test print timed out")), 15000))]);
+    requireThat(testPrint.ok && testPrint.transportOutcome === "sent", `Cloud test print failed: ${JSON.stringify(testPrint)}`);
+
+    await waitFor(async () => (await (await fetch(inspectUrl)).json()).some((item) => item.zpl?.includes("Favor Printer test")), "test label receipt");
 
     // 3. Stop relay and assert clean shutdown and empty spool
     relayChild.send({ type: "stop" });
@@ -369,6 +394,11 @@ export async function runE2eRelaySim(options = {}) {
 
     await assertSpoolEmpty(path.join(relaySupportDir, "spool"), { mustExist: true });
     console.log("[e2e-relay-sim] ok: spool is empty of ZPL and payload files after report");
+
+    const moved = await enrollWith(await issue({ intent: "existing", targetPrinterId: printer.id, campusId: 7, handover: true }, "Third laptop"));
+    requireThat(moved.ok, "Handover enrollment failed");
+    const oldClaim = await json("/api/printing/relay/claim", { printerIds: [printer.id] }, credentials);
+    requireThat(oldClaim.status === 403 && oldClaim.value.reason === "printer_handed_over", `Expected printer_handed_over: ${JSON.stringify(oldClaim)}`);
 
     // 4. Revoked (401) run yields revoked event
     console.log("[e2e-relay-sim] testing revoked relay credentials (401)...");
@@ -394,11 +424,7 @@ export async function runE2eRelaySim(options = {}) {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
-    cleanupTasks.push(async () => {
-      if (revokedChild.exitCode === null && revokedChild.signalCode === null) {
-        revokedChild.kill("SIGKILL");
-      }
-    });
+    cleanupTasks.push(() => stopProcess(revokedChild));
 
     const revokedEvents = [];
     let revokedStopped = false;
