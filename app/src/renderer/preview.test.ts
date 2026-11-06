@@ -636,4 +636,30 @@ describe("rename controls on the connected screen", () => {
     expect(field(root, "printer-name")).toBeUndefined();
     expect(field(root, "laptop-name")).toBeDefined();
   });
+
+  it("offers both rename controls on the enrolled status screen and submits each name", () => {
+    const actions = { renameLaptop: vi.fn(), renamePrinter: vi.fn() };
+    const root = renderScreen("status", { snapshot: snapshot({ enrolled: true }), local: INITIAL_LOCAL, actions: actions as never }) as unknown as FakeElement;
+    expect(field(root, "laptop-name").getAttribute("value")).toBe("Front desk");
+    expect(field(root, "printer-name").getAttribute("value")).toBe("Lobby Zebra");
+    field(root, "laptop-name").value = "New laptop";
+    field(root, "printer-name").value = "New printer";
+    submit(root, "laptop-name");
+    submit(root, "printer-name");
+    expect(actions.renameLaptop).toHaveBeenCalledExactlyOnceWith("New laptop");
+    expect(actions.renamePrinter).toHaveBeenCalledExactlyOnceWith("New printer");
+  });
+
+  it("only offers status rename controls when enrolled and a printer name is present", () => {
+    const render = (patch: Partial<AppSnapshot>) => renderScreen("status", {
+      snapshot: snapshot(patch), local: INITIAL_LOCAL, actions: {} as never,
+    }) as unknown as FakeElement;
+    const unenrolled = render({ enrolled: false });
+    expect(field(unenrolled, "laptop-name")).toBeUndefined();
+    expect(field(unenrolled, "printer-name")).toBeUndefined();
+    const unbound = render({ enrolled: true, printerName: null });
+    expect(field(unbound, "laptop-name")).toBeDefined();
+    expect(field(unbound, "printer-name")).toBeUndefined();
+    expect(field(render({ enrolled: true, printerName: "" }), "printer-name")).toBeDefined();
+  });
 });

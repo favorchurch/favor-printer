@@ -375,6 +375,10 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         seenAt ? h("p", { class: "hint" }, `Not seen since ${seenAt}`) : null,
         backlogWarning ? note(backlogWarning) : null,
         printerLine(snapshot),
+        snapshot.enrolled ? renameForm("laptop-name", "Laptop name in RSVP", snapshot.label, local, "laptop", a.renameLaptop) : null,
+        snapshot.enrolled && snapshot.printerName !== null
+          ? renameForm("printer-name", "Printer name in RSVP", snapshot.printerName, local, "printer", a.renamePrinter)
+          : null,
         h(
           "div",
           { class: "status-meta" },

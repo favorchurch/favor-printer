@@ -24,6 +24,7 @@ import {
   type UpdateState,
 } from "../../shared";
 import type { RelayRenameRequest } from "../../../../vendor/relay/protocol";
+import type { CloudNamesOutcome, RenameCloudDeps } from "../services/rename";
 import type { RelayStatus } from "../../../../vendor/relay/status";
 import {
   BacklogMonitor,
@@ -68,6 +69,7 @@ export type ControllerDeps = {
   enroll(request: EnrollRequest): Promise<EnrollOutcome>;
   /** Renames in the cloud registry. Never enrolls and never changes the saved pairing. */
   rename(request: RelayRenameRequest, options: { apiUrl: string; credentials: StoredCredentials }): Promise<RenameCloudOutcome>;
+  readCloudNames?(deps: RenameCloudDeps): Promise<CloudNamesOutcome>;
   createSupervisor: SupervisorFactory;
   power: Pick<PowerController, "update" | "dispose">;
   updates: { setChannel(channel: UpdateChannel): Promise<void>; checkNow(): Promise<void> };
@@ -149,6 +151,9 @@ export function createAppController(deps: ControllerDeps): AppController {
   let power: PowerContext = {};
   let scanning: Promise<void> | null = null;
   let enrolling: Promise<EnrollResult> | null = null;
+  let cloudPrinterIds: string[] = [];
+  let nameGeneration = 0;
+  let renamesInFlight = 0;
   let scanTimer: unknown = null;
   let supervisorState: SupervisorState = {
     phase: "idle",
@@ -205,6 +210,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
     onRelayStatus: (status) => {
       if (status.cloud === "revoked") void handleRevoked();
+      if (status.cloud === "ok") void syncCloudNames();
       // A running relay that reached the cloud still holds its binding, so a conflict left by a
       // re-enroll attempt is over and must not keep the status on "In use elsewhere".
       if (inUseElsewhere && status.state === "running" && status.cloud === "ok") {
@@ -299,6 +305,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     // The relay can report the revocation more than once while this is still saving.
     if (revoking || prefs.get().revoked) return;
     revoking = true;
+    nameGeneration++;
+    cloudPrinterIds = [];
     log("warn", "cloud", "the cloud rejected this laptop's credentials");
     await prefs.update({ revoked: true }).catch(() => undefined);
     enrolled = false;
@@ -316,6 +324,25 @@ export function createAppController(deps: ControllerDeps): AppController {
     return secrets.load().catch(() => null);
   }
 
+  async function syncCloudNames(): Promise<void> {
+    if (!deps.readCloudNames || renamesInFlight || !enrolled) return;
+    const generation = ++nameGeneration;
+    const credentials = await pairing();
+    if (!credentials || generation !== nameGeneration || renamesInFlight) return;
+    const outcome = await deps.readCloudNames({ apiUrl, credentials }).catch(() => ({ ok: false, reason: "unreachable" } as const));
+    const current = await pairing();
+    if (generation !== nameGeneration || renamesInFlight || !current || current.relayId !== credentials.relayId || current.token !== credentials.token) return;
+    if (!outcome.ok) {
+      if (outcome.reason === "revoked") await handleRevoked();
+      return;
+    }
+    if (cloudPrinterIds.length === 0) cloudPrinterIds = outcome.printers.map((printer) => printer.id);
+    const printerId = supervisorState.relay?.printerIds[0] ?? cloudPrinterIds[0];
+    const printer = outcome.printers.find((item) => item.id === printerId);
+    await prefs.update({ label: outcome.label, printerName: printer?.name ?? null }).catch(() => undefined);
+    emit();
+  }
+
   /** Sends one rename and mirrors the name the cloud stored. A rejected token revokes the laptop, as any other call does. */
   async function renameCloud(request: RelayRenameRequest, credentials: StoredCredentials): Promise<RenameResult> {
     const outcome = await deps.rename(request, { apiUrl, credentials });
@@ -327,6 +354,16 @@ export function createAppController(deps: ControllerDeps): AppController {
     else if (outcome.printerName) await prefs.update({ printerName: outcome.printerName }).catch(() => undefined);
     emit();
     return { ok: true };
+  }
+
+  async function withRename<T>(action: () => Promise<T>): Promise<T> {
+    nameGeneration++;
+    renamesInFlight++;
+    try {
+      return await action();
+    } finally {
+      renamesInFlight--;
+    }
   }
 
   async function runScan(): Promise<void> {
@@ -511,6 +548,8 @@ export function createAppController(deps: ControllerDeps): AppController {
             ? { ok: false, reason: outcome.reason, conflict: outcome.conflict }
             : { ok: false, reason: outcome.reason };
         }
+        nameGeneration++;
+        cloudPrinterIds = [];
         try {
           await secrets.save({ relayId: outcome.credentials.relayId, token: outcome.credentials.token });
         } catch (error) {
@@ -537,20 +576,23 @@ export function createAppController(deps: ControllerDeps): AppController {
     async renameLaptop(label) {
       const name = label.trim();
       if (!name) return { ok: false, reason: "invalid_name" };
-      const credentials = await pairing();
-      if (!credentials) return { ok: false, reason: "not_enrolled" };
-      return renameCloud({ label: name }, credentials);
+      return withRename(async () => {
+        const credentials = await pairing();
+        if (!credentials) return { ok: false, reason: "not_enrolled" };
+        return renameCloud({ label: name }, credentials);
+      });
     },
 
     async renamePrinter(name) {
       const trimmed = name.trim();
       if (!trimmed) return { ok: false, reason: "invalid_name" };
-      const credentials = await pairing();
-      if (!credentials) return { ok: false, reason: "not_enrolled" };
-      // The cloud id of the printer comes from the relay's heartbeat, which may not have answered yet.
-      const printerId = supervisorState.relay?.printerIds[0];
-      if (!printerId) return { ok: false, reason: "printer_not_ready" };
-      return renameCloud({ printerId, name: trimmed }, credentials);
+      return withRename(async () => {
+        const credentials = await pairing();
+        if (!credentials) return { ok: false, reason: "not_enrolled" };
+        const printerId = supervisorState.relay?.printerIds[0] ?? cloudPrinterIds[0];
+        if (!printerId) return { ok: false, reason: "printer_not_ready" };
+        return renameCloud({ printerId, name: trimmed }, credentials);
+      });
     },
 
     async requestTestPrint() {
@@ -656,6 +698,7 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     openSetup() {
       deps.ui.showSetupWindow();
+      void syncCloudNames();
     },
 
     setUpdateState(state) {
@@ -671,6 +714,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     async refresh() {
       await refreshLegacy();
       await scanOnce();
+      await syncCloudNames();
       emit();
     },
 

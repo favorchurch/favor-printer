@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { renameInCloud } from "./rename";
+import { readCloudNames, renameInCloud } from "./rename";
 
 const API = "https://rsvp.favor.church";
 const CREDENTIALS = { relayId: "relay-1", token: "tok-secret-value" };
@@ -8,6 +8,49 @@ const CREDENTIALS = { relayId: "relay-1", token: "tok-secret-value" };
 function answer(status: number, body: unknown = {}) {
   return vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
 }
+
+describe("readCloudNames", () => {
+  it("reads the canonical relay and printer names using the authenticated config endpoint", async () => {
+    const printers = [{ id: "printer-1", name: "Front Zebra", usbSerial: "S1" }];
+    const fetch = answer(200, { apiVersion: 1, relayId: "relay-1", label: "Lobby desk", printerIds: ["printer-1"], printers });
+    await expect(readCloudNames({ apiUrl: API, credentials: CREDENTIALS, fetch })).resolves.toEqual({
+      ok: true, label: "Lobby desk", printers,
+    });
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${API}/api/printing/relay/config`);
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({ authorization: "Bearer tok-secret-value", "x-relay-id": "relay-1" });
+  });
+
+  it.each([[401, "revoked"], [403, "unreachable"], [500, "unreachable"]] as const)(
+    "maps config HTTP %i to %s", async (status, reason) => {
+      await expect(readCloudNames({ apiUrl: API, credentials: CREDENTIALS, fetch: answer(status) }))
+        .resolves.toEqual({ ok: false, reason });
+    },
+  );
+
+  it("reports network and malformed response failures as unreachable", async () => {
+    const networkFailure = vi.fn(async () => { throw new TypeError("fetch failed"); });
+    const malformed = vi.fn(async () => new Response("not json", { status: 200 }));
+    for (const fetch of [networkFailure, malformed]) {
+      await expect(readCloudNames({ apiUrl: API, credentials: CREDENTIALS, fetch }))
+        .resolves.toEqual({ ok: false, reason: "unreachable" });
+    }
+  });
+
+  it("refuses insecure remote HTTP without sending credentials", async () => {
+    const fetch = answer(200);
+    await expect(readCloudNames({ apiUrl: "http://rsvp.example.test", credentials: CREDENTIALS, fetch }))
+      .resolves.toEqual({ ok: false, reason: "unreachable" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("allows local HTTP for development", async () => {
+    const fetch = answer(200, { label: "Local", printers: [] });
+    await expect(readCloudNames({ apiUrl: "http://localhost:3000", credentials: CREDENTIALS, fetch }))
+      .resolves.toEqual({ ok: true, label: "Local", printers: [] });
+  });
+});
 
 describe("renameInCloud", () => {
   it("posts the laptop label with the relay's credentials", async () => {
