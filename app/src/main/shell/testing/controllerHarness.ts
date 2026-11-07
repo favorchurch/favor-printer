@@ -9,6 +9,7 @@ import {
   type EnrollOutcome,
   type PrinterService,
   type RenameCloudOutcome,
+  type CloudNamesOutcome,
   type ScanOutcome,
   type SetUpOutcome,
   type StoredCredentials,
@@ -65,6 +66,7 @@ export type HarnessOptions = {
   setUp?: () => Promise<SetUpOutcome>;
   /** Answers a rename. The default echoes the name the cloud was sent, as RSVP does. */
   rename?: (request: RelayRenameRequest) => Promise<RenameCloudOutcome>;
+  readCloudNames?: () => Promise<CloudNamesOutcome>;
 };
 
 export function createControllerHarness(options: HarnessOptions = {}) {
@@ -169,6 +171,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     legacy,
     enroll,
     rename,
+    readCloudNames: options.readCloudNames,
     createSupervisor: (hooks) =>
       createRelaySupervisor({
         fork: forks.fork,

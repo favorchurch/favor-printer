@@ -7,13 +7,39 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 
+import { handleRelayRename } from "@/app/api/printing/relay/rename/handler";
+import { createLayeredRelayRegistry } from "@/lib/printing/relayAuth";
+import { issueRelayEnrollmentCode, printerNameTaken, PrinterNameTakenError, type FleetRenameStore } from "@/lib/printing/relayEnrollment";
+import { mintPrinterPointer, authenticatePrinter } from "@/lib/printing/printerPairing";
 import { handleRelayRequest } from "@/lib/printing/relayApi";
 import { createMemoryRelayRegistryStore } from "@/lib/printing/relayRegistryMemory";
 import { createRelayTestHarness, RELAY_TOKENS } from "@/lib/printing/relayTestHarness";
 
 async function main() {
   const h = createRelayTestHarness();
-  const registryStore = createMemoryRelayRegistryStore({ printers: h.store.printers });
+  const registryStore = createMemoryRelayRegistryStore({ printers: h.store.printers, jobs: h.store.jobs });
+  h.deps.registry = createLayeredRelayRegistry(registryStore, h.registry);
+  const renames: FleetRenameStore = {
+    async renamePrinter(id, name) {
+      const row = registryStore.printers.get(id);
+      if (!row) return null;
+      if (printerNameTaken([...registryStore.printers.values()], name, id)) throw new PrinterNameTakenError();
+      const next = { ...row, name, usbSerial: row.usbSerial ?? null, deviceUri: row.deviceUri ?? null };
+      registryStore.printers.set(id, next);
+      return next;
+    },
+    async renameRelayPrinter(relayId, id, name, actor, now) {
+      if (registryStore.printers.get(id)?.relayId !== relayId) return null;
+      return renames.renamePrinter(id, name, actor, now);
+    },
+    async renameLaptop(relayId, label) {
+      const row = [...registryStore.relays.values()].find((item) => item.relayId === relayId);
+      if (!row) return null;
+      const next = { ...row, label };
+      registryStore.relays.set(row.id, next);
+      return next;
+    },
+  };
   h.deps.relays = {
     store: registryStore,
     reserveEnrollmentAttempt: async () => ({ refund: async () => {} }),
@@ -61,6 +87,33 @@ async function main() {
       return;
     }
 
+    if (url.pathname === "/__control/issue-code" && req.method === "POST") {
+      const data = body ? JSON.parse(body.toString("utf8")) : {};
+      const issued = await issueRelayEnrollmentCode(registryStore, data.label ?? null, h.clock.now, data.target);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(issued));
+      return;
+    }
+    if (url.pathname === "/__control/admin-rename" && req.method === "POST") {
+      const data = body ? JSON.parse(body.toString("utf8")) : {};
+      const actor = { kind: "admin", email: "test@example.test" } as const;
+      const renamed = data.printerId
+        ? await renames.renamePrinter(data.printerId, data.name, actor, h.clock.now)
+        : await renames.renameLaptop(data.relayId, data.label, actor, h.clock.now);
+      res.writeHead(renamed ? 200 : 404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ renamed }));
+      return;
+    }
+    if (url.pathname === "/__control/registry" && req.method === "GET") {
+      const printerId = url.searchParams.get("printerId");
+      const pointer = url.searchParams.get("pointer");
+      const pairing = printerId ? await mintPrinterPointer(h.store, printerId) : null;
+      const pairedPrinter = pointer ? await authenticatePrinter(h.store, pointer) : null;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ printers: [...registryStore.printers.values()], relays: await registryStore.listRelays(), jobs: [...h.store.jobs.values()], pairing, pairedPrinter }));
+      return;
+    }
+
     // Relay API endpoints
     const request = new Request(url.href, {
       method: req.method,
@@ -68,7 +121,9 @@ async function main() {
       ...(body && req.method !== "GET" && req.method !== "HEAD" ? { body } : {}),
     });
 
-    const response = await handleRelayRequest(request, h.deps);
+    const response = url.pathname === "/api/printing/relay/rename"
+      ? await handleRelayRename(request, { registry: h.deps.registry, renames })
+      : await handleRelayRequest(request, h.deps);
 
     res.writeHead(response.status, Object.fromEntries(response.headers));
     res.end(await response.text());

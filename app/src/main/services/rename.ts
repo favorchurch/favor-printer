@@ -10,7 +10,7 @@
 
 import { RelayApiClient, RelayAuthError } from "../../../../vendor/relay/apiClient";
 import { secureApiUrl } from "../../../../vendor/relay/config";
-import type { RelayRenameRequest } from "../../../../vendor/relay/protocol";
+import type { RelayConfigResponse, RelayRenameRequest } from "../../../../vendor/relay/protocol";
 import type { StoredCredentials } from "./secretStore";
 
 export type RenameCloudFailure = "name_taken" | "invalid_name" | "not_found" | "revoked" | "unreachable";
@@ -25,6 +25,31 @@ export type RenameCloudOptions = {
   fetch?: typeof fetch;
   timeoutMs?: number;
 };
+
+export type RenameCloudDeps = RenameCloudOptions;
+
+export type CloudNamesOutcome =
+  | { ok: true; label: RelayConfigResponse["label"]; printers: RelayConfigResponse["printers"] }
+  | { ok: false; reason: "revoked" | "unreachable" };
+
+export async function readCloudNames(deps: RenameCloudDeps): Promise<CloudNamesOutcome> {
+  try {
+    const api = new RelayApiClient({
+      baseUrl: secureApiUrl(deps.apiUrl),
+      relayId: deps.credentials.relayId,
+      token: deps.credentials.token,
+      timeoutMs: deps.timeoutMs,
+      fetch: deps.fetch,
+    });
+    const { label, printers } = await api.config();
+    if (typeof label !== "string" || !Array.isArray(printers) || printers.some((printer) => !printer || typeof printer.id !== "string" || typeof printer.name !== "string")) {
+      return { ok: false, reason: "unreachable" };
+    }
+    return { ok: true, label, printers };
+  } catch (error) {
+    return { ok: false, reason: error instanceof RelayAuthError ? "revoked" : "unreachable" };
+  }
+}
 
 /** Never throws. The token goes into the request header and is never returned or logged. */
 export async function renameInCloud(request: RelayRenameRequest, options: RenameCloudOptions): Promise<RenameCloudOutcome> {

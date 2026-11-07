@@ -1244,3 +1244,71 @@ describe("rename", () => {
     expect(h.enroll).not.toHaveBeenCalled();
   });
 });
+
+
+describe("cloud name synchronization", () => {
+  const names = { ok: true as const, label: "Cloud desk", printers: [{ id: "cloud-printer", name: "Cloud Zebra" }] };
+
+  it("refreshes names and uses the cloud printer id for a local rename", async () => {
+    const h = await started({ ...ENROLLED, readCloudNames: async () => names });
+    await h.controller.refresh();
+    expect(h.controller.snapshot()).toMatchObject({ label: "Cloud desk", printerName: "Cloud Zebra" });
+    await expect(h.controller.renamePrinter("Local Zebra")).resolves.toEqual({ ok: true });
+    expect(h.rename).toHaveBeenCalledWith({ printerId: "cloud-printer", name: "Local Zebra" }, expect.anything());
+  });
+
+  it("tracks a changed cloud printer binding between reads", async () => {
+    let current = names;
+    const h = await started({ ...ENROLLED, readCloudNames: async () => current });
+    await h.controller.refresh();
+    current = { ok: true, label: "Cloud desk", printers: [{ id: "new-printer", name: "New Zebra" }] };
+    await h.controller.refresh();
+    expect(h.controller.snapshot().printerName).toBe("New Zebra");
+    await h.controller.renamePrinter("Renamed");
+    expect(h.rename).toHaveBeenCalledWith({ printerId: "new-printer", name: "Renamed" }, expect.anything());
+  });
+
+  it("reads on opening setup and on a healthy relay report", async () => {
+    const read = vi.fn(async () => names);
+    const h = await started({ ...ENROLLED, readCloudNames: read });
+    h.controller.openSetup();
+    await vi.waitFor(() => expect(h.controller.snapshot().label).toBe("Cloud desk"));
+    h.forks.last().emitMessage({ type: "event", event: relayStatus() });
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  });
+
+  it("ignores a stale read when a local rename starts", async () => {
+    let resolve!: (value: typeof names) => void;
+    const h = await started({ ...ENROLLED, readCloudNames: () => new Promise<typeof names>((done) => { resolve = done; }) });
+    const refresh = h.controller.refresh();
+    await vi.waitFor(() => expect(resolve).toBeDefined());
+    await h.controller.renameLaptop("Local desk");
+    resolve(names);
+    await refresh;
+    expect(h.controller.snapshot().label).toBe("Local desk");
+  });
+
+  it("ignores results for changed credentials", async () => {
+    let resolve!: (value: typeof names) => void;
+    const h = await started({ ...ENROLLED, readCloudNames: () => new Promise<typeof names>((done) => { resolve = done; }) });
+    const refresh = h.controller.refresh();
+    await vi.waitFor(() => expect(resolve).toBeDefined());
+    await h.secrets.save({ relayId: "new", token: "new-token" });
+    resolve(names);
+    await refresh;
+    expect(h.controller.snapshot().label).not.toBe("Cloud desk");
+  });
+
+  it("keeps enrollment on an unreachable cloud and revokes on rejection", async () => {
+    let revoked = false;
+    const h = await started({ ...ENROLLED, readCloudNames: async () => ({ ok: false, reason: revoked ? "revoked" : "unreachable" }) });
+    await h.controller.refresh();
+    expect(h.controller.snapshot().enrolled).toBe(true);
+    revoked = true;
+    const pending = h.controller.refresh();
+    await finishStop(h);
+    await pending;
+    expect(h.prefs.get().revoked).toBe(true);
+    expect(h.secrets.clear).toHaveBeenCalled();
+  });
+});
