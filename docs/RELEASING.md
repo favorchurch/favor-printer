@@ -223,6 +223,38 @@ codesign -dv --verbose=2 release/Favor-Printer-1.2.3-arm64.dmg   # must show Aut
 
 If it reports `code object is not signed at all`, stop. Do not notarize it. Rebuild with the release config.
 
+### Signing keychain on the release Mac
+
+Local builds sign with the dedicated keychain `~/Library/Keychains/favor-printer-beta6.keychain-db`. It is
+not in the login keychain, so point electron-builder at it with `CSC_KEYCHAIN`.
+
+- **Use it:** `export CSC_KEYCHAIN=~/Library/Keychains/favor-printer-beta6.keychain-db`, then unlock it with
+  its password before building. Do not unlock or use any other `favor-printer*.keychain-db`.
+- **Where its password lives (never in git or a transcript):** the login keychain item with service
+  `favor-printer-signing-keychain` and account `favor-printer-beta6.keychain-db`
+  (`security find-generic-password -w -s favor-printer-signing-keychain -a favor-printer-beta6.keychain-db`),
+  and a copy in `.secrets/keychain-beta6.pass` (mode 600, ignored by git).
+- **Avoid codesign prompts:** set the keychain's key partition list once:
+  `security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "<password>" <keychain>`, and use
+  `security set-keychain-settings -t 86400 <keychain>` so it stays unlocked for the run. If the old
+  `favor-printer.keychain-db` is still in `security list-keychains -d user`, remove it from that list, or
+  codesign shows "wants to use the favor-printer keychain" dialogs.
+- **Rebuild it from the backup:** the Developer ID Application certificate and its private key are backed up
+  in `.secrets/devid.p12` (its password is in `.secrets/p12.pass`). To recreate the keychain:
+  `security create-keychain -p "<new password>" <keychain>`, then
+  `security import .secrets/devid.p12 -k <keychain> -P "<p12 password>" -T /usr/bin/codesign -T /usr/bin/security`,
+  then the partition-list command above, and store the new password in the login keychain item and the
+  `.secrets` file named above.
+- **Notarization credentials:** `APPLE_API_KEY` (path to the App Store Connect `.p8`), `APPLE_API_KEY_ID` and
+  `APPLE_API_ISSUER` are exported in `~/.zshrc` on the release Mac. The `.p8` files are in `.secrets/`. Their
+  values are not recorded in this repository.
+- **Flaky network:** `notarytool` can accept an upload while its status poll fails, and `stapler` can fail
+  with error 68 (`network connection was lost`) while looking up the ticket. Neither means the build is bad.
+  Check `xcrun notarytool info <submission id>` first, then retry the staple on the same app. Never resubmit
+  an accepted app. electron-builder staples once without retries, so for an unreliable connection build with
+  `mac.notarize: false` and an `afterSign` hook that runs `notarytool submit`, `notarytool wait <id>` and
+  `stapler staple` with retries (this is how 0.3.0-beta.6 was built).
+
 Notarize and staple each DMG, then refresh its checksum in the manifest:
 
 ```sh

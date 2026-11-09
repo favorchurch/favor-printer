@@ -15,3 +15,9 @@
 - **Actions availability (checked 2026-10-13 with `gh api repos/favorchurch/favor-printer/actions/permissions`):** Actions is enabled but `allowed_actions` is `local_only`, so workflows that use marketplace actions currently end in `startup_failure`. Re-check with the same `gh api` command before relying on this. Until that changes, the test receipt is the local Tier 2 output quoted with its exit code in the PR or issue. Once Actions runs, the receipt is the PR's Actions run.
 - **Ownership:** [rock-steward#157](https://github.com/favorchurch/rock-steward/issues/157) owns CI cadence, caching, runner and action permissions, required-check semantics and rollout. This is the single canonical testing section. Do not add a second one in CLAUDE.md or README.md.
 - **Not allowed as checks:** `--passWithNoTests`, `--fix` commands, or scripts that are not in `package.json`.
+
+## Releasing and signing
+
+- **Procedure:** `docs/RELEASING.md`. Local signing and notarization use the keychain and credentials described in its "Signing keychain on the release Mac" section. Passwords and keys are never written to tracked files, logs or transcripts.
+- **Keychain:** `~/Library/Keychains/favor-printer-beta6.keychain-db`, selected with `CSC_KEYCHAIN`. Its password is in the login keychain item `favor-printer-signing-keychain` (copy in `.secrets/`, ignored by git). The `.p12` backup in `.secrets/` rebuilds it.
+- **Publishing:** a release is published only with explicit approval for the channel. Beta tags (`vX.Y.Z-beta.N`) go to the Preview channel as a Pre-release. Never toggle the pre-release flag while publishing.

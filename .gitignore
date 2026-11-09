@@ -12,3 +12,6 @@ graft/
 
 __pycache__/
 *.pyc
+
+# Local release secrets (signing keychain password, .p12 backup, API keys)
+.secrets/
