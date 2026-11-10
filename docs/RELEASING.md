@@ -181,13 +181,17 @@ Publishing is manual and needs an explicit OK from the person who owns the relea
 ## Local signing and notarization
 
 Use this before the CI secrets exist, or when CI is unavailable. It produces the same artifacts as the
-workflow. It needs a Mac with the Developer ID Application certificate installed in the login
-keychain, and the App Store Connect API key file kept outside the repository.
+workflow. It needs a Mac with the Developer ID Application certificate in a keychain electron-builder can
+use (on the release Mac that is the dedicated keychain described in
+[Signing keychain on the release Mac](#signing-keychain-on-the-release-mac)), and the App Store Connect API
+key file kept outside the repository.
 
 ```sh
 export APPLE_API_KEY="$HOME/private/AuthKey_XXXXXXXXXX.p8"
 export APPLE_API_KEY_ID="XXXXXXXXXX"
 export APPLE_API_ISSUER="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# On the release Mac the three APPLE_API_* values are already exported in ~/.zshrc.
+export CSC_KEYCHAIN="$HOME/Library/Keychains/favor-printer-beta6.keychain-db"   # unlock it first, see the keychain section below
 
 git checkout v1.2.3                      # build from the tag, with a clean tree
 pnpm install --frozen-lockfile
@@ -264,6 +268,49 @@ gh release create v1.2.3 --draft --title "Favor Printer 1.2.3" --notes "" \
 Do not upload the DMG `.blockmap` files: stapling made them stale and the updater only uses the zip.
 Never run electron-builder with `--publish always` locally, and never pass `CSC_LINK` or the `.p8`
 contents on a command line that lands in shell history.
+
+### Signing keychain on the release Mac
+
+Local builds sign with the dedicated keychain `~/Library/Keychains/favor-printer-beta6.keychain-db`. It is
+not in the login keychain, so electron-builder is pointed at it with `CSC_KEYCHAIN` (exported in the build
+block above). Do not unlock or use any other `favor-printer*.keychain-db`.
+
+Handle passwords without putting them on the command line where a command allows it, and never print one.
+Read it into a shell variable without echo (`read -rs KCPW`), or capture it from the login keychain item
+below. The `-k`, `-p` and `-P` options of `security` have no stdin form, so a password passed with them is
+visible in `ps` for the moment the command runs. Do not run any of these with a literal password.
+
+- **Where its password lives (never in git or a transcript):** the login keychain item with service
+  `favor-printer-signing-keychain` and account `favor-printer-beta6.keychain-db`, and a copy in
+  `.secrets/keychain-beta6.pass` (mode 600, ignored by git). Capture it, never print it:
+  `KCPW="$(security find-generic-password -w -s favor-printer-signing-keychain -a favor-printer-beta6.keychain-db)"`.
+- **Unlock it before building:** `security unlock-keychain -p "$KCPW" "$CSC_KEYCHAIN"`, or
+  `security unlock-keychain "$CSC_KEYCHAIN"` to be prompted. Keep it unlocked for the run with
+  `security set-keychain-settings -t 86400 "$CSC_KEYCHAIN"`.
+- **Avoid codesign prompts:** set the key partition list once:
+  `security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" "$CSC_KEYCHAIN"`. If an old
+  `favor-printer.keychain-db` is still in `security list-keychains -d user`, remove it from that list with
+  `security list-keychains -d user -s <the keychains you keep, one path each>` (this does not delete the
+  file). Otherwise codesign shows "wants to use the favor-printer keychain" dialogs.
+- **Rebuild it from the backup:** the Developer ID Application certificate and its private key are backed up
+  in `.secrets/devid.p12` (its password is in `.secrets/p12.pass`). Read the new keychain password into
+  `KCPW` and the p12 password into `P12PW` (`read -rs`), then:
+  `security create-keychain -p "$KCPW" "$CSC_KEYCHAIN"`, then
+  `security import .secrets/devid.p12 -k "$CSC_KEYCHAIN" -P "$P12PW" -T /usr/bin/codesign -T /usr/bin/security`,
+  then the partition-list command above. Store the new password in the login keychain item
+  (`security add-generic-password -U -s favor-printer-signing-keychain -a favor-printer-beta6.keychain-db -w "$KCPW"`)
+  and in the `.secrets` file named above, then `unset KCPW P12PW`.
+- **Notarization credentials:** `APPLE_API_KEY` (path to the App Store Connect `.p8`), `APPLE_API_KEY_ID` and
+  `APPLE_API_ISSUER` are exported in `~/.zshrc` on the release Mac. The `.p8` files are in `.secrets/`. Their
+  values are not recorded in this repository.
+- **Flaky network:** `notarytool` can accept an upload while its status poll fails, and `stapler` can fail
+  with error 68 (`network connection was lost`) while looking up the ticket. Neither means the build is bad.
+  Check `xcrun notarytool info <submission id>` first, then retry the staple on the same app. Never resubmit
+  an accepted app. electron-builder staples once without retries. For an unreliable connection 0.3.0-beta.6
+  was built with `mac.notarize: false` and an `afterSign` hook, set in the generated
+  `electron-builder.release.yml` and kept outside this repository. The hook zips the signed app, runs
+  `notarytool submit` once, `notarytool wait <id>` with retries, then `stapler staple` and
+  `stapler validate` with retries, so the zip and DMGs are packed from an already stapled app.
 
 ## Rollback
 
