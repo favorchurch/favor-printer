@@ -19,5 +19,5 @@
 ## Releasing and signing
 
 - **Procedure:** `docs/RELEASING.md`. Local signing and notarization use the keychain and credentials described in its "Signing keychain on the release Mac" section. Passwords and keys are never written to tracked files, logs or transcripts.
-- **Keychain:** `~/Library/Keychains/favor-printer-beta6.keychain-db`, selected with `CSC_KEYCHAIN`. Its password is in the login keychain item `favor-printer-signing-keychain` (copy in `.secrets/`, ignored by git). The `.p12` backup in `.secrets/` rebuilds it.
+- **Keychain:** `~/Library/Keychains/favor-printer-beta6.keychain-db`, selected with `CSC_KEYCHAIN`. Its password is in the login keychain item `favor-printer-signing-keychain` (copy in `.secrets/`, ignored by git). The `.p12` backup in `.secrets/` rebuilds it. Capture the password into a variable, for example `KCPW="$(security find-generic-password -w ...)"`, and never run that command bare, because it prints the password into the transcript.
 - **Publishing:** a release is published only with explicit approval for the channel. Beta tags (`vX.Y.Z-beta.N`) go to the Preview channel as a Pre-release. Never toggle the pre-release flag while publishing.
