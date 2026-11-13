@@ -19,6 +19,7 @@ import type {
   RelayRenameRequest,
   RelayRenameResponse,
   RelayTestPrintResponse,
+  RelayTrace,
   ReportOutcome,
 } from "./protocol";
 
@@ -146,12 +147,12 @@ export class RelayApiClient {
   }
 
   /** Tell the cloud the printer connection is open and a write is about to start. */
-  sending(jobId: string, claimToken: string) {
-    return this.jobCall(`/jobs/${encodeURIComponent(assertSafeJobId(jobId))}/sending`, { claimToken });
+  sending(jobId: string, claimToken: string, trace?: RelayTrace) {
+    return this.jobCall(`/jobs/${encodeURIComponent(assertSafeJobId(jobId))}/sending`, { claimToken, ...trace });
   }
 
-  report(jobId: string, claimToken: string, outcome: ReportOutcome, error?: string) {
-    return this.jobCall(`/jobs/${encodeURIComponent(assertSafeJobId(jobId))}/report`, { claimToken, outcome, error });
+  report(jobId: string, claimToken: string, outcome: ReportOutcome, error?: string, trace?: RelayTrace) {
+    return this.jobCall(`/jobs/${encodeURIComponent(assertSafeJobId(jobId))}/report`, { claimToken, outcome, error, ...trace });
   }
 }
 

@@ -26,6 +26,8 @@ export type ClaimedJob = PrinterTarget & {
   claimToken: string;
   leaseExpiresAt: string;
   attempt: number;
+  /** Additive: the check-in lifecycle id, echoed on sending and report. Absent from older clouds. */
+  lifecycleId?: string;
 };
 
 export type ClaimResponse = {
@@ -76,6 +78,16 @@ export type HeartbeatResponse = {
 };
 
 export type ReportOutcome = "sent" | "failed" | "ambiguous";
+
+/**
+ * Timing the relay adds to a sending or report call. `elapsedMs` is monotonic
+ * milliseconds since this process claimed the job: on `sending` it is the
+ * elapsed time when the call is made, on `report` it is the elapsed time when
+ * the transport answered. Absent for a job claimed by an earlier run, since a
+ * monotonic reading does not survive a restart. `lifecycleId` is the id the
+ * cloud sent with the claim. Older clouds ignore both fields.
+ */
+export type RelayTrace = { lifecycleId?: string; elapsedMs?: number };
 
 /** Answer of POST /api/printing/relay/test-print: the cloud renders the label, the relay prints it locally. */
 export type RelayTestPrintResponse = {
