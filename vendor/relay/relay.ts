@@ -25,7 +25,7 @@ import {
   RelayPrinterHandedOverError,
   type RelayApiClient,
 } from "./apiClient";
-import type { PrinterTarget, ReportOutcome } from "./protocol";
+import type { PrinterTarget, ReportOutcome, RelayTrace } from "./protocol";
 import type { PrinterTransport, ProbeResult } from "./printer";
 import {
   stripPayload,
@@ -133,6 +133,10 @@ export class Relay {
   private readonly live = new Set<string>();
   /** Every real send in progress, so stop() can wait for each of them. */
   private readonly activeSends = new Set<Promise<unknown>>();
+  /** Monotonic ms when this process received each job's claim. Not persisted: a reading does not survive a restart. */
+  private readonly claimedAt = new Map<string, number>();
+  /** The last claim filled its batch, so the next cycle claims at once. Cleared at the start of every cycle. */
+  private repollNow = false;
 
   constructor(private readonly options: RelayOptions) {
     this.maxSpool = options.maxSpool ?? 20;
@@ -185,6 +189,11 @@ export class Relay {
         this.log("error", `cycle failed: ${errorText(error)}`);
       }
       if (this.stopped) break;
+      // A full claim batch means more jobs are probably waiting. Auth backoff still applies.
+      if (this.repollNow && !this.authBlocked) {
+        this.repollNow = false;
+        continue;
+      }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(
           resolve,
@@ -308,6 +317,17 @@ export class Relay {
     }
   }
 
+  /** Monotonic ms since this process received the job's claim, or undefined for a claim from an earlier run. */
+  private elapsedSinceClaim(jobId: string): number | undefined {
+    const start = this.claimedAt.get(jobId);
+    return start === undefined ? undefined : Math.max(0, Math.round(this.monotonicNow() - start));
+  }
+
+  /** What the cloud is told about a job on a sending or report call. JSON drops unset fields. */
+  private traceOf(entry: { lifecycleId?: string }, elapsedMs: number | undefined): RelayTrace {
+    return { lifecycleId: entry.lifecycleId, elapsedMs };
+  }
+
   /**
    * Printers drain in parallel, so `inFlight` follows the set of printers with
    * a send open (real or test), not the last one to finish.
@@ -373,6 +393,7 @@ export class Relay {
 
   private async runTick() {
     this.authBlocked = false;
+    this.repollNow = false;
     // Once the cloud rejects the credentials, every further call this cycle
     // would be rejected too. Stop here and let the backoff run.
     // Learn which printers are enabled before the first send of this process.
@@ -414,9 +435,10 @@ export class Relay {
     // Paused or stopped while the spool was being read: do not ask for work.
     if (!this.accepting) return;
 
+    const requested = Math.min(this.claimLimit, room);
     let answer;
     try {
-      answer = await this.options.api.claim(printerIds, Math.min(this.claimLimit, room));
+      answer = await this.options.api.claim(printerIds, requested);
     } catch (error) {
       // Terminal for these printers, not a failure of the cloud: stop asking for them and keep the rest.
       if (error instanceof RelayPrinterHandedOverError) {
@@ -426,18 +448,24 @@ export class Relay {
       throw error;
     }
     const { jobs, rejectedPrinterIds } = answer;
+    const receivedAt = this.monotonicNow();
     if (answer.handedOverPrinterIds?.length) this.markHandedOver(answer.handedOverPrinterIds);
     if (rejectedPrinterIds.length > 0) {
       this.log("warn", "cloud does not assign these printers to this relay", {
         rejectedPrinterIds,
       });
     }
+    let added = 0;
     for (const job of jobs) {
       if (await this.options.spool.addClaimed(job, this.now())) {
+        added += 1;
+        this.claimedAt.set(job.id, receivedAt);
         this.options.signal?.({ kind: "claimed" });
       }
       this.log("info", "claimed job", { jobId: job.id, printerId: job.printerId });
     }
+    // Repoll only when this claim filled its batch with jobs the spool took. A batch of jobs already spooled adds nothing, so it waits.
+    this.repollNow = added > 0 && added >= requested;
   }
 
   /** Work every spooled entry. Different printers run in parallel, one printer at a time. */
@@ -563,11 +591,12 @@ export class Relay {
                 staged.push(entry);
                 await spool.write({ ...stripPayload(entry), stage: "sending" });
                 if (!this.mayStartSendTo(printerId)) return false;
-                const answer = await api.sending(entry.id, entry.claimToken);
+                const answer = await api.sending(entry.id, entry.claimToken, this.traceOf(entry, this.elapsedSinceClaim(entry.id)));
                 if (answer.kind !== "ok") {
                   // This claim expired before any printer bytes were written.
                   await spool.remove(entry.id);
                   staged.pop();
+                  this.claimedAt.delete(entry.id);
                   return false;
                 }
               }
@@ -593,7 +622,7 @@ export class Relay {
       // One failed cloud report must not prevent the other label results from
       // reaching durable local report stage. Each will retry reporting later.
       const settled = await Promise.allSettled(entries.map((entry) =>
-        this.recordAndDeliver(entry, outcome, result.kind === "sent" ? undefined : result.error),
+        this.recordAndDeliver(entry, outcome, result.kind === "sent" ? undefined : result.error, this.elapsedSinceClaim(entry.id)),
       ));
       // Rejected credentials outrank a network failure on another label, so
       // the relay still backs off instead of retrying with a dead token.
@@ -639,7 +668,7 @@ export class Relay {
           }
           let answer: Awaited<ReturnType<typeof api.sending>>;
           try {
-            answer = await api.sending(entry.id, entry.claimToken);
+            answer = await api.sending(entry.id, entry.claimToken, this.traceOf(entry, this.elapsedSinceClaim(entry.id)));
           } catch (error) {
             // Nothing was written, so the entry is safe to retry later.
             await spool.write(entry);
@@ -649,6 +678,7 @@ export class Relay {
           if (answer.kind !== "ok") {
             // The cloud already gave this job to someone else or expired it.
             await spool.remove(entry.id);
+            this.claimedAt.delete(entry.id);
             this.log("warn", "claim no longer valid; dropped before sending", {
               jobId: entry.id,
             });
@@ -669,13 +699,14 @@ export class Relay {
         },
       });
 
+      const elapsedMs = this.elapsedSinceClaim(entry.id);
       switch (result.kind) {
         case "sent":
-          return this.recordAndDeliver(entry, "sent");
+          return this.recordAndDeliver(entry, "sent", undefined, elapsedMs);
         case "unsent":
-          return this.recordAndDeliver(entry, "failed", result.error);
+          return this.recordAndDeliver(entry, "failed", result.error, elapsedMs);
         case "ambiguous":
-          return this.recordAndDeliver(entry, "ambiguous", result.error);
+          return this.recordAndDeliver(entry, "ambiguous", result.error, elapsedMs);
         case "aborted":
           return;
       }
@@ -688,13 +719,16 @@ export class Relay {
     entry: SpoolEntry,
     outcome: ReportOutcome,
     error?: string,
+    elapsedMs?: number,
   ) {
     const recorded: ReportEntry = {
       ...stripPayload(entry),
       stage: "report",
       outcome,
       error,
+      ...(elapsedMs === undefined ? {} : { elapsedMs }),
     };
+    this.claimedAt.delete(entry.id);
     await this.options.spool.write(recorded);
     this.options.signal?.({ kind: "outcome", outcome });
     this.log(outcome === "sent" ? "info" : "warn", `job ${outcome}`, {
@@ -706,7 +740,7 @@ export class Relay {
 
   private async deliver(entry: ReportEntry) {
     if (!entry.outcome) return;
-    await this.options.api.report(entry.id, entry.claimToken, entry.outcome, entry.error);
+    await this.options.api.report(entry.id, entry.claimToken, entry.outcome, entry.error, this.traceOf(entry, entry.elapsedMs));
     await this.options.spool.remove(entry.id);
   }
 

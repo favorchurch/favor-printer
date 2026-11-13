@@ -44,6 +44,8 @@ export type ReportEntry = SlimJob & {
   stage: "report";
   outcome: ReportOutcome;
   error?: string;
+  /** Monotonic ms from the claim to the transport's answer, kept so a late report still carries it. */
+  elapsedMs?: number;
 };
 
 export type SpoolEntry = ClaimedEntry | SendingEntry | ReportEntry;
