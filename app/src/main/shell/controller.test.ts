@@ -1277,6 +1277,23 @@ describe("cloud name synchronization", () => {
     await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   });
 
+  it("reads once per cloud reconnect, not on every relay status event", async () => {
+    const read = vi.fn(async () => names);
+    const h = await started({ ...ENROLLED, readCloudNames: read });
+    const fork = h.forks.last();
+    fork.emitMessage({ type: "event", event: relayStatus() });
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    // Heartbeats and per-label changes keep the cloud ok: no further reads.
+    fork.emitMessage({ type: "event", event: relayStatus({ lastHeartbeatAt: "2026-11-15T01:00:00.000Z" }) });
+    fork.emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
+    await new Promise((done) => setTimeout(done, 20));
+    expect(read).toHaveBeenCalledTimes(1);
+    // The cloud drops and comes back: one more read.
+    fork.emitMessage({ type: "event", event: relayStatus({ cloud: "unreachable" }) });
+    fork.emitMessage({ type: "event", event: relayStatus() });
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  });
+
   it("ignores a stale read when a local rename starts", async () => {
     let resolve!: (value: typeof names) => void;
     const h = await started({ ...ENROLLED, readCloudNames: () => new Promise<typeof names>((done) => { resolve = done; }) });

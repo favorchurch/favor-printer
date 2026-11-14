@@ -154,6 +154,8 @@ export function createAppController(deps: ControllerDeps): AppController {
   let cloudPrinterIds: string[] = [];
   let nameGeneration = 0;
   let renamesInFlight = 0;
+  /** Last cloud state the relay reported. Names are read when it turns ok, not on every status event (heartbeats, each label). */
+  let lastRelayCloud: string | null = null;
   let scanTimer: unknown = null;
   let supervisorState: SupervisorState = {
     phase: "idle",
@@ -210,7 +212,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
     onRelayStatus: (status) => {
       if (status.cloud === "revoked") void handleRevoked();
-      if (status.cloud === "ok") void syncCloudNames();
+      if (status.cloud === "ok" && lastRelayCloud !== "ok") void syncCloudNames();
+      lastRelayCloud = status.cloud;
       // A running relay that reached the cloud still holds its binding, so a conflict left by a
       // re-enroll attempt is over and must not keep the status on "In use elsewhere".
       if (inUseElsewhere && status.state === "running" && status.cloud === "ok") {
