@@ -209,10 +209,22 @@ export function createAppController(deps: ControllerDeps): AppController {
   /** Printer setup is running: the relay is stopped and nothing may start it until the setup ends. */
   let settingUp = false;
 
+  /** The relay is owed a start: something wanted it running while setup held it stopped. Cleared when it starts. */
+  let resumeAfterSetup = false;
+
   /** Starts the relay again after printer setup, unless the app is quitting, the laptop was un-enrolled or setup began again. */
   async function resumeRelay(): Promise<void> {
     if (settingUp || shuttingDown || !enrolled || prefs.get().revoked) return;
+    resumeAfterSetup = false;
     await supervisor.start();
+  }
+
+  /** Like `supervisor.restart()`, but never starts the relay under a running printer setup: it is owed a start instead. */
+  async function restartRelay(): Promise<void> {
+    await supervisor.stop();
+    await supervisor.settled();
+    if (settingUp) resumeAfterSetup = true;
+    else await supervisor.start();
   }
 
   function report(result: PrinterSetupResult): PrinterSetupResult {
@@ -445,7 +457,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         await supervisor.stop();
       } else if (active && liveQueue !== startedQueue) {
         log("info", "printer", "the printer's queue changed; restarting the relay");
-        await supervisor.restart();
+        await restartRelay();
       }
     }
 
@@ -592,7 +604,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         inUseElsewhere = false;
         testPrintConfirmed = false;
         setupStep = "connected";
-        await supervisor.restart();
+        await restartRelay();
         emit();
         return { ok: true };
       })().finally(() => {
@@ -657,7 +669,8 @@ export function createAppController(deps: ControllerDeps): AppController {
       const queue = scan.kind === "found" && scan.queue === "ready" && !scanFailed ? liveQueue : null;
       if (!queue) return report(await deps.printerSetup.run(null));
       settingUp = true;
-      let resume = ["starting", "running", "restarting"].includes(supervisorState.phase);
+      resumeAfterSetup ||= ["starting", "running", "restarting"].includes(supervisorState.phase);
+      let deferred = false;
       try {
         // The relay prints to this same queue, and a label job between the three setup jobs would
         // land mid-sequence. Stop it first and wait until it has really exited.
@@ -665,7 +678,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         if (stopped === "abandoned" || supervisor.jobInFlight()) {
           // A label is still being written and the relay is left to finish. Nothing was sent.
           // The relay comes back once that child has exited, not before.
-          resume = false;
+          deferred = true;
           void supervisor.settled().then(resumeRelay);
           return report({ ok: false, reason: "busy" });
         }
@@ -673,7 +686,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         return report(await deps.printerSetup.run(queue));
       } finally {
         settingUp = false;
-        if (resume) await resumeRelay();
+        if (!deferred && resumeAfterSetup) await resumeRelay();
       }
     },
 

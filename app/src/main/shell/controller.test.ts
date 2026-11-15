@@ -1086,6 +1086,42 @@ describe("set up printer", () => {
     await vi.waitFor(() => expect(h.forks.children).toHaveLength(2));
   });
 
+  it("a queue-change restart in progress does not start the relay under setup, and setup resumes it", async () => {
+    const h = await started();
+    let childrenDuringRun = -1;
+    h.printerSetup.run.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      childrenDuringRun = h.forks.children.length;
+      return { ok: true };
+    });
+    h.state.scan = foundPrinter("ready", "Other_Q");
+    const scan = h.controller.scanPrinters();
+    await vi.waitFor(() => expect(h.forks.last().types()).toContain("stop"));
+    const setup = h.controller.configurePrinter();
+    h.forks.last().emitMessage({ type: "stopped" });
+    h.forks.last().emitExit(0);
+    await Promise.all([scan, setup]);
+    expect(childrenDuringRun).toBe(1);
+    expect(h.forks.children).toHaveLength(2);
+  });
+
+  it("a retry after an abandoned stop still brings the relay back", async () => {
+    const h = await started();
+    const first = h.forks.last();
+    first.emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
+    const abandoned = h.controller.configurePrinter();
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    await expect(abandoned).resolves.toEqual({ ok: false, reason: "busy" });
+    first.emitMessage({ event: relayStatus({ inFlight: false }), type: "event" });
+    const retry = h.controller.configurePrinter();
+    first.emitMessage({ type: "stopped" });
+    first.emitExit(0);
+    await expect(retry).resolves.toEqual({ ok: true });
+    await vi.waitFor(() => expect(h.forks.children).toHaveLength(2));
+  });
+
   it("a second call while setup runs is busy and sends nothing", async () => {
     const h = await started();
     let release: (() => void) | undefined;

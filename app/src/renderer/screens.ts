@@ -100,7 +100,7 @@ function printerSetupControl(snapshot: AppSnapshot, local: LocalState, a: Action
         ),
       );
     case "running":
-      return h("section", { class: "printer-setup", ...attrs }, note(PRINTER_SETUP_COPY.running), button(PRINTER_SETUP_COPY.running, () => undefined, { disabled: true }));
+      return h("section", { class: "printer-setup", ...attrs }, button(PRINTER_SETUP_COPY.running, () => undefined, { disabled: true }));
     case "done":
       return h("section", { class: "printer-setup", ...attrs }, note(PRINTER_SETUP_COPY.done), button(PRINTER_SETUP_COPY.start, a.askConfigurePrinter, { disabled: local.busy }));
     case "failed":

@@ -37,7 +37,12 @@ describe("printer setup", () => {
     expect(MODE_PAYLOAD).not.toContain("~JC");
     expect(CALIBRATE_PAYLOAD).toContain("~JC");
     expect(CALIBRATE_PAYLOAD).not.toContain("^");
+    expect(SAVE_PAYLOAD).toContain("^JUS");
     expect(SAVE_PAYLOAD).not.toContain("~JC");
+    for (const payload of [MODE_PAYLOAD, SAVE_PAYLOAD]) {
+      expect(payload.startsWith("^XA")).toBe(true);
+      expect(payload.trimEnd().endsWith("^XZ")).toBe(true);
+    }
   });
 
   it("waits for each job to finish before it sends the next", async () => {
