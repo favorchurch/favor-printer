@@ -41,7 +41,7 @@ import {
 } from "./services";
 import { createAppController } from "./shell/controller";
 import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
-import { detectLoginLaunch, shouldShowWindowAtLaunch } from "./shell/launch";
+import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch } from "./shell/launch";
 import { acquireSingleInstance, wireActivate } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
@@ -102,9 +102,9 @@ async function runApp(): Promise<void> {
     // Without a Dock icon the window would open behind other apps.
     setupWindowRef.current?.show();
   };
-  const openSetupRef: { current: () => void } = { current: showSetup };
+  const deferredOpen = createDeferredOpen();
 
-  if (!acquireSingleInstance(app, () => openSetupRef.current())) {
+  if (!acquireSingleInstance(app, () => deferredOpen.request())) {
     app.quit();
     return;
   }
@@ -203,7 +203,6 @@ async function runApp(): Promise<void> {
     applyOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     log,
   });
-  openSetupRef.current = () => controller.openSetup();
   wireActivate(app, () => controller.showSetup());
 
   // Quit: stop the relay (waiting for a send that is writing, and staying open while one still is),
@@ -269,7 +268,10 @@ async function runApp(): Promise<void> {
   await controller.initialize();
   updates.start();
   const first = controller.snapshot();
+  // A second launch during startup wins over the quiet login path.
+  const honoredEarlyRequest = deferredOpen.ready(() => controller.openSetup());
   if (
+    !honoredEarlyRequest &&
     shouldShowWindowAtLaunch({
       wasOpenedAtLogin: detectLoginLaunch(app),
       setupStep: first.setupStep,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { detectLoginLaunch, shouldShowWindowAtLaunch, type LaunchWindowInput } from "./launch";
+import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch, type LaunchWindowInput } from "./launch";
 
 describe("shouldShowWindowAtLaunch", () => {
   it.each<[string, LaunchWindowInput, boolean]>([
@@ -70,5 +70,25 @@ describe("detectLoginLaunch", () => {
       }),
     ).toBeNull();
     expect(detectLoginLaunch({ getLoginItemSettings: () => ({}) })).toBeNull();
+  });
+});
+
+describe("createDeferredOpen", () => {
+  it("honors a request made before ready exactly once", () => {
+    const gate = createDeferredOpen();
+    const open = vi.fn();
+    gate.request();
+    gate.request();
+    expect(gate.ready(open)).toBe(true);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports nothing to honor when no request arrived, then opens directly", () => {
+    const gate = createDeferredOpen();
+    const open = vi.fn();
+    expect(gate.ready(open)).toBe(false);
+    expect(open).not.toHaveBeenCalled();
+    gate.request();
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

@@ -43,3 +43,26 @@ export function shouldShowWindowAtLaunch(input: LaunchWindowInput): boolean {
   if (input.wasOpenedAtLogin !== true) return true;
   return input.setupStep !== null || input.legacyRelayLoaded || input.revoked;
 }
+
+/**
+ * Holds "open the window" requests (e.g. a second-instance launch) that arrive
+ * before startup has finished, so none is lost and startup does not suppress it.
+ */
+export function createDeferredOpen() {
+  let pending = false;
+  let open: (() => void) | null = null;
+  return {
+    request(): void {
+      if (open) open();
+      else pending = true;
+    },
+    /** Installs the handler and honors a pending request once. Returns true if it opened. */
+    ready(handler: () => void): boolean {
+      open = handler;
+      if (!pending) return false;
+      pending = false;
+      handler();
+      return true;
+    },
+  };
+}
