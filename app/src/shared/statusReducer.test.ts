@@ -291,7 +291,6 @@ describe("hasNoEnabledPrinters", () => {
 
   it.each([
     ["a listed printer", { ...answered, printerIds: ["printer-1"] }],
-    ["no heartbeat answer yet", { ...answered, lastHeartbeatAt: null }],
     ["a relay that is not running", { ...answered, state: "starting" }],
     ["a cloud that is not ok", { ...answered, cloud: "unreachable" }],
     ["no relay", null],
@@ -310,9 +309,13 @@ describe("hasNoEnabledPrinters", () => {
   });
 
   it.each([
+    ["no error and no handed over ids", silent],
     ["an unrelated error", { ...silent, lastError: "send_failed" }],
-    ["a null error", { ...silent, lastError: null }],
-    ["no handed over ids", { ...silent, handedOverPrinterIds: [] }],
+  ])("is true with no heartbeat ever sent and %s: an ok cloud with an empty list is RSVP's answer", (_label, relay) => {
+    expect(hasNoEnabledPrinters("Connected", relay)).toBe(true);
+  });
+
+  it.each([
     ["config_invalid but a listed printer", { ...silent, printerIds: ["printer-1"], lastError: "config_invalid" }],
     ["config_invalid but the cloud unreachable", { ...silent, cloud: "unreachable", lastError: "config_invalid" }],
   ])("is false with %s and no heartbeat", (_label, relay) => {
@@ -334,14 +337,12 @@ describe("hasNoEnabledPrinters", () => {
 
   it.each([
     ["a listed printer", { ...answered, printerIds: ["printer-1"] }],
-    ["no evidence", silent],
     ["a cloud that is not ok", { ...answered, cloud: "unreachable" }],
   ])("is false for a paused relay with %s", (_label, relay) => {
     expect(hasNoEnabledPrinters("Connected", { ...relay, state: "paused" })).toBe(false);
   });
 
   it.each(["Unplugged", "Waiting"] as const)("still fires in the %s state: RSVP answered whatever the local printer is doing", (state) => {
-    expect(hasNoEnabledPrinters(state, { ...silent, lastError: "config_invalid" })).toBe(true);
-    expect(hasNoEnabledPrinters(state, { ...silent, handedOverPrinterIds: ["printer-1"] })).toBe(true);
+    expect(hasNoEnabledPrinters(state, silent)).toBe(true);
   });
 });

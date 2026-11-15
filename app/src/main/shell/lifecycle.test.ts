@@ -58,7 +58,7 @@ describe("activate while a re-pair is in progress", () => {
     h.ui.showSetupWindow.mockClear();
 
     const listeners: Record<string, () => void> = {};
-    wireActivate({ on: (event, listener) => void (listeners[event] = listener) }, () => h.controller.openSetup());
+    wireActivate({ on: (event, listener) => void (listeners[event] = listener) }, () => h.controller.showSetup());
     listeners.activate();
 
     expect(h.ui.showSetupWindow).toHaveBeenCalledTimes(1);

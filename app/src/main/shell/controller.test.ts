@@ -739,10 +739,18 @@ describe("enroll", () => {
       expect(h.controller.snapshot().recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
     });
 
-    it("stays Connected while the relay has not heard from RSVP yet", async () => {
+    it("fires for an empty printer list with cloud ok and neither a heartbeat nor an error", async () => {
       const h = await started({ ...ENROLLED });
-      h.forks.last().emitMessage({ type: "event", event: answered({ printerIds: [], lastHeartbeatAt: null }) });
-      expect(h.controller.snapshot().fiveState).toBe("Connected");
+      h.forks.last().emitMessage({ type: "event", event: silent({ lastError: null }) });
+      const snap = h.controller.snapshot();
+      expect(snap.status).toEqual({ color: "amber", headline: NO_ENABLED_PRINTERS_HEADLINE, detail: NO_ENABLED_PRINTERS_DETAIL });
+      expect(snap.recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
+    });
+
+    it("stays Connected while the relay has not asked RSVP yet", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "starting", printerIds: [], lastHeartbeatAt: null }) });
+      expect(h.controller.snapshot().recoveryAction).not.toBe(NO_ENABLED_PRINTERS_RECOVERY);
     });
 
     it("stays Connected when RSVP lists a printer", async () => {
@@ -832,6 +840,16 @@ describe("enroll", () => {
       h.controller.beginReenroll();
       h.controller.openSetup();
       expect(h.controller.snapshot().setupStep).toBeNull();
+    });
+
+    it("activating the app during a re-pair shows the window and keeps the code step", async () => {
+      const h = await started({ ...ENROLLED });
+      h.controller.beginReenroll();
+      h.ui.showSetupWindow.mockClear();
+      h.controller.showSetup();
+      expect(h.ui.showSetupWindow).toHaveBeenCalledTimes(1);
+      expect(h.controller.snapshot().setupStep).toBe("code");
+      expect(h.controller.snapshot().enrolled).toBe(true);
     });
 
     it("cancel does nothing outside a re-pair, so it cannot close first-time setup", async () => {

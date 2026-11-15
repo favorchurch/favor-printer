@@ -117,6 +117,9 @@ export type AppController = {
   beginReenroll(): void;
   /** Leaves the code step without a new code. The current pairing was never touched. */
   cancelReenroll(): AppSnapshot;
+  /** Shows and focuses the window on whatever step it is on, including an open code screen. */
+  showSetup(): void;
+  /** Shows the window at status, abandoning an open re-pair. */
   openSetup(): void;
 
   setUpdateState(state: UpdateState): void;
@@ -743,6 +746,10 @@ export function createAppController(deps: ControllerDeps): AppController {
     openSetup() {
       // Reopening after leaving the code screen starts from the status screen, not from a half-finished re-pair.
       if (reenrolling) controller.cancelReenroll();
+      controller.showSetup();
+    },
+
+    showSetup() {
       deps.ui.showSetupWindow();
       void syncCloudNames();
     },

@@ -204,7 +204,7 @@ async function runApp(): Promise<void> {
     log,
   });
   openSetupRef.current = () => controller.openSetup();
-  wireActivate(app, () => controller.openSetup());
+  wireActivate(app, () => controller.showSetup());
 
   // Quit: stop the relay (waiting for a send that is writing, and staying open while one still is),
   // then let an update install if the policy allows it, then exit.
