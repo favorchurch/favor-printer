@@ -41,7 +41,8 @@ import {
 } from "./services";
 import { createAppController } from "./shell/controller";
 import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
-import { acquireSingleInstance } from "./shell/lifecycle";
+import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch } from "./shell/launch";
+import { acquireSingleInstance, wireActivate } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
 import { wirePowerMonitor, type PowerMonitorLike } from "./shell/powerWiring";
@@ -101,12 +102,14 @@ async function runApp(): Promise<void> {
     // Without a Dock icon the window would open behind other apps.
     setupWindowRef.current?.show();
   };
+  const deferredOpen = createDeferredOpen();
 
-  if (!acquireSingleInstance(app, showSetup)) {
+  if (!acquireSingleInstance(app, () => deferredOpen.request())) {
     app.quit();
     return;
   }
   app.dock?.hide();
+  const dockHiddenAt = app.dock ? Date.now() : undefined;
 
   const log = createLogger(
     createRotatingFileSink(path.join(app.getPath("logs"), "main.log"), {
@@ -140,6 +143,8 @@ async function runApp(): Promise<void> {
     preloadPath: path.join(__dirname, "preload.js"),
     pagePath,
     activate: () => app.focus({ steal: true }),
+    dock: app.dock,
+    dockHiddenAt,
   });
   setupWindowRef.current = windows;
 
@@ -196,6 +201,7 @@ async function runApp(): Promise<void> {
     applyOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     log,
   });
+  wireActivate(app, () => controller.openSetup());
 
   // Quit: stop the relay (waiting for a send that is writing, and staying open while one still is),
   // then let an update install if the policy allows it, then exit.
@@ -260,7 +266,19 @@ async function runApp(): Promise<void> {
   await controller.initialize();
   updates.start();
   const first = controller.snapshot();
-  if (first.setupStep !== null || first.legacyRelayLoaded) showSetup();
+  // A second launch during startup wins over the quiet login path.
+  const honoredEarlyRequest = deferredOpen.ready(() => controller.openSetup());
+  if (
+    !honoredEarlyRequest &&
+    shouldShowWindowAtLaunch({
+      wasOpenedAtLogin: detectLoginLaunch(app),
+      setupStep: first.setupStep,
+      legacyRelayLoaded: first.legacyRelayLoaded,
+      revoked: first.status.color === "red",
+    })
+  ) {
+    showSetup();
+  }
   log("info", "main", `${PRODUCT_NAME} ${app.getVersion()} started`);
 }
 
