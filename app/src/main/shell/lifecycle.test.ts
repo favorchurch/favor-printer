@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { acquireSingleInstance, wireActivate } from "./lifecycle";
+import { CREDENTIALS, createControllerHarness, foundPrinter } from "./testing/controllerHarness";
 
 function fakeApp(lock: boolean) {
   const listeners: Record<string, () => void> = {};
@@ -41,5 +42,26 @@ describe("wireActivate", () => {
     expect(app.on).toHaveBeenCalledWith("activate", expect.any(Function));
     listeners.activate();
     expect(onActivate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("activate while a re-pair is in progress", () => {
+  it("shows the window and keeps the code step", async () => {
+    const h = createControllerHarness({
+      credentials: CREDENTIALS,
+      scan: foundPrinter(),
+      prefs: { openAtLogin: true, setupComplete: true },
+    });
+    await h.controller.initialize();
+    h.controller.beginReenroll();
+    expect(h.controller.snapshot().setupStep).toBe("code");
+    h.ui.showSetupWindow.mockClear();
+
+    const listeners: Record<string, () => void> = {};
+    wireActivate({ on: (event, listener) => void (listeners[event] = listener) }, () => h.controller.openSetup());
+    listeners.activate();
+
+    expect(h.ui.showSetupWindow).toHaveBeenCalledTimes(1);
+    expect(h.controller.snapshot().setupStep).toBe("code");
   });
 });
