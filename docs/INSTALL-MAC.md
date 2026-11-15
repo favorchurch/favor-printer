@@ -29,8 +29,9 @@ The app lives in the menu bar. If you cannot see its icon, it may be hidden behi
 
 ## Check the installed version
 
-Open the status window. The line near the bottom reads **Version x.y.z**. Compare it with the latest
-release page to see whether you are current.
+Reopen Favor Printer from Applications to open its status window. The line near the bottom reads
+**Version x.y.z**, followed by **(Stable)** or **(Preview)**. Compare it with the latest release page
+to see whether you are current.
 
 ## Problems
 

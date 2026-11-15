@@ -63,8 +63,9 @@ Things that look like bugs and are not:
 - **An "unconfirmed" label count.** A label was sent to the printer but nothing confirmed it came out.
   Look at the label stock and printer light. The app will not reprint it on its own, to avoid
   duplicates.
-- **The app opens but no window appears.** Reopen Favor Printer from Applications. After this fix the
-  window shows on launch. The menu-bar icon may also be hidden behind the notch: quit other menu-bar
+- **The app opens but no window appears.** Reopen Favor Printer from Applications. Launching it by hand
+  or reopening it from Applications shows the window. When it starts at login on a Mac that is already
+  set up, it stays quiet in the menu bar. The menu-bar icon may also be hidden behind the notch: quit other menu-bar
   apps or hold Command and drag icons to make room.
 - **"Paired to someone else's laptop" or "No enabled printers".** This Mac is enrolled to a printer that
   another laptop holds, or the printer is disabled. In the window, pair again with a new six-digit
