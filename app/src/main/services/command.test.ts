@@ -31,6 +31,28 @@ describe("createCommandRunner", () => {
     expect(calls[0].options).not.toHaveProperty("shell");
   });
 
+  it("writes the input to the child's stdin and closes it", async () => {
+    const written: string[] = [];
+    let listenedForErrors = false;
+    const impl: ExecFile = (_file, _args, _options, callback) => {
+      callback(null, "", "");
+      return { stdin: { on: () => ((listenedForErrors = true), undefined), end: (data: string) => void written.push(data) } };
+    };
+    await createCommandRunner(impl)("/usr/bin/lp", ["-d", "Q"], { input: "~JC\n" });
+    expect(written).toEqual(["~JC\n"]);
+    expect(listenedForErrors).toBe(true);
+  });
+
+  it("leaves stdin alone without an input", async () => {
+    const written: string[] = [];
+    const impl: ExecFile = (_file, _args, _options, callback) => {
+      callback(null, "", "");
+      return { stdin: { end: (data: string) => void written.push(data) } };
+    };
+    await createCommandRunner(impl)("/usr/bin/lpstat", []);
+    expect(written).toEqual([]);
+  });
+
   it("uses a default timeout when none is given", async () => {
     const { impl, calls } = fakeExecFile((callback) => callback(null, "", ""));
     await createCommandRunner(impl)("/bin/launchctl", []);

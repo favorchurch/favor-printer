@@ -16,6 +16,7 @@ import {
   type AppSnapshot,
   type EnrollResult,
   type MigrateLegacyResult,
+  type PrinterSetupResult,
   type PrinterDevice,
   type PrinterScan,
   INITIAL_PRINTER_PRESENCE,
@@ -41,6 +42,7 @@ import {
   type LegacyRelay,
   type PowerController,
   type PrinterService,
+  type PrinterSetup,
   type RenameCloudOutcome,
   type SecretStore,
   type StoredCredentials,
@@ -69,6 +71,8 @@ export type ControllerDeps = {
   prefs: PrefsStore;
   secrets: SecretStore;
   printers: PrinterService;
+  /** Sends the printer its mode, calibration and save commands. */
+  printerSetup: PrinterSetup;
   legacy: LegacyRelay;
   enroll(request: EnrollRequest): Promise<EnrollOutcome>;
   /** Renames in the cloud registry. Never enrolls and never changes the saved pairing. */
@@ -84,6 +88,9 @@ export type ControllerDeps = {
     /** "Did a label come out?" for a test print started from the menu. */
     askLabelCameOut(): Promise<boolean>;
     openPrinterSettings(): Promise<void>;
+    /** "Set up printer" from the menu: calibration moves the media, so ask first. */
+    confirmPrinterSetup(): Promise<boolean>;
+    showPrinterSetupResult(result: PrinterSetupResult): void;
   };
   applyOpenAtLogin(enabled: boolean): void;
   log: Logger;
@@ -104,6 +111,7 @@ export type AppController = {
   enroll(code: string): Promise<EnrollResult>;
   requestTestPrint(): Promise<TestPrintResult>;
   confirmTestPrint(labelCameOut: boolean): Promise<void>;
+  configurePrinter(): Promise<PrinterSetupResult>;
   setPaused(paused: boolean): Promise<void>;
   setOpenAtLogin(enabled: boolean): Promise<void>;
   setChannel(channel: UpdateChannel): Promise<void>;
@@ -114,6 +122,7 @@ export type AppController = {
 
   /** Menu actions that combine a request with the confirmation question. */
   testPrintFromMenu(): Promise<void>;
+  setupPrinterFromMenu(): Promise<void>;
   beginReenroll(): void;
   /** Leaves the code step without a new code. The current pairing was never touched. */
   cancelReenroll(): AppSnapshot;
@@ -207,6 +216,34 @@ export function createAppController(deps: ControllerDeps): AppController {
   });
 
   const backlogMonitor = new BacklogMonitor();
+
+  /** Printer setup is running: the relay is stopped and nothing may start it until the setup ends. */
+  let settingUp = false;
+
+  /** The relay is owed a start: something wanted it running while setup held it stopped. Cleared when it starts. */
+  let resumeAfterSetup = false;
+
+  /** Starts the relay again after printer setup, unless the app is quitting, the laptop was un-enrolled or setup began again. */
+  async function resumeRelay(): Promise<void> {
+    if (settingUp || shuttingDown || !enrolled || prefs.get().revoked) return;
+    resumeAfterSetup = false;
+    await supervisor.start();
+  }
+
+  /** Like `supervisor.restart()`, but never starts the relay under a running printer setup: it is owed a start instead. */
+  async function restartRelay(): Promise<void> {
+    await supervisor.stop();
+    await supervisor.settled();
+    if (settingUp) resumeAfterSetup = true;
+    else await supervisor.start();
+  }
+
+  function report(result: PrinterSetupResult): PrinterSetupResult {
+    if (!result.ok) {
+      log("warn", "printer-setup", result.reason === "failed" ? `printer setup failed at ${result.step}` : `printer setup not run: ${result.reason}`);
+    }
+    return result;
+  }
 
   const supervisor = deps.createSupervisor({
     resolveStart: async () => {
@@ -447,14 +484,14 @@ export function createAppController(deps: ControllerDeps): AppController {
         await supervisor.stop();
       } else if (active && liveQueue !== startedQueue) {
         log("info", "printer", "the printer's queue changed; restarting the relay");
-        await supervisor.restart();
+        await restartRelay();
       }
     }
 
     // The relay could not start without a queue, or was held until it had one; it can now.
     const waitingForQueue =
       relayHeldForQueue || (supervisorState.phase === "blocked" && supervisorState.blockedReason === "no_queue");
-    if (!shuttingDown && enrolled && waitingForQueue && queueForRelay()) {
+    if (!shuttingDown && !settingUp && enrolled && waitingForQueue && queueForRelay()) {
       await supervisor.start();
     }
     emit();
@@ -600,7 +637,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         inUseElsewhere = false;
         testPrintConfirmed = false;
         setupStep = "connected";
-        await supervisor.restart();
+        await restartRelay();
         emit();
         return { ok: true };
       })().finally(() => {
@@ -657,6 +694,40 @@ export function createAppController(deps: ControllerDeps): AppController {
       emit();
     },
 
+    async configurePrinter() {
+      // Claimed before any await, so a second call sees it and spawns nothing.
+      if (settingUp) return { ok: false, reason: "busy" };
+      // Only a ready queue bound to the attached printer from a scan that listed cleanly. A disabled
+      // queue, a failed listing (liveQueue is then stale) or no printer all mean there is nothing to send to.
+      const queue = scan.kind === "found" && scan.queue === "ready" && !scanFailed ? liveQueue : null;
+      if (!queue) return report(await deps.printerSetup.run(null));
+      settingUp = true;
+      resumeAfterSetup ||= ["starting", "running", "restarting"].includes(supervisorState.phase);
+      let deferred = false;
+      try {
+        // The relay prints to this same queue, and a label job between the three setup jobs would
+        // land mid-sequence. Stop it first and wait until it has really exited.
+        const stopped = await supervisor.stop();
+        if (stopped === "abandoned" || supervisor.jobInFlight()) {
+          // A label is still being written and the relay is left to finish. Nothing was sent.
+          // The relay comes back once that child has exited, not before.
+          deferred = true;
+          void supervisor.settled().then(resumeRelay);
+          return report({ ok: false, reason: "busy" });
+        }
+        await supervisor.settled();
+        return report(await deps.printerSetup.run(queue));
+      } finally {
+        settingUp = false;
+        if (!deferred && resumeAfterSetup) await resumeRelay();
+      }
+    },
+
+    async setupPrinterFromMenu() {
+      if (!(await deps.ui.confirmPrinterSetup())) return;
+      deps.ui.showPrinterSetupResult(await controller.configurePrinter());
+    },
+
     async testPrintFromMenu() {
       const result = await controller.requestTestPrint();
       if (!result.ok) {
@@ -706,7 +777,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         migrationFailed = !result.ok;
         // Fail closed: after any failure the old relay counts as still running, so ours stays blocked.
         if (!result.ok) legacyLoaded = true;
-        else if (enrolled && !prefs.get().revoked) await supervisor.start();
+        else if (enrolled && !prefs.get().revoked && !settingUp) await supervisor.start();
         emit();
         return result;
       })().finally(() => {

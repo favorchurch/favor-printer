@@ -72,6 +72,10 @@ export const FIXTURE_NAMES = [
   "legacy-confirm",
   "legacy-failed",
   "status",
+  "setup-printer-confirm",
+  "setup-printer-running",
+  "setup-printer-done",
+  "setup-printer-failed",
   "unplugged",
   "waiting",
   "in-use-elsewhere",
@@ -173,6 +177,17 @@ export function fixtureFor(requested: string | null): Fixture {
           recoveryAction: "Run a local test print in Favor Printer to verify labels.",
           update: { kind: "idle" },
         }),
+      };
+    case "setup-printer-confirm":
+      return { snapshot: withStep(null, enrolled), local: { printerSetup: { kind: "confirm" } } };
+    case "setup-printer-running":
+      return { snapshot: withStep(null, enrolled), local: { printerSetup: { kind: "running" } } };
+    case "setup-printer-done":
+      return { snapshot: withStep(null, enrolled), local: { printerSetup: { kind: "done" } } };
+    case "setup-printer-failed":
+      return {
+        snapshot: withStep(null, enrolled),
+        local: { printerSetup: { kind: "failed", result: { ok: false, reason: "failed", step: "calibrate" } } },
       };
     case "unplugged":
       return {
@@ -276,6 +291,7 @@ export function createMockApi(start: AppSnapshot, options: { failMigration?: boo
     },
     requestTestPrint: async () => ({ ok: true }),
     confirmTestPrint: async () => undefined,
+    configurePrinter: async () => ({ ok: true }),
     setPaused: async () => undefined,
     setOpenAtLogin: async () => undefined,
     setChannel: async () => undefined,

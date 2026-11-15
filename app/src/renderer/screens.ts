@@ -4,7 +4,7 @@
  * actions. Nothing here shows ZPL or a security code.
  */
 
-import { isEnrollmentCode, NO_ENABLED_PRINTERS_RECOVERY, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
+import { isEnrollmentCode, NO_ENABLED_PRINTERS_RECOVERY, printerSetupFailureCopy, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
 import { h } from "./dom";
 import {
   boundPrinterText,
@@ -12,6 +12,8 @@ import {
   codeErrorCopy,
   ENROLL_ERROR_COPY,
   LOCAL_TEST_COPY,
+  PRINTER_SETUP_COPY,
+  printerQueueReady,
   RENAME_ERROR_COPY,
   stepLabel,
   TEST_PRINT_ERROR_COPY,
@@ -25,6 +27,11 @@ export type Actions = {
   scanAgain(): void;
   selectPrinter(deviceId: string): void;
   setUpPrinter(): void;
+  /** "Set up printer" on a ready queue: asks first, changes nothing yet. */
+  askConfigurePrinter(): void;
+  cancelConfigurePrinter(): void;
+  /** Confirmed: sends mode, calibrate and save to the printer. */
+  configurePrinter(): void;
   openPrinterSettings(): void;
   submitCode(code: string): void;
   requestTestPrint(): void;
@@ -79,6 +86,39 @@ const statusPill = (snapshot: AppSnapshot) =>
     h("span", { class: "dot", "aria-hidden": "true" }),
     h("span", null, snapshot.status.headline),
   );
+
+/** The "Set up printer" control. Absent unless a ready queue is bound to the printer. */
+function printerSetupControl(snapshot: AppSnapshot, local: LocalState, a: Actions) {
+  if (!printerQueueReady(snapshot)) return null;
+  const progress = local.printerSetup;
+  const attrs = { "data-action": "setup-printer", "data-state": progress.kind };
+  switch (progress.kind) {
+    case "idle":
+      return h("section", { class: "printer-setup", ...attrs }, button(PRINTER_SETUP_COPY.start, a.askConfigurePrinter, { disabled: local.busy }));
+    case "confirm":
+      return h(
+        "section",
+        { class: "printer-setup", ...attrs },
+        h("p", { class: "lead" }, PRINTER_SETUP_COPY.confirm),
+        h("p", { class: "hint" }, PRINTER_SETUP_COPY.lead),
+        actions(
+          button(PRINTER_SETUP_COPY.confirmYes, a.configurePrinter, { primary: true, disabled: local.busy }),
+          button("Cancel", a.cancelConfigurePrinter, { disabled: local.busy }),
+        ),
+      );
+    case "running":
+      return h("section", { class: "printer-setup", ...attrs }, button(PRINTER_SETUP_COPY.running, () => undefined, { disabled: true }));
+    case "done":
+      return h("section", { class: "printer-setup", ...attrs }, note(PRINTER_SETUP_COPY.done), button(PRINTER_SETUP_COPY.start, a.askConfigurePrinter, { disabled: local.busy }));
+    case "failed":
+      return h(
+        "section",
+        { class: "printer-setup", ...attrs },
+        note(printerSetupFailureCopy(progress.result), "error"),
+        button(PRINTER_SETUP_COPY.retry, a.askConfigurePrinter, { disabled: local.busy }),
+      );
+  }
+}
 
 const printerLine = (snapshot: AppSnapshot) => {
   const text = boundPrinterText(snapshot);
@@ -259,6 +299,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         snapshot,
         "Printer ready",
         lead(`${selected?.model || "Your Zebra"} is connected and set up.`),
+        printerSetupControl(snapshot, local, a),
         actions(button("Continue", a.advance, { primary: true })),
       );
     }
@@ -322,6 +363,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         printerLine(snapshot),
         renameForm("laptop-name", "Laptop name in RSVP", snapshot.label, local, "laptop", a.renameLaptop),
         snapshot.printerName ? renameForm("printer-name", "Printer name in RSVP", snapshot.printerName, local, "printer", a.renamePrinter) : null,
+        printerSetupControl(snapshot, local, a),
         actions(button("Run local hardware test", a.advance, { primary: true })),
       );
 
@@ -401,6 +443,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         snapshot.enrolled && snapshot.printerName !== null
           ? renameForm("printer-name", "Printer name in RSVP", snapshot.printerName, local, "printer", a.renamePrinter)
           : null,
+        printerSetupControl(snapshot, local, a),
         h(
           "div",
           { class: "status-meta" },

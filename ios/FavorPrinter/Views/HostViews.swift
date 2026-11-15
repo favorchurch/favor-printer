@@ -7,6 +7,8 @@ struct HostStatusView: View {
     let host: HostController
     @State private var code = ""
     @State private var confirmingUnenroll = false
+    @State private var confirmingSetup = false
+    @State private var setupResult: PrinterSetup.Outcome?
     #if DEBUG
     @State private var printerReading: PrinterStatusReading?
     #endif
@@ -30,6 +32,9 @@ struct HostStatusView: View {
             .frame(maxWidth: .infinity)
         }
         .background(FavorColor.paper.ignoresSafeArea())
+        .onChange(of: host.status.printerAttached) { _, attached in
+            if attached != true { setupResult = nil }
+        }
         .navigationTitle("Printer host")
         .task {
             // The loop reports the printer only while it runs; poll gently otherwise, as the pending screen does.
@@ -61,6 +66,7 @@ struct HostStatusView: View {
         if host.status.driver != .running || host.status.printerAttached != true {
             return Headline(title: "Needs attention", detail: "Check the printer connection and driver.", badge: .attention)
         }
+        if host.isSettingUpPrinter { return Headline(title: "Setting up", detail: "The printer is being set up. Printing resumes when it finishes.", badge: .unavailable) }
         if host.isLoopRunning { return Headline(title: "Ready", detail: "This iPad is connected and ready to print.", badge: .ready) }
         return Headline(title: "Paused", detail: "Printing resumes when this app is active.", badge: .unavailable)
     }
@@ -93,6 +99,51 @@ struct HostStatusView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("host-driver-hint")
             }
+            if host.status.printerAttached == true { setupPrinterControls }
+        }
+    }
+
+    @ViewBuilder
+    private var setupPrinterControls: some View {
+        Button("Set up printer") { confirmingSetup = true }
+            .buttonStyle(FavorPrimaryButtonStyle())
+            .disabled(host.isSettingUpPrinter)
+            .accessibilityLabel("Set up printer")
+            .accessibilityIdentifier("host-setup-printer")
+            .confirmationDialog("Set up printer?", isPresented: $confirmingSetup, titleVisibility: .visible) {
+                Button("Feed labels and set up") { setUpPrinter() }
+                    .accessibilityIdentifier("host-setup-printer-confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates.")
+            }
+        if let text = setupMessage {
+            Text(text)
+                .font(FavorType.utility(14))
+                .foregroundStyle(setupFailed ? FavorColor.warning : FavorColor.mutedInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("host-setup-printer-status")
+        }
+    }
+
+    private var setupFailed: Bool {
+        if case .failed = setupResult, !host.isSettingUpPrinter { true } else { false }
+    }
+
+    private var setupMessage: String? {
+        if host.isSettingUpPrinter { return "Setting up the printer. Labels are feeding." }
+        switch setupResult {
+        case .done: return "Printer set up."
+        case .failed(let step, let error): return "\(step.title) failed: \(PrinterSetup.reason(for: error, step: step))"
+        case .busy, nil: return nil
+        }
+    }
+
+    private func setUpPrinter() {
+        setupResult = nil
+        Task {
+            let outcome = await host.setUpPrinter()
+            if outcome != .busy { setupResult = outcome }
         }
     }
 
