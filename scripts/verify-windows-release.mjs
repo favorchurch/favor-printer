@@ -14,7 +14,7 @@
  * Prints the installer's sha256 for the release notes and checksum file.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,9 +46,10 @@ export function verifyWindowsRelease({ dir, channel, version, sourceDir = path.j
   return { manifest: manifests[0], installer, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-// fileURLToPath decodes %20 and drive letters; a mismatch here would skip every
+// fileURLToPath decodes %20 and drive letters; realpath matches Node's resolved
+// module URL (macOS /var and /tmp are symlinks). A mismatch here would skip every
 // check and exit 0, so the release gate would fail open.
-const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const arg = (name) => {
     const index = process.argv.indexOf(`--${name}`);
