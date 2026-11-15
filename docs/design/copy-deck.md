@@ -177,6 +177,10 @@ This flow appears when a MacBook has the previous background launchd relay servi
 - **Primary Action (processing):** `Turning it off...`
 - **Secondary Action:** `Cancel`
 
+### Code Screen While Pairing Again (`code`, enrolled laptop)
+- **Hint:** `This laptop keeps printing with its current pairing until the new code works.`
+- **Secondary Action:** `Cancel` (back to the status screen; the current pairing is untouched)
+
 ---
 
 ## 3. Persistent Standalone Screens
@@ -204,7 +208,19 @@ This flow appears when a MacBook has the previous background launchd relay servi
   - `downloading`: `Downloading update...`
   - `ready`: `Update ready. Restart to apply.`
   - `error`: `Update check failed.`
+- **No Enabled Printer (status detail and recovery line):** Shown when Favor RSVP answers but lists no enabled printer for this laptop (the cloud printer was turned off, removed or handed over). The pill reads `Needs attention` (RSVP did answer, so it is not `Waiting for connection`). It also applies before any heartbeat, when the relay reports `config_invalid` or `printer_handed_over`.
+  - Detail Text: `RSVP has no enabled printer for this laptop, so nothing can print.`
+  - Recovery Line: `Ask an admin to turn the printer on in RSVP printing settings, or pair with a new code.`
+- **Failed New Code Note (status screen, after a new code did not work while pairing again):** `[reason copy] This laptop is still printing with its current pairing.`
 - **Primary Action:** `Close`
+- **Secondary Action (enrolled laptops only):** `Pair with a new code`. Asks first (see below). It runs the same path as the tray's `Enter a new code...`.
+
+### Pair With a New Code Confirmation (`reenroll-confirm`)
+- **Window Title (`h1`):** `Pair with a new code?`
+- **Lead Text:** `This laptop keeps printing with its current pairing until a new code works.`
+- **Hint:** `Ask an admin for a six-digit code in Favor RSVP first. Cancel if you do not have one yet.`
+- **Primary Action:** `Pair with a new code` (opens the code screen)
+- **Secondary Action:** `Cancel`
 
 ---
 

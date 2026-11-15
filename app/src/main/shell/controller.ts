@@ -6,8 +6,12 @@
  */
 
 import {
+  hasNoEnabledPrinters,
   isEnrollmentCode,
   isUsableUsbSerial,
+  NO_ENABLED_PRINTERS_DETAIL,
+  NO_ENABLED_PRINTERS_HEADLINE,
+  NO_ENABLED_PRINTERS_RECOVERY,
   isUpdateChannel,
   type AppSnapshot,
   type EnrollResult,
@@ -111,6 +115,11 @@ export type AppController = {
   /** Menu actions that combine a request with the confirmation question. */
   testPrintFromMenu(): Promise<void>;
   beginReenroll(): void;
+  /** Leaves the code step without a new code. The current pairing was never touched. */
+  cancelReenroll(): AppSnapshot;
+  /** Shows and focuses the window on whatever step it is on, including an open code screen. */
+  showSetup(): void;
+  /** Shows the window at status, abandoning an open re-pair. */
   openSetup(): void;
 
   setUpdateState(state: UpdateState): void;
@@ -147,6 +156,8 @@ export function createAppController(deps: ControllerDeps): AppController {
   let paused = false;
   let update: UpdateState = { kind: "idle" };
   let setupStep: SetupStep | null = null;
+  /** The volunteer is pairing again while the saved pairing keeps printing. Not saved: a restart drops it. */
+  let reenrolling = false;
   let testPrintConfirmed = false;
   let power: PowerContext = {};
   let scanning: Promise<void> | null = null;
@@ -248,7 +259,12 @@ export function createAppController(deps: ControllerDeps): AppController {
     };
     const derived = deriveStatus(statusInputs);
     const fiveStateResult = deriveFiveState(statusInputs);
-    const status = legacyLoaded && migrationFailed && derived.color !== "red" ? { ...derived, detail: LEGACY_FAILED_DETAIL } : derived;
+    const noEnabledPrinters = hasNoEnabledPrinters(fiveStateResult.state, relay);
+    const status = noEnabledPrinters
+      ? { color: "amber" as const, headline: NO_ENABLED_PRINTERS_HEADLINE, detail: NO_ENABLED_PRINTERS_DETAIL }
+      : legacyLoaded && migrationFailed && derived.color !== "red"
+        ? { ...derived, detail: LEGACY_FAILED_DETAIL }
+        : derived;
     const warnings = powerWarnings({ onBattery: power.onBattery === true });
     if (power.asleep) warnings.push(ASLEEP_WARNING);
     if (power.locked) warnings.push(LOCKED_WARNING);
@@ -257,8 +273,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     return {
       version: deps.version,
       status,
-      fiveState: fiveStateResult.state,
-      recoveryAction: fiveStateResult.recoveryAction,
+      fiveState: noEnabledPrinters ? "Waiting" : fiveStateResult.state,
+      recoveryAction: noEnabledPrinters ? NO_ENABLED_PRINTERS_RECOVERY : fiveStateResult.recoveryAction,
       enrolled,
       label: current.label,
       printerName: enrolled ? current.printerName : null,
@@ -288,9 +304,19 @@ export function createAppController(deps: ControllerDeps): AppController {
     deps.power.update({ printerAttached, lastJobAt: supervisorState.relay?.lastJobAt ?? null });
   }
 
+  /** A new code that did not work while pairing again: the old pairing carries on and the window goes back to status. */
+  function leaveRepairAfterFailure(): boolean {
+    if (!reenrolling) return false;
+    reenrolling = false;
+    setupStep = null;
+    emit();
+    return true;
+  }
+
   const setStep = (step: SetupStep | null) => {
     const previous = setupStep;
     setupStep = step;
+    if (step === null) reenrolling = false;
     if (step === null && previous !== null) {
       // Setup closes without a successful enrollment keeping the conflict it reported.
       inUseElsewhere = false;
@@ -316,6 +342,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     // The token is dead: do not keep it, and stop the relay asking with it.
     await secrets.clear().catch(() => undefined);
     await supervisor.stop();
+    reenrolling = false;
     if (setupStep !== null) setupStep = "code";
     revoking = false;
     emit();
@@ -457,7 +484,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     legacyLoaded,
     step: setupStep,
     printerReady: printerReady(scan),
-    enrolled,
+    // Pairing again must not skip the code step because the old pairing is still saved.
+    enrolled: enrolled && !reenrolling,
     revoked: prefs.get().revoked,
     cloudOk: supervisorState.relay?.cloud === "ok",
     testPrintConfirmed,
@@ -525,7 +553,9 @@ export function createAppController(deps: ControllerDeps): AppController {
         if (!isUsableUsbSerial(usbSerial)) {
           log("warn", "enroll", "enrollment not sent: printer_not_found, printer serial missing");
           // Back to the plug-in step; the code can be entered again once the printer is seen.
-          if (setupStep === "code") {
+          if (leaveRepairAfterFailure()) {
+            // Pairing again: nothing was sent, so the old pairing carries on and the window goes back to status.
+          } else if (setupStep === "code") {
             setupStep = "printer";
             emit();
           }
@@ -539,12 +569,14 @@ export function createAppController(deps: ControllerDeps): AppController {
           osVersion: deps.osVersion,
         });
         if (!outcome.ok) {
+          const wasReenrolling = leaveRepairAfterFailure();
           // Never the code, the token or the serial: only whether a serial was there.
           const status = outcome.status === undefined ? "" : ` (HTTP ${outcome.status})`;
           const detail = outcome.reason === "printer_conflict" ? ` (${outcome.conflict})` : "";
           log("warn", "enroll", `enrollment failed: ${outcome.reason}${detail}${status}, printer serial ${usbSerial ? "present" : "missing"}`);
           if (outcome.reason === "printer_conflict" && outcome.conflict === "serial_in_use") {
-            inUseElsewhere = true;
+            // While pairing again the old pairing still prints: the conflict is shown on the code screen only.
+            if (!wasReenrolling) inUseElsewhere = true;
             emit();
           }
           return outcome.reason === "printer_conflict"
@@ -564,6 +596,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false }).catch(() => undefined);
         log("info", "enroll", "enrolled this laptop");
         enrolled = true;
+        reenrolling = false;
         inUseElsewhere = false;
         testPrintConfirmed = false;
         setupStep = "connected";
@@ -693,13 +726,30 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     beginReenroll() {
+      // A swap, not a teardown: the saved pairing and the relay stay as they are until a new code is accepted.
       inUseElsewhere = false;
+      reenrolling = enrolled && !prefs.get().revoked;
       setupStep = "code";
       emit();
       deps.ui.showSetupWindow();
     },
 
+    cancelReenroll() {
+      if (reenrolling) {
+        reenrolling = false;
+        setupStep = null;
+        emit();
+      }
+      return snapshot();
+    },
+
     openSetup() {
+      // Reopening after leaving the code screen starts from the status screen, not from a half-finished re-pair.
+      if (reenrolling) controller.cancelReenroll();
+      controller.showSetup();
+    },
+
+    showSetup() {
       deps.ui.showSetupWindow();
       void syncCloudNames();
     },

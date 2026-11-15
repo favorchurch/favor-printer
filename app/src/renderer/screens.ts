@@ -4,7 +4,7 @@
  * actions. Nothing here shows ZPL or a security code.
  */
 
-import { isEnrollmentCode, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
+import { isEnrollmentCode, NO_ENABLED_PRINTERS_RECOVERY, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
 import { h } from "./dom";
 import {
   boundPrinterText,
@@ -34,6 +34,13 @@ export type Actions = {
   cancelMigrateLegacy(): void;
   /** Confirmed: turns the old relay off. */
   migrateLegacy(): void;
+  /** "Pair with a new code": asks for confirmation, changes nothing yet. */
+  askReenroll(): void;
+  cancelReenroll(): void;
+  /** Confirmed: opens the code step. The current pairing keeps printing until a new code is accepted. */
+  reenroll(): void;
+  /** Leaves the code step of a re-pair and goes back to the status screen. */
+  leaveReenroll(): void;
   /** Saves the typed name. The screen reads the input itself: it is not kept in local state. */
   renameLaptop(name: string): void;
   renamePrinter(name: string): void;
@@ -295,7 +302,8 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
           h("label", { for: "code", class: "field-label" }, "Six-digit code"),
           input,
           error ? h("p", { id: "code-error", class: "note error", role: "alert" }, error) : h("p", { id: "code-help", class: "hint" }, "Numbers only."),
-          actions(submit),
+          snapshot.enrolled ? h("p", { class: "hint" }, "This laptop keeps printing with its current pairing until the new code works.") : null,
+          actions(submit, ...(snapshot.enrolled ? [button("Cancel", a.leaveReenroll, { disabled: local.busy })] : [])),
         ),
       );
     }
@@ -360,6 +368,19 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         actions(button("Enter a new code", a.advance, { primary: true })),
       );
 
+    case "reenroll-confirm":
+      return frame(
+        screen,
+        snapshot,
+        "Pair with a new code?",
+        lead("This laptop keeps printing with its current pairing until a new code works."),
+        h("p", { class: "hint" }, "Ask an admin for a six-digit code in Favor RSVP first. Cancel if you do not have one yet."),
+        actions(
+          button("Pair with a new code", a.reenroll, { primary: true, disabled: local.busy }),
+          button("Cancel", a.cancelReenroll, { disabled: local.busy }),
+        ),
+      );
+
     case "status": {
       const seenAt = lastSeenTime(snapshot);
       const backlogWarning = snapshot.warnings.find((warning) => warning.startsWith("Print backlog is "));
@@ -369,8 +390,9 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         "Favor Printer",
         statusPill(snapshot),
         snapshot.status.detail ? lead(snapshot.status.detail) : null,
+        codeErrorCopy(local) ? note(`${codeErrorCopy(local)} This laptop is still printing with its current pairing.`, "error") : null,
         snapshot.fiveState && snapshot.recoveryAction
-          ? h("p", { class: "recovery-action hint" }, `${snapshot.fiveState}: ${snapshot.recoveryAction}`)
+          ? h("p", { class: "recovery-action hint" }, snapshot.recoveryAction === NO_ENABLED_PRINTERS_RECOVERY ? snapshot.recoveryAction : `${snapshot.fiveState}: ${snapshot.recoveryAction}`)
           : null,
         seenAt ? h("p", { class: "hint" }, `Not seen since ${seenAt}`) : null,
         backlogWarning ? note(backlogWarning) : null,
@@ -385,7 +407,10 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
           h("p", { class: "hint" }, `Version ${snapshot.version} (${channelLabel(snapshot.channel)})`),
           h("p", { class: "hint" }, updateStatusText(snapshot.update)),
         ),
-        actions(button("Close", a.closeWindow, { primary: true })),
+        actions(
+          button("Close", a.closeWindow, { primary: true }),
+          ...(snapshot.enrolled ? [button("Pair with a new code", a.askReenroll, { disabled: local.busy })] : []),
+        ),
       );
     }
   }

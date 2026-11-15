@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { IPC_CHANNELS, type FavorPrinterApi } from "../../shared";
 import {
+  apiFromController,
   handlersFor,
   InvalidPayloadError,
   isTrustedSender,
@@ -37,6 +38,8 @@ function setup(trusted = true) {
     renameLaptop: vi.fn(async () => ({ ok: true }) as const),
     renamePrinter: vi.fn(async () => ({ ok: true }) as const),
     advance: vi.fn(async () => snapshotFor()),
+    beginReenroll: vi.fn(async () => snapshotFor()),
+    cancelReenroll: vi.fn(async () => snapshotFor()),
     quit: vi.fn(async () => undefined),
   } satisfies Omit<FavorPrinterApi, "onSnapshot">;
   const onRejected = vi.fn();
@@ -76,6 +79,8 @@ describe("payload validation", () => {
     [IPC_CHANNELS.requestTestPrint, "requestTestPrint"],
     [IPC_CHANNELS.migrateLegacyRelay, "migrateLegacyRelay"],
     [IPC_CHANNELS.advance, "advance"],
+    [IPC_CHANNELS.beginReenroll, "beginReenroll"],
+    [IPC_CHANNELS.cancelReenroll, "cancelReenroll"],
     [IPC_CHANNELS.quit, "quit"],
   ] as const;
 
@@ -175,6 +180,54 @@ describe("migrateLegacyRelay", () => {
     const { invoke, api } = setup(false);
     await expect(invoke(IPC_CHANNELS.migrateLegacyRelay)).rejects.toBeInstanceOf(InvalidPayloadError);
     expect(api.migrateLegacyRelay).not.toHaveBeenCalled();
+  });
+});
+
+describe("beginReenroll", () => {
+  it("opens the code step for a trusted sender, once", async () => {
+    const { invoke, api } = setup();
+    await invoke(IPC_CHANNELS.beginReenroll);
+    expect(api.beginReenroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("is refused for an untrusted sender, so no other page can open the pairing screen", async () => {
+    const { invoke, api, onRejected } = setup(false);
+    await expect(invoke(IPC_CHANNELS.beginReenroll)).rejects.toBeInstanceOf(InvalidPayloadError);
+    expect(api.beginReenroll).not.toHaveBeenCalled();
+    expect(onRejected).toHaveBeenCalledWith(IPC_CHANNELS.beginReenroll, "untrusted_sender");
+  });
+
+  it("the controller mapping runs the tray's path and answers with the code step", async () => {
+    const controller = {
+      beginReenroll: vi.fn(),
+      snapshot: vi.fn(() => snapshotFor({ setupStep: "code" })),
+    };
+    const api = apiFromController(controller as unknown as Parameters<typeof apiFromController>[0], async () => undefined);
+    const snapshot = await api.beginReenroll();
+    expect(controller.beginReenroll).toHaveBeenCalledTimes(1);
+    expect(snapshot.setupStep).toBe("code");
+  });
+});
+
+describe("cancelReenroll", () => {
+  it("leaves the code step for a trusted sender", async () => {
+    const { invoke, api } = setup();
+    await invoke(IPC_CHANNELS.cancelReenroll);
+    expect(api.cancelReenroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("is refused for an untrusted sender", async () => {
+    const { invoke, api, onRejected } = setup(false);
+    await expect(invoke(IPC_CHANNELS.cancelReenroll)).rejects.toBeInstanceOf(InvalidPayloadError);
+    expect(api.cancelReenroll).not.toHaveBeenCalled();
+    expect(onRejected).toHaveBeenCalledWith(IPC_CHANNELS.cancelReenroll, "untrusted_sender");
+  });
+
+  it("the controller mapping answers with the controller's snapshot", async () => {
+    const controller = { cancelReenroll: vi.fn(() => snapshotFor({ setupStep: null })) };
+    const api = apiFromController(controller as unknown as Parameters<typeof apiFromController>[0], async () => undefined);
+    expect((await api.cancelReenroll()).setupStep).toBeNull();
+    expect(controller.cancelReenroll).toHaveBeenCalledTimes(1);
   });
 });
 

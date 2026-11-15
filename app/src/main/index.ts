@@ -145,6 +145,8 @@ async function runApp(): Promise<void> {
     activate: () => app.focus({ steal: true }),
     dock: app.dock,
     dockHiddenAt,
+    // Closing the window (button or Cmd+W) abandons a re-pair: the old pairing carries on and the tray returns to normal.
+    onClosed: () => void controller.cancelReenroll(),
   });
   setupWindowRef.current = windows;
 
@@ -201,7 +203,7 @@ async function runApp(): Promise<void> {
     applyOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     log,
   });
-  wireActivate(app, () => controller.openSetup());
+  wireActivate(app, () => controller.showSetup());
 
   // Quit: stop the relay (waiting for a send that is writing, and staying open while one still is),
   // then let an update install if the policy allows it, then exit.

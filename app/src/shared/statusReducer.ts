@@ -80,6 +80,32 @@ export const RECOVERY_ACTIONS: Record<FiveState, string> = {
   "In use elsewhere": "Ask an admin to disconnect this printer from the other laptop.",
 };
 
+/** Shown when RSVP answers but lists no enabled printer for this laptop (turned off, removed or handed over). */
+export const NO_ENABLED_PRINTERS_DETAIL = "RSVP has no enabled printer for this laptop, so nothing can print.";
+export const NO_ENABLED_PRINTERS_RECOVERY =
+  "Ask an admin to turn the printer on in RSVP printing settings, or pair with a new code.";
+
+/** Pill label for the same state. RSVP did answer, so it is not "Waiting for connection". */
+export const NO_ENABLED_PRINTERS_HEADLINE = "Needs attention";
+
+/**
+ * True when RSVP lists no enabled printer for this laptop, whatever the local printer is doing.
+ * The relay reports cloud "ok" only after RSVP answered its config request, so a running or paused
+ * relay with an ok cloud and an empty printer list is RSVP's answer. A printer that was turned off,
+ * removed or handed over never gets a heartbeat, so lastHeartbeatAt and lastError can both stay null.
+ */
+export function hasNoEnabledPrinters(
+  state: FiveState,
+  relay: { state: string; cloud: string; printerIds: readonly string[] } | null,
+): boolean {
+  // RSVP's answer does not depend on the local printer, so an unplugged or unknown printer does not hide it.
+  // The two states that mean this laptop's own pairing is wrong keep their own recovery.
+  if (state === "Needs re-enrollment" || state === "In use elsewhere" || relay === null || relay.cloud !== "ok") return false;
+  // Starting, restarting and stopped relays have not asked RSVP anything yet; a paused relay already has its answer.
+  if (relay.state !== "running" && relay.state !== "paused") return false;
+  return relay.printerIds.length === 0;
+}
+
 export type PrinterSignal =
   | { type: "printer_attached" }
   | { type: "printer_unplugged" }

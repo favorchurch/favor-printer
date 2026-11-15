@@ -25,6 +25,8 @@ export const IPC_CHANNELS = {
   renameLaptop: "favor-printer:rename-laptop",
   renamePrinter: "favor-printer:rename-printer",
   advance: "favor-printer:advance",
+  beginReenroll: "favor-printer:begin-reenroll",
+  cancelReenroll: "favor-printer:cancel-reenroll",
   quit: "favor-printer:quit",
 } as const;
 
@@ -80,6 +82,10 @@ export type FavorPrinterApi = {
   renamePrinter(name: string): Promise<RenameResult>;
   /** Moves the setup window to its next step. Main decides whether the step is reachable. */
   advance(): Promise<AppSnapshot>;
+  /** The tray's "Enter a new code...": opens the code step. The saved pairing keeps printing until a new code is accepted. */
+  beginReenroll(): Promise<AppSnapshot>;
+  /** Leaves the code step of a re-pair. The saved pairing was never touched. */
+  cancelReenroll(): Promise<AppSnapshot>;
   quit(): Promise<void>;
 };
 

@@ -54,6 +54,8 @@ export const VALIDATORS: Record<InvokeChannels, Validator<never[]> | Validator<[
   [IPC_CHANNELS.renameLaptop]: one(isRenameInput),
   [IPC_CHANNELS.renamePrinter]: one(isRenameInput),
   [IPC_CHANNELS.advance]: none,
+  [IPC_CHANNELS.beginReenroll]: none,
+  [IPC_CHANNELS.cancelReenroll]: none,
   [IPC_CHANNELS.quit]: none,
 };
 
@@ -80,6 +82,8 @@ export function handlersFor(api: Omit<FavorPrinterApi, "onSnapshot">): IpcHandle
     [IPC_CHANNELS.renameLaptop]: (label: string) => api.renameLaptop(label),
     [IPC_CHANNELS.renamePrinter]: (name: string) => api.renamePrinter(name),
     [IPC_CHANNELS.advance]: () => api.advance(),
+    [IPC_CHANNELS.beginReenroll]: () => api.beginReenroll(),
+    [IPC_CHANNELS.cancelReenroll]: () => api.cancelReenroll(),
     [IPC_CHANNELS.quit]: () => api.quit(),
   };
 }
@@ -102,6 +106,11 @@ export function apiFromController(controller: AppController, quit: () => Promise
     renameLaptop: (label) => controller.renameLaptop(label),
     renamePrinter: (name) => controller.renamePrinter(name),
     advance: () => controller.advance(),
+    cancelReenroll: async () => controller.cancelReenroll(),
+    beginReenroll: async () => {
+      controller.beginReenroll();
+      return controller.snapshot();
+    },
     quit,
   };
 }
