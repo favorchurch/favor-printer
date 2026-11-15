@@ -77,9 +77,23 @@ enum HostTransportMode: Sendable, Equatable {
         #endif
     }
 
+    static let fakeSendDelayArgument = "-FavorHostFakeSendDelayMs"
+    static let fakeSetupFailureArgument = "-FavorHostFakeSetupFailure"
+
+    #if DEBUG
+    /// The fake printer for UI runs. `-FavorHostFakeSendDelayMs <n>` slows every send and `-FavorHostFakeSetupFailure`
+    /// fails the calibrate step of the set-up action, to show its in-progress and failed states.
+    static func makeFake(arguments: [String]) -> FakeUsbTransport {
+        func value(_ name: String) -> Int? {
+            arguments.firstIndex(of: name).flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil }
+        }
+        return FakeUsbTransport(sendDelay: .milliseconds(value(fakeSendDelayArgument) ?? 0), failingPayload: arguments.contains(fakeSetupFailureArgument) ? PrinterSetup.calibrateCommand : nil)
+    }
+    #endif
+
     func makeTransport() -> any UsbPrinterTransport {
         #if DEBUG
-        if self == .fake { return FakeUsbTransport() }
+        if self == .fake { return Self.makeFake(arguments: CommandLine.arguments) }
         #endif
         return DriverKitUsbTransport()
     }
@@ -312,6 +326,25 @@ final class HostController {
         #else
         return nil
         #endif
+    }
+
+    private(set) var isSettingUpPrinter = false
+
+    /// Sets the printer up for continuous media: three commands, one write each. The loop is stopped before the first
+    /// byte and reconciled after, so no label job interleaves. It runs in the lifecycle queue. A second request while
+    /// one is running returns `.busy`.
+    func setUpPrinter() async -> PrinterSetup.Outcome {
+        guard !isSettingUpPrinter else { return .busy }
+        isSettingUpPrinter = true
+        defer { isSettingUpPrinter = false }
+        return await schedule { await self.performSetUpPrinter() }.value
+    }
+
+    private func performSetUpPrinter() async -> PrinterSetup.Outcome {
+        await stopLoop()
+        let outcome = await PrinterSetup.run(on: transport)
+        await reconcile()
+        return outcome
     }
 
     #if DEBUG

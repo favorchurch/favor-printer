@@ -19,9 +19,15 @@ actor FakeUsbTransport: UsbPrinterTransport {
     private var scriptedStatus: UsbPrinterStatus
     private var sendScript: [Result<Int, UsbTransportError>] = []
     private var readScript: [Result<Data, UsbTransportError>] = []
+    private let sendDelay: Duration
+    private let failingPayload: Data?
 
-    init(status: UsbPrinterStatus = FakeUsbTransport.readyStatus) {
+    /// `sendDelay` makes every send slow and `failingPayload` makes a send of exactly that payload fail, so simulator
+    /// UI runs can show the in-progress and failed states of a multi-step action.
+    init(status: UsbPrinterStatus = FakeUsbTransport.readyStatus, sendDelay: Duration = .zero, failingPayload: Data? = nil) {
         scriptedStatus = status
+        self.sendDelay = sendDelay
+        self.failingPayload = failingPayload
     }
 
     func setStatus(_ status: UsbPrinterStatus) {
@@ -43,6 +49,8 @@ actor FakeUsbTransport: UsbPrinterTransport {
 
     func send(_ zpl: Data) async -> Result<Int, UsbTransportError> {
         writes.append(zpl)
+        if sendDelay > .zero { try? await Task.sleep(for: sendDelay) }
+        if zpl == failingPayload { return .failure(.notAttached) }
         return sendScript.isEmpty ? .success(zpl.count) : sendScript.removeFirst()
     }
 

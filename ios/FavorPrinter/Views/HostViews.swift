@@ -7,6 +7,8 @@ struct HostStatusView: View {
     let host: HostController
     @State private var code = ""
     @State private var confirmingUnenroll = false
+    @State private var confirmingSetup = false
+    @State private var setupState = SetupState.idle
     #if DEBUG
     @State private var printerReading: PrinterStatusReading?
     #endif
@@ -93,7 +95,36 @@ struct HostStatusView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("host-driver-hint")
             }
+            if host.status.printerAttached == true { setupPrinterControls }
         }
+    }
+
+    @ViewBuilder
+    private var setupPrinterControls: some View {
+        Button("Set up printer") { confirmingSetup = true }
+            .buttonStyle(FavorPrimaryButtonStyle())
+            .disabled(setupState == .running)
+            .accessibilityLabel("Set up printer")
+            .accessibilityIdentifier("host-setup-printer")
+            .confirmationDialog("Set up this printer?", isPresented: $confirmingSetup, titleVisibility: .visible) {
+                Button("Feed labels and set up") { setUpPrinter() }
+                    .accessibilityIdentifier("host-setup-printer-confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The printer will feed blank labels and the cutter will run. Make sure it has labels loaded and nothing is in the way of the cutter.")
+            }
+        if let text = setupState.message {
+            Text(text)
+                .font(FavorType.utility(14))
+                .foregroundStyle(setupState.isFailure ? FavorColor.warning : FavorColor.mutedInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("host-setup-printer-status")
+        }
+    }
+
+    private func setUpPrinter() {
+        setupState = .running
+        Task { setupState = SetupState(await host.setUpPrinter()) }
     }
 
     private var printerText: String {
@@ -282,6 +313,35 @@ struct HostStatusView: View {
         let entered = code
         Task {
             if await host.enroll(code: entered) == nil { code = "" }
+        }
+    }
+}
+
+/// What the "Set up printer" control shows. Never ZPL, only the step that failed and the typed reason.
+enum SetupState: Equatable {
+    case idle
+    case running
+    case done
+    case failed(String)
+
+    init(_ outcome: PrinterSetup.Outcome) {
+        switch outcome {
+        case .done: self = .done
+        case .busy: self = .running
+        case .failed(let step, let error): self = .failed("\(step.title) failed: \(error)")
+        }
+    }
+
+    var isFailure: Bool {
+        if case .failed = self { true } else { false }
+    }
+
+    var message: String? {
+        switch self {
+        case .idle: nil
+        case .running: "Setting up the printer. Labels are feeding."
+        case .done: "Printer set up."
+        case .failed(let reason): reason
         }
     }
 }
