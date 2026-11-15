@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { IPC_CHANNELS } from "../../shared";
-import { createSetupWindowManager, setupWindowOptions, type WindowLike, type WindowOptions } from "./windows";
+import { createSetupWindowManager, DOCK_HIDE_COOLDOWN_MS, setupWindowOptions, type WindowLike, type WindowOptions } from "./windows";
 import { snapshotFor } from "./testing/snapshot";
 
 function fakeWindow(id = 11) {
@@ -241,5 +241,116 @@ describe("createSetupWindowManager", () => {
     manager.show();
     expect(() => created[0].handlers["ready-to-show"]()).not.toThrow();
     expect(created[0].window.show).toHaveBeenCalledTimes(1);
+  });
+
+  it("defers dock.hide() when closing soon after a startup hide", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const created: ReturnType<typeof fakeWindow>[] = [];
+      const dock = { show: vi.fn(), hide: vi.fn() };
+      const manager = createSetupWindowManager({
+        create: () => {
+          const fake = fakeWindow(30 + created.length);
+          created.push(fake);
+          return fake.window as unknown as WindowLike;
+        },
+        preloadPath: "/p.js",
+        pagePath: "/p.html",
+        dock,
+        dockHiddenAt: 0,
+      });
+
+      vi.setSystemTime(200);
+      manager.show();
+      created[0].handlers["ready-to-show"]();
+      expect(dock.show).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(400);
+      manager.close();
+      // Within Electron's 1s suppression window: must defer instead of calling hide() immediately.
+      expect(dock.hide).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(DOCK_HIDE_COOLDOWN_MS - 400 - 1);
+      expect(dock.hide).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("defers dock.hide() across rapid close/reopen/close and cancels pending hide when reopened", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(5000);
+      const { manager, created, dock } = setup();
+
+      manager.show();
+      created[0].handlers["ready-to-show"]();
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+
+      // Reopen and close within the cooldown window: second hide must be deferred.
+      vi.setSystemTime(5100);
+      manager.show();
+      created[1].handlers["ready-to-show"]();
+      vi.setSystemTime(5300);
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+
+      // Reopen before the deferred hide fires: pending hide must be cancelled.
+      vi.setSystemTime(5500);
+      manager.show();
+      created[2].handlers["ready-to-show"]();
+      vi.advanceTimersByTime(DOCK_HIDE_COOLDOWN_MS);
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+
+      // Closing after the cooldown has elapsed hides immediately again.
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(2);
+
+      // Closing again within the new cooldown defers until the cooldown expires.
+      vi.advanceTimersByTime(200);
+      manager.show();
+      created[3].handlers["ready-to-show"]();
+      vi.advanceTimersByTime(100);
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(DOCK_HIDE_COOLDOWN_MS - 300);
+      expect(dock.hide).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("calls onClosed once when the current window closes, and ignores stale windows", () => {
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const onClosed = vi.fn();
+    const manager = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(40 + created.length);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      onClosed,
+    });
+
+    manager.show();
+    created[0].destroy();
+    // Opening a replacement window makes created[0] stale.
+    manager.show();
+    created[0].handlers.closed();
+    expect(onClosed).not.toHaveBeenCalled();
+
+    manager.close();
+    expect(onClosed).toHaveBeenCalledTimes(1);
+    // Repeated closed event on the already-closed window is ignored.
+    created[1].handlers.closed();
+    expect(onClosed).toHaveBeenCalledTimes(1);
   });
 });
