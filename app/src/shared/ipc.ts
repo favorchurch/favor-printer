@@ -82,7 +82,7 @@ export type FavorPrinterApi = {
   renamePrinter(name: string): Promise<RenameResult>;
   /** Moves the setup window to its next step. Main decides whether the step is reachable. */
   advance(): Promise<AppSnapshot>;
-  /** The tray's "Enter a new code...": opens the code step. Printing stays off until a new code is entered. */
+  /** The tray's "Enter a new code...": opens the code step. The saved pairing keeps printing until a new code is accepted. */
   beginReenroll(): Promise<AppSnapshot>;
   /** Leaves the code step of a re-pair. The saved pairing was never touched. */
   cancelReenroll(): Promise<AppSnapshot>;

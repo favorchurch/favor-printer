@@ -744,8 +744,8 @@ describe("enroll", () => {
   });
 
   describe("pairing again (a swap, not a teardown)", () => {
-    const rejecting = (reason: "invalid_code" | "expired_code"): Partial<HarnessOptions> => ({
-      enroll: async () => ({ ok: false, reason }) as EnrollOutcome,
+    const rejecting = (reason: "invalid_code" | "code_expired"): Partial<HarnessOptions> => ({
+      enroll: async (): Promise<EnrollOutcome> => ({ ok: false, reason }),
     });
 
     it("keeps the old pairing, the relay and printing while the code screen is open", async () => {
@@ -767,10 +767,10 @@ describe("enroll", () => {
       expect((await h.controller.advance()).setupStep).toBe("code");
     });
 
-    it("an invalid code leaves the old pairing printing and the code screen open", async () => {
-      const h = await started({ ...ENROLLED, ...rejecting("invalid_code") });
+    it.each(["invalid_code", "code_expired"] as const)("a %s leaves the old pairing printing and the code screen open", async (reason) => {
+      const h = await started({ ...ENROLLED, ...rejecting(reason) });
       h.controller.beginReenroll();
-      await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: false, reason: "invalid_code" });
+      await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: false, reason });
       expect(h.controller.snapshot().enrolled).toBe(true);
       expect(h.secrets.clear).not.toHaveBeenCalled();
       expect(h.forks.children).toHaveLength(1);
@@ -817,7 +817,14 @@ describe("enroll", () => {
     it("a restart mid re-pair comes back printing on the old pairing, at status", async () => {
       const first = await started({ ...ENROLLED });
       first.controller.beginReenroll();
-      const restarted = await started({ ...ENROLLED });
+      expect(first.secrets.clear).not.toHaveBeenCalled();
+      // The restart sees exactly what the first run left on disk: its saved prefs and its stored credentials.
+      const restarted = await started({
+        prefs: { ...first.prefsFs.saved() },
+        credentials: await first.secrets.load(),
+        scan: foundPrinter(),
+      });
+      expect(first.prefsFs.saved()).not.toMatchObject({ revoked: true });
       const snap = restarted.controller.snapshot();
       expect(snap.enrolled).toBe(true);
       expect(snap.setupStep).toBeNull();

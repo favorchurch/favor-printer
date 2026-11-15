@@ -33,7 +33,7 @@ export type ScreenId =
   | "test-print"
   | "done"
   | "revoked"
-  /** Asks the volunteer to confirm before this laptop stops printing for a new code. */
+  /** Asks the volunteer to confirm before pairing with a new code. The saved pairing keeps printing until the new code is accepted. */
   | "reenroll-confirm"
   | "status";
 
