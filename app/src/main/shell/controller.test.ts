@@ -1172,6 +1172,194 @@ describe("test print", () => {
   });
 });
 
+describe("set up printer", () => {
+  it("runs the setup on the queue the scan resolved and returns its result", async () => {
+    const h = await started();
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    expect(await pending).toEqual({ ok: true });
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith("Favor_S1");
+  });
+
+  it("passes no queue when no printer is attached, so nothing is sent and the relay is left alone", async () => {
+    const h = await started({ ...ENROLLED, scan: NO_PRINTER });
+    h.printerSetup.run.mockResolvedValueOnce({ ok: false, reason: "no-queue" });
+    expect(await h.controller.configurePrinter()).toEqual({ ok: false, reason: "no-queue" });
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("never uses a remembered queue name when the scan has no ready queue", async () => {
+    const h = await started({ ...ENROLLED, scan: foundPrinter("missing"), prefs: { ...ENROLLED.prefs, queue: "Remembered" } });
+    await h.controller.configurePrinter();
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("passes no queue when the printer's queue is disabled", async () => {
+    // The real printer service reports the disabled queue's name, so a stale-name bug cannot hide behind null.
+    const h = await started({ ...ENROLLED, scan: { ...foundPrinter("disabled"), queue: "Favor_S1" } });
+    await h.controller.configurePrinter();
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("passes no queue when the listing failed after a ready scan, not the stale one", async () => {
+    const h = await started();
+    h.state.scan = LIST_FAILED;
+    await h.controller.scanPrinters();
+    await h.controller.configurePrinter();
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("leaves the relay running when there is nothing to send", async () => {
+    const h = await started();
+    h.state.scan = LIST_FAILED;
+    await h.controller.scanPrinters();
+    await h.controller.configurePrinter();
+    expect(h.forks.children).toHaveLength(1);
+    expect(h.forks.last().types()).not.toContain("stop");
+  });
+
+  it("stops the relay and waits for it to exit before sending, then starts it again", async () => {
+    const h = await started();
+    const first = h.forks.last();
+    let sawStopped = false;
+    h.printerSetup.run.mockImplementationOnce(async () => {
+      sawStopped = first.types().includes("stop") && h.supervisorPhase() !== "running";
+      return { ok: true };
+    });
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(sawStopped).toBe(true);
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith("Favor_S1");
+    expect(h.forks.children).toHaveLength(2);
+  });
+
+  it("starts the relay again when setup fails", async () => {
+    const h = await started();
+    h.printerSetup.run.mockResolvedValueOnce({ ok: false, reason: "failed", step: "save" });
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    await expect(pending).resolves.toEqual({ ok: false, reason: "failed", step: "save" });
+    expect(h.forks.children).toHaveLength(2);
+  });
+
+  it("keeps the relay paused across setup", async () => {
+    const h = await started();
+    await h.controller.setPaused(true);
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    await pending;
+    expect(h.forks.last().types()).toContain("pause");
+  });
+
+  it("sends nothing while a label is still writing, and brings the relay back once it has exited", async () => {
+    const h = await started();
+    const first = h.forks.last();
+    first.emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
+    const pending = h.controller.configurePrinter();
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    await expect(pending).resolves.toEqual({ ok: false, reason: "busy" });
+    expect(h.printerSetup.run).not.toHaveBeenCalled();
+    expect(h.forks.children).toHaveLength(1);
+    first.emitMessage({ type: "stopped" });
+    first.emitExit(0);
+    await vi.waitFor(() => expect(h.forks.children).toHaveLength(2));
+  });
+
+  it("a queue-change restart in progress does not start the relay under setup, and setup resumes it", async () => {
+    const h = await started();
+    let childrenDuringRun = -1;
+    h.printerSetup.run.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      childrenDuringRun = h.forks.children.length;
+      return { ok: true };
+    });
+    h.state.scan = foundPrinter("ready", "Other_Q");
+    const scan = h.controller.scanPrinters();
+    await vi.waitFor(() => expect(h.forks.last().types()).toContain("stop"));
+    const setup = h.controller.configurePrinter();
+    h.forks.last().emitMessage({ type: "stopped" });
+    h.forks.last().emitExit(0);
+    await Promise.all([scan, setup]);
+    expect(childrenDuringRun).toBe(1);
+    expect(h.forks.children).toHaveLength(2);
+  });
+
+  it("a retry after an abandoned stop still brings the relay back", async () => {
+    const h = await started();
+    const first = h.forks.last();
+    first.emitMessage({ type: "event", event: relayStatus({ inFlight: true }) });
+    const abandoned = h.controller.configurePrinter();
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    h.timers.fire("timeout");
+    await expect(abandoned).resolves.toEqual({ ok: false, reason: "busy" });
+    first.emitMessage({ event: relayStatus({ inFlight: false }), type: "event" });
+    const retry = h.controller.configurePrinter();
+    first.emitMessage({ type: "stopped" });
+    first.emitExit(0);
+    await expect(retry).resolves.toEqual({ ok: true });
+    await vi.waitFor(() => expect(h.forks.children).toHaveLength(2));
+  });
+
+  it("a second call while setup runs is busy and sends nothing", async () => {
+    const h = await started();
+    let release: (() => void) | undefined;
+    h.printerSetup.run.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve({ ok: true }))));
+    const first = h.controller.configurePrinter();
+    await finishStop(h);
+    await vi.waitFor(() => expect(h.printerSetup.run).toHaveBeenCalledTimes(1));
+    await expect(h.controller.configurePrinter()).resolves.toEqual({ ok: false, reason: "busy" });
+    expect(h.printerSetup.run).toHaveBeenCalledTimes(1);
+    release?.();
+    await first;
+  });
+
+  it("a scan during setup does not start the relay", async () => {
+    const h = await started();
+    let release: (() => void) | undefined;
+    h.printerSetup.run.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve({ ok: true }))));
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    await vi.waitFor(() => expect(h.printerSetup.run).toHaveBeenCalledTimes(1));
+    await h.controller.scanPrinters();
+    expect(h.forks.children).toHaveLength(1);
+    release?.();
+    await pending;
+    expect(h.forks.children).toHaveLength(2);
+  });
+
+  it("returns a failed step as is and logs it without the queue name", async () => {
+    const h = await started();
+    h.printerSetup.run.mockResolvedValueOnce({ ok: false, reason: "failed", step: "calibrate" });
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    expect(await pending).toEqual({ ok: false, reason: "failed", step: "calibrate" });
+    expect(h.logLines.join("\n")).toContain("failed at calibrate");
+    expect(h.logLines.join("\n")).not.toContain("Favor_S1");
+  });
+
+  it("from the menu, asks first and reports the result", async () => {
+    const h = await started();
+    const pending = h.controller.setupPrinterFromMenu();
+    await finishStop(h);
+    await pending;
+    expect(h.ui.confirmPrinterSetup).toHaveBeenCalledTimes(1);
+    expect(h.printerSetup.run).toHaveBeenCalledTimes(1);
+    expect(h.ui.showPrinterSetupResult).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it("from the menu, sends nothing when the volunteer cancels", async () => {
+    const h = await started();
+    h.ui.confirmPrinterSetup.mockResolvedValueOnce(false);
+    await h.controller.setupPrinterFromMenu();
+    expect(h.printerSetup.run).not.toHaveBeenCalled();
+    expect(h.ui.showPrinterSetupResult).not.toHaveBeenCalled();
+  });
+});
+
 describe("pause and settings", () => {
   it("forwards pause and resume and shows them", async () => {
     const h = await started();

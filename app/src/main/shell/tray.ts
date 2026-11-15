@@ -19,6 +19,7 @@ export type TrayActions = {
   pause(): void;
   resume(): void;
   testPrint(): void;
+  setupPrinter(): void;
   openSetup(): void;
   reenroll(): void;
   /** Opens the setup window at the offer to move off the old relay. The confirmation is asked there. */
@@ -31,7 +32,10 @@ export type TrayActions = {
 
 const separator: MenuItemTemplate = { type: "separator" };
 export const LOCAL_TEST_MENU_LABEL = "Local hardware test print...";
+export const SETUP_PRINTER_MENU_LABEL = "Set up printer...";
 export const CLOUD_TEST_HINT = "Check-in test: RSVP, Set up printing";
+
+const queueReady = (snapshot: AppSnapshot) => snapshot.printer.kind === "found" && snapshot.printer.queue === "ready";
 
 const info = (label: string): MenuItemTemplate => ({ label, enabled: false });
 
@@ -83,6 +87,7 @@ export function buildMenuTemplate(snapshot: AppSnapshot, actions: TrayActions): 
       : { label: "Pause printing", enabled: canPrint, click: actions.pause },
     { label: LOCAL_TEST_MENU_LABEL, enabled: canPrint, click: actions.testPrint },
     info(CLOUD_TEST_HINT),
+    { label: SETUP_PRINTER_MENU_LABEL, enabled: canPrint && queueReady(snapshot), click: actions.setupPrinter },
     { label: "Keep printing", submenu: snapshot.warnings.map(info) },
     separator,
     {

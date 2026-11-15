@@ -57,6 +57,7 @@ const NO_ACTIONS: TrayActions = {
   pause: () => undefined,
   resume: () => undefined,
   testPrint: () => undefined,
+  setupPrinter: () => undefined,
   openSetup: () => undefined,
   reenroll: () => undefined,
   migrateLegacy: () => undefined,
@@ -121,6 +122,19 @@ async function surface(ctx: Context, extraIpc: unknown[] = []): Promise<Surface>
   ];
   for (const [channel, ...args] of calls) ipc.push(await ctx.invoke(channel, ...args));
 
+  // Printer setup stops the relay first, so this call waits for the child to say it has stopped.
+  const setup = ctx.invoke(IPC_CHANNELS.configurePrinter);
+  const relay = ctx.child();
+  // A relay that is not running has nothing to stop, so the wait is allowed to give up.
+  await vi
+    .waitFor(() => expect(relay.types()).toContain("stop"), { timeout: 50 })
+    .then(() => {
+      relay.emitMessage({ type: "stopped" });
+      relay.emitExit(0);
+    })
+    .catch(() => undefined);
+  ipc.push(await setup);
+
   const snapshots = [...ctx.pushed, ctx.h.controller.snapshot()];
   return {
     "renderer state (pushed snapshots)": snapshots,
@@ -174,11 +188,12 @@ describe("a print flow that carries names, ZPL and codes", () => {
     child().emitStdout(`${ZPL}\n${NAME_2} ${CODE_2}\n`);
     child().emitStderr(`Error: could not print ${NAME} (${CODE_2})\n${ZPL}\n`);
 
+    // The flow really ran: counts arrived (read before the surface, whose printer setup restarts the relay).
+    expect(ctx.h.controller.snapshot().recentJobs).toEqual({ sent: 2, failed: 1, ambiguous: 1 });
     const result = await surface(ctx);
     expectClean(result);
 
-    // The flow really ran: counts arrived, and relay output was logged only as fixed phrases.
-    expect(ctx.h.controller.snapshot().recentJobs).toEqual({ sent: 2, failed: 1, ambiguous: 1 });
+    // Relay output was logged only as fixed phrases.
     const logs = ctx.h.logLines.join("\n");
     expect(logs).toContain("claimed job");
     expect(logs).toContain("job will be retried");
