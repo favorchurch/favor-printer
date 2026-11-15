@@ -26,6 +26,7 @@ describe("parsePrefs", () => {
       channel: "preview",
       selectedPrinterId: "usb://z/1",
       queue: "Favor_S1",
+      pairedUsbSerial: null,
       label: "Front desk",
       printerName: "Lobby Zebra",
       campusId: 7,

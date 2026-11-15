@@ -48,6 +48,8 @@ export type PrinterScan =
   | { kind: "found"; devices: PrinterDevice[]; selectedId: string | null; queue: QueueState };
 
 export type AppSnapshot = {
+  /** Used only to give Windows-specific setup instructions. */
+  platform?: "win32" | "darwin";
   version: string;
   status: StatusSummary;
   /** Exactly one of the five operating states. */

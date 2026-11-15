@@ -63,3 +63,37 @@ jobs:
             *) manifest="release/latest-mac.yml" ;;
           esac
           test -f "${manifest}" || { echo "::error::Missing update manifest ${manifest} for version ${version}."; ls release/*-mac.yml || true; exit 1; }
+
+  # Windows host is separate from the existing macOS gate. Unsigned installer
+  # checks here are NOT physical Zebra acceptance or production release approval.
+  windows-host:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Vendor, types and tests
+        run: |
+          pnpm verify:vendor
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+      - name: Build unsigned Windows x64 host
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          pnpm build
+          pnpm exec electron-builder --win nsis --x64 --publish never
+      - name: Inspect Windows app and bundled PowerShell helpers
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'release/win-unpacked/resources/windows/probe-printers.ps1')) { throw 'missing Windows discovery helper' }
+          if (-not (Test-Path 'release/win-unpacked/resources/windows/print-raw.ps1')) { throw 'missing Windows spooler helper' }
+          $installers = @(Get-ChildItem -Path 'release' -Filter 'Favor-Printer-*.exe' -File)
+          if ($installers.Count -lt 1) { throw 'missing Windows NSIS installer' }

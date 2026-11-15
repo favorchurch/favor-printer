@@ -173,12 +173,14 @@ describe("nodeSecretFileSystem", () => {
 
       await nodeSecretFileSystem.mkdir(path.dirname(file), 0o700);
       await nodeSecretFileSystem.writeFile(file, Buffer.from("bytes"), 0o600);
-      expect((await stat(file)).mode & 0o777).toBe(0o600);
+      // NTFS has no POSIX modes; Windows relies on per-user %APPDATA% ACLs and safeStorage (DPAPI).
+      if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600);
       expect((await nodeSecretFileSystem.readFile(file))?.toString("utf8")).toBe("bytes");
 
       // A leftover file with looser permissions is tightened, not trusted.
       await nodeSecretFileSystem.writeFile(file, Buffer.from("again"), 0o600);
-      expect((await stat(file)).mode & 0o777).toBe(0o600);
+      // NTFS has no POSIX modes; Windows relies on per-user %APPDATA% ACLs and safeStorage (DPAPI).
+      if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600);
       expect((await readFile(file)).toString("utf8")).toBe("again");
 
       await nodeSecretFileSystem.remove(file);

@@ -35,7 +35,7 @@ export type LegacyRelay = {
 };
 
 export function legacyPlistPath(homeDir: string): string {
-  return path.join(homeDir, "Library", "LaunchAgents", `${LEGACY_LAUNCH_AGENT_LABEL}.plist`);
+  return path.posix.join(homeDir, "Library", "LaunchAgents", `${LEGACY_LAUNCH_AGENT_LABEL}.plist`);
 }
 
 /** `launchctl print` for a label launchd does not know: exit 113, "Could not find service ...". */

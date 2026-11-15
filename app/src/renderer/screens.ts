@@ -199,7 +199,9 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         "Plug in your Zebra printer",
-        lead("Use a USB data cable, not a charge-only cable. Plug the printer straight into this Mac and turn it on. If it is not found, unplug it and plug it back in once."),
+        lead(snapshot.platform === "win32"
+          ? "Install the official Zebra ZDesigner ZPL driver first, connect the USB Zebra directly to this Windows PC, then choose Look again. Favor Printer will only enroll a printer whose unique hardware USB serial Windows can verify. If the printer is installed but missing here, ask IT to confirm its driver and USB serial."
+          : "Use a USB data cable, not a charge-only cable. Plug the printer straight into this Mac and turn it on. If it is not found, unplug it and plug it back in once."),
         local.codeError === "printer_not_found" ? h("p", { class: "note error", role: "alert" }, ENROLL_ERROR_COPY.printer_not_found) : null,
         actions(button("Look again", a.scanAgain, { primary: true, disabled: local.busy })),
       );
@@ -221,8 +223,12 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         "Set up the printer",
-        lead("Your Mac does not have this printer set up yet. Favor Printer can do it for you. macOS may ask for your password."),
-        actions(button("Set up printer", a.setUpPrinter, { primary: true, disabled: local.busy })),
+        lead(snapshot.platform === "win32"
+          ? "The Windows Zebra queue isn't ready. Install or enable the ZDesigner ZPL USB driver in Windows Printers & scanners; Favor Printer never installs drivers or changes system queues."
+          : "Your Mac does not have this printer set up yet. Favor Printer can do it for you. macOS may ask for your password."),
+        snapshot.platform === "win32"
+          ? actions(button("Open Printers & scanners", a.openPrinterSettings, { primary: true }), button("Check again", a.scanAgain, { disabled: local.busy }))
+          : actions(button("Set up printer", a.setUpPrinter, { primary: true, disabled: local.busy })),
       );
 
     case "printer-fallback":
@@ -230,12 +236,12 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         "Add the printer in System Settings",
-        lead("macOS did not let Favor Printer set this up. You can add it yourself:"),
+        lead(snapshot.platform === "win32" ? "Windows could not verify a ready Zebra ZPL queue. Check the driver and hardware in Settings:" : "macOS did not let Favor Printer set this up. You can add it yourself:"),
         h(
           "ol",
           { class: "plain" },
-          h("li", null, "Open System Settings, then Printers & Scanners."),
-          h("li", null, "Click Add Printer, and choose the Zebra from the list."),
+          h("li", null, snapshot.platform === "win32" ? "Open Windows Settings, then Bluetooth & devices > Printers & scanners." : "Open System Settings, then Printers & Scanners."),
+          h("li", null, snapshot.platform === "win32" ? "Install the official Zebra ZDesigner ZPL driver and verify the Zebra USB device is present." : "Click Add Printer, and choose the Zebra from the list."),
           h("li", null, "Come back here and choose Check again."),
         ),
         actions(
@@ -281,7 +287,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         snapshot.status.color === "red" ? "Enter a new code" : "Enter your code",
-        lead("In Favor RSVP admin, open Set up printing. Pick the existing campus printer, or add it. If another Mac hosts it, choose \"Hand over from <host>\". Then type the code here."),
+        lead(snapshot.platform === "win32" ? "In Favor RSVP admin, open Set up printing. Choose the existing campus printer or add it, and authorize any handover from its current host. Enter the issued six-digit code here." : "In Favor RSVP admin, open Set up printing. Pick the existing campus printer, or add it. If another Mac hosts it, choose \"Hand over from <host>\". Then type the code here."),
         h("p", { class: "hint" }, "The six-digit code only works for a short time."),
         h(
           "form",
@@ -307,8 +313,8 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         snapshot.status.color === "green" || snapshot.status.headline === "Ready to print" ? "Connected" : "Connecting...",
         lead(
           snapshot.label
-            ? `This Mac is now ${snapshot.label} in Favor RSVP.`
-            : "This Mac is now connected to Favor RSVP.",
+            ? `This ${snapshot.platform === "win32" ? "Windows PC" : "Mac"} is now ${snapshot.label} in Favor RSVP.`
+            : `This ${snapshot.platform === "win32" ? "Windows PC" : "Mac"} is now connected to Favor RSVP.`,
         ),
         statusPill(snapshot),
         printerLine(snapshot),
@@ -345,7 +351,9 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         "You are all set",
-        lead("Favor Printer runs from the menu bar. Keep the lid open and the Mac plugged in during events."),
+        lead(snapshot.platform === "win32"
+          ? "Favor Printer runs in the Windows notification area. Keep this PC awake, signed in and the Zebra USB cable connected during events."
+          : "Favor Printer runs from the menu bar. Keep the lid open and the Mac plugged in during events."),
         h("ul", { class: "plain" }, ...snapshot.warnings.map((warning) => h("li", null, warning))),
         actions(button("Finish", a.advance, { primary: true })),
       );
