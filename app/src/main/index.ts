@@ -203,6 +203,8 @@ async function runApp(): Promise<void> {
     applyOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     log,
   });
+  openSetupRef.current = () => controller.openSetup();
+  wireActivate(app, () => controller.openSetup());
 
   // Quit: stop the relay (waiting for a send that is writing, and staying open while one still is),
   // then let an update install if the policy allows it, then exit.
@@ -266,8 +268,6 @@ async function runApp(): Promise<void> {
 
   await controller.initialize();
   updates.start();
-  openSetupRef.current = () => controller.openSetup();
-  wireActivate(app, () => controller.openSetup());
   const first = controller.snapshot();
   if (
     shouldShowWindowAtLaunch({
