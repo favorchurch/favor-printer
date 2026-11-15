@@ -41,7 +41,8 @@ import {
 } from "./services";
 import { createAppController } from "./shell/controller";
 import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
-import { acquireSingleInstance } from "./shell/lifecycle";
+import { detectLoginLaunch, shouldShowWindowAtLaunch } from "./shell/launch";
+import { acquireSingleInstance, wireActivate } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
 import { wirePowerMonitor, type PowerMonitorLike } from "./shell/powerWiring";
@@ -140,6 +141,7 @@ async function runApp(): Promise<void> {
     preloadPath: path.join(__dirname, "preload.js"),
     pagePath,
     activate: () => app.focus({ steal: true }),
+    dock: app.dock,
   });
   setupWindowRef.current = windows;
 
@@ -259,8 +261,18 @@ async function runApp(): Promise<void> {
 
   await controller.initialize();
   updates.start();
+  wireActivate(app, showSetup);
   const first = controller.snapshot();
-  if (first.setupStep !== null || first.legacyRelayLoaded) showSetup();
+  if (
+    shouldShowWindowAtLaunch({
+      wasOpenedAtLogin: detectLoginLaunch(app),
+      setupStep: first.setupStep,
+      legacyRelayLoaded: first.legacyRelayLoaded,
+      revoked: first.status.color === "red",
+    })
+  ) {
+    showSetup();
+  }
   log("info", "main", `${PRODUCT_NAME} ${app.getVersion()} started`);
 }
 

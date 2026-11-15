@@ -41,6 +41,7 @@ function setup() {
   const created: ReturnType<typeof fakeWindow>[] = [];
   const optionsSeen: WindowOptions[] = [];
   const activate = vi.fn();
+  const dock = { show: vi.fn(), hide: vi.fn() };
   const manager = createSetupWindowManager({
     create: (options) => {
       optionsSeen.push(options);
@@ -51,8 +52,9 @@ function setup() {
     preloadPath: "/app/dist/preload.js",
     pagePath: "/app/dist/renderer/index.html",
     activate,
+    dock,
   });
-  return { manager, created, optionsSeen, activate };
+  return { manager, created, optionsSeen, activate, dock };
 }
 
 describe("setupWindowOptions", () => {
@@ -153,5 +155,66 @@ describe("createSetupWindowManager", () => {
     manager.close();
     expect(created[0].window.close).toHaveBeenCalled();
     expect(manager.webContentsId()).toBeNull();
+  });
+
+  it("shows the Dock icon when the window becomes visible and hides it when it closes", () => {
+    const { manager, created, dock } = setup();
+    manager.show();
+    expect(dock.show).not.toHaveBeenCalled();
+    expect(dock.hide).not.toHaveBeenCalled();
+
+    created[0].handlers["ready-to-show"]();
+    expect(dock.show).toHaveBeenCalledTimes(1);
+    expect(dock.hide).not.toHaveBeenCalled();
+
+    // Re-focusing an open window does not hide or re-spam dock.show.
+    manager.show();
+    expect(dock.show).toHaveBeenCalledTimes(1);
+
+    manager.close();
+    expect(dock.hide).toHaveBeenCalledTimes(1);
+
+    // Reopening shows the Dock icon again.
+    manager.show();
+    created[1].handlers["ready-to-show"]();
+    expect(dock.show).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hide the Dock icon if the window closes before ready-to-show", () => {
+    const { manager, dock } = setup();
+    manager.show();
+    manager.close();
+    expect(dock.show).not.toHaveBeenCalled();
+    expect(dock.hide).not.toHaveBeenCalled();
+  });
+
+  it("handles omitted dock and a rejected dock.show() promise", () => {
+    const manager = createSetupWindowManager({
+      create: () => fakeWindow(20).window as unknown as WindowLike,
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+    });
+    expect(() => {
+      manager.show();
+      manager.close();
+    }).not.toThrow();
+
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const rejectingDock = { show: vi.fn(() => Promise.reject(new Error("dock unavailable"))), hide: vi.fn() };
+    const withReject = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(21);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      dock: rejectingDock,
+    });
+    withReject.show();
+    created[0].handlers["ready-to-show"]();
+    expect(created[0].window.show).toHaveBeenCalled();
+    withReject.close();
+    expect(rejectingDock.hide).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { acquireSingleInstance } from "./lifecycle";
+import { acquireSingleInstance, wireActivate } from "./lifecycle";
 
 function fakeApp(lock: boolean) {
   const listeners: Record<string, () => void> = {};
@@ -27,5 +27,19 @@ describe("acquireSingleInstance", () => {
     const { app } = fakeApp(false);
     expect(acquireSingleInstance(app, vi.fn())).toBe(false);
     expect(app.on).not.toHaveBeenCalled();
+  });
+});
+
+describe("wireActivate", () => {
+  it("runs the activate handler when macOS reopens the running app", () => {
+    const listeners: Record<string, () => void> = {};
+    const app = {
+      on: vi.fn((event: "activate", listener: () => void) => void (listeners[event] = listener)),
+    };
+    const onActivate = vi.fn();
+    wireActivate(app, onActivate);
+    expect(app.on).toHaveBeenCalledWith("activate", expect.any(Function));
+    listeners.activate();
+    expect(onActivate).toHaveBeenCalledTimes(1);
   });
 });

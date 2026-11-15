@@ -63,19 +63,28 @@ export type SetupWindowManager = {
   webContentsId(): number | null;
 };
 
+export type DockLike = {
+  show(): unknown;
+  hide(): unknown;
+};
+
 export function createSetupWindowManager(deps: {
   create(options: WindowOptions): WindowLike;
   preloadPath: string;
   pagePath: string;
   /** Brings the app forward: a menu-bar app has no Dock icon to click. */
   activate?: () => void;
+  /** Shown while the setup/status window is visible, hidden again when it closes. */
+  dock?: DockLike;
 }): SetupWindowManager {
   let window: WindowLike | null = null;
+  let dockShown = false;
 
   const open = (): WindowLike => {
     if (window && !window.isDestroyed()) return window;
     const created = deps.create(setupWindowOptions(deps.preloadPath));
     window = created;
+    dockShown = false;
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.webContents.session.setPermissionRequestHandler((...args) => {
@@ -83,9 +92,20 @@ export function createSetupWindowManager(deps: {
       const callback = args[2];
       if (typeof callback === "function") (callback as (granted: boolean) => void)(false);
     });
-    created.once("ready-to-show", () => created.show());
+    created.once("ready-to-show", () => {
+      if (window !== created || created.isDestroyed()) return;
+      dockShown = true;
+      void Promise.resolve(deps.dock?.show()).catch(() => undefined);
+      created.show();
+    });
     created.on("closed", () => {
-      if (window === created) window = null;
+      if (window === created) {
+        window = null;
+        if (dockShown) {
+          dockShown = false;
+          deps.dock?.hide();
+        }
+      }
     });
     void created.loadFile(deps.pagePath);
     return created;
