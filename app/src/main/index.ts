@@ -145,6 +145,8 @@ async function runApp(): Promise<void> {
     activate: () => app.focus({ steal: true }),
     dock: app.dock,
     dockHiddenAt,
+    // Closing the window (button or Cmd+W) abandons a re-pair: the old pairing carries on and the tray returns to normal.
+    onClosed: () => void controller.cancelReenroll(),
   });
   setupWindowRef.current = windows;
 
