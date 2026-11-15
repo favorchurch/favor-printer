@@ -181,10 +181,12 @@ describe("createSetupWindowManager", () => {
   });
 
   it("does not hide the Dock icon if the window closes before ready-to-show", () => {
-    const { manager, dock } = setup();
+    const { manager, created, dock } = setup();
     manager.show();
     manager.close();
+    created[0].handlers["ready-to-show"]();
     expect(dock.show).not.toHaveBeenCalled();
+    expect(created[0].window.show).not.toHaveBeenCalled();
     expect(dock.hide).not.toHaveBeenCalled();
   });
 
