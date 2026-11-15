@@ -107,7 +107,9 @@ export function hasNoEnabledPrinters(
 ): boolean {
   // RSVP's answer does not depend on the local printer, so an unplugged or unknown printer does not hide it.
   // The two states that mean this laptop's own pairing is wrong keep their own recovery.
-  if (state === "Needs re-enrollment" || state === "In use elsewhere" || relay === null || relay.state !== "running" || relay.cloud !== "ok") return false;
+  if (state === "Needs re-enrollment" || state === "In use elsewhere" || relay === null || relay.cloud !== "ok") return false;
+  // Starting, restarting and stopped relays have not asked RSVP anything yet; a paused relay already has its answer.
+  if (relay.state !== "running" && relay.state !== "paused") return false;
   if (relay.printerIds.length > 0) return false;
   return (
     relay.lastHeartbeatAt !== null ||

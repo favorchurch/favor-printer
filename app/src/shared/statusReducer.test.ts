@@ -323,6 +323,23 @@ describe("hasNoEnabledPrinters", () => {
     expect(hasNoEnabledPrinters(state, answered)).toBe(false);
   });
 
+  it.each([
+    ["a heartbeat", answered],
+    ["config_invalid", { ...silent, lastError: "config_invalid" }],
+    ["printer_handed_over", { ...silent, lastError: "printer_handed_over" }],
+    ["a handed over printer id", { ...silent, handedOverPrinterIds: ["printer-1"] }],
+  ])("still fires for a paused relay with %s", (_label, relay) => {
+    expect(hasNoEnabledPrinters("Connected", { ...relay, state: "paused" })).toBe(true);
+  });
+
+  it.each([
+    ["a listed printer", { ...answered, printerIds: ["printer-1"] }],
+    ["no evidence", silent],
+    ["a cloud that is not ok", { ...answered, cloud: "unreachable" }],
+  ])("is false for a paused relay with %s", (_label, relay) => {
+    expect(hasNoEnabledPrinters("Connected", { ...relay, state: "paused" })).toBe(false);
+  });
+
   it.each(["Unplugged", "Waiting"] as const)("still fires in the %s state: RSVP answered whatever the local printer is doing", (state) => {
     expect(hasNoEnabledPrinters(state, { ...silent, lastError: "config_invalid" })).toBe(true);
     expect(hasNoEnabledPrinters(state, { ...silent, handedOverPrinterIds: ["printer-1"] })).toBe(true);
