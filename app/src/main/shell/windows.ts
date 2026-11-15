@@ -95,7 +95,11 @@ export function createSetupWindowManager(deps: {
     created.once("ready-to-show", () => {
       if (window !== created || created.isDestroyed()) return;
       dockShown = true;
-      void Promise.resolve(deps.dock?.show()).catch(() => undefined);
+      try {
+        void Promise.resolve(deps.dock?.show()).catch(() => undefined);
+      } catch {
+        // Ignore synchronous dock.show() failures so the window still appears.
+      }
       created.show();
     });
     created.on("closed", () => {

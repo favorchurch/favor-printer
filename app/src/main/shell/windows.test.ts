@@ -219,4 +219,27 @@ describe("createSetupWindowManager", () => {
     withReject.close();
     expect(rejectingDock.hide).toHaveBeenCalledTimes(1);
   });
+
+  it("still shows the window when dock.show() throws synchronously", () => {
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const throwingDock = {
+      show: vi.fn(() => {
+        throw new Error("dock sync error");
+      }),
+      hide: vi.fn(),
+    };
+    const manager = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(22);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      dock: throwingDock,
+    });
+    manager.show();
+    expect(() => created[0].handlers["ready-to-show"]()).not.toThrow();
+    expect(created[0].window.show).toHaveBeenCalledTimes(1);
+  });
 });

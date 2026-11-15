@@ -102,8 +102,9 @@ async function runApp(): Promise<void> {
     // Without a Dock icon the window would open behind other apps.
     setupWindowRef.current?.show();
   };
+  const openSetupRef: { current: () => void } = { current: showSetup };
 
-  if (!acquireSingleInstance(app, showSetup)) {
+  if (!acquireSingleInstance(app, () => openSetupRef.current())) {
     app.quit();
     return;
   }
@@ -261,7 +262,8 @@ async function runApp(): Promise<void> {
 
   await controller.initialize();
   updates.start();
-  wireActivate(app, showSetup);
+  openSetupRef.current = () => controller.openSetup();
+  wireActivate(app, () => controller.openSetup());
   const first = controller.snapshot();
   if (
     shouldShowWindowAtLaunch({
