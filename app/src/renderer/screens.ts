@@ -4,7 +4,7 @@
  * actions. Nothing here shows ZPL or a security code.
  */
 
-import { isEnrollmentCode, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
+import { isEnrollmentCode, NO_ENABLED_PRINTERS_RECOVERY, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
 import { h } from "./dom";
 import {
   boundPrinterText,
@@ -392,7 +392,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         snapshot.status.detail ? lead(snapshot.status.detail) : null,
         codeErrorCopy(local) ? note(`${codeErrorCopy(local)} This laptop is still printing with its current pairing.`, "error") : null,
         snapshot.fiveState && snapshot.recoveryAction
-          ? h("p", { class: "recovery-action hint" }, `${snapshot.fiveState}: ${snapshot.recoveryAction}`)
+          ? h("p", { class: "recovery-action hint" }, snapshot.recoveryAction === NO_ENABLED_PRINTERS_RECOVERY ? snapshot.recoveryAction : `${snapshot.fiveState}: ${snapshot.recoveryAction}`)
           : null,
         seenAt ? h("p", { class: "hint" }, `Not seen since ${seenAt}`) : null,
         backlogWarning ? note(backlogWarning) : null,

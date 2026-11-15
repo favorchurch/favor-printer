@@ -675,7 +675,8 @@ describe("pairing with a new code from the status screen", () => {
     const rendered = renderScreen("status", { snapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
     const lines = text(rendered);
     expect(lines).toContain("RSVP has no enabled printer for this laptop, so nothing can print.");
-    expect(lines.some((line) => /Ask an admin to turn the printer on/.test(line) && /pair with a new code/.test(line))).toBe(true);
+    expect(lines).toContain(snapshot.recoveryAction);
+    expect(lines.some((line) => /^(Waiting|Connected|Unplugged): /.test(line))).toBe(false);
   });
 
   it("offers Pair with a new code only to an enrolled laptop", () => {
