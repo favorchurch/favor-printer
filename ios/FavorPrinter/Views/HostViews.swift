@@ -8,7 +8,7 @@ struct HostStatusView: View {
     @State private var code = ""
     @State private var confirmingUnenroll = false
     @State private var confirmingSetup = false
-    @State private var setupState = SetupState.idle
+    @State private var setupResult: PrinterSetup.Outcome?
     #if DEBUG
     @State private var printerReading: PrinterStatusReading?
     #endif
@@ -103,28 +103,44 @@ struct HostStatusView: View {
     private var setupPrinterControls: some View {
         Button("Set up printer") { confirmingSetup = true }
             .buttonStyle(FavorPrimaryButtonStyle())
-            .disabled(setupState == .running)
+            .disabled(host.isSettingUpPrinter)
             .accessibilityLabel("Set up printer")
             .accessibilityIdentifier("host-setup-printer")
-            .confirmationDialog("Set up this printer?", isPresented: $confirmingSetup, titleVisibility: .visible) {
+            .confirmationDialog("Set up printer?", isPresented: $confirmingSetup, titleVisibility: .visible) {
                 Button("Feed labels and set up") { setUpPrinter() }
                     .accessibilityIdentifier("host-setup-printer-confirm")
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("The printer will feed blank labels and the cutter will run. Make sure it has labels loaded and nothing is in the way of the cutter.")
+                Text("For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates.")
             }
-        if let text = setupState.message {
+        if let text = setupMessage {
             Text(text)
                 .font(FavorType.utility(14))
-                .foregroundStyle(setupState.isFailure ? FavorColor.warning : FavorColor.mutedInk)
+                .foregroundStyle(setupFailed ? FavorColor.warning : FavorColor.mutedInk)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("host-setup-printer-status")
         }
     }
 
+    private var setupFailed: Bool {
+        if case .failed = setupResult, !host.isSettingUpPrinter { true } else { false }
+    }
+
+    private var setupMessage: String? {
+        if host.isSettingUpPrinter { return "Setting up the printer. Labels are feeding." }
+        switch setupResult {
+        case .done: return "Printer set up."
+        case .failed(let step, let error): return "\(step.title) failed: \(PrinterSetup.reason(for: error))"
+        case .busy, nil: return nil
+        }
+    }
+
     private func setUpPrinter() {
-        setupState = .running
-        Task { setupState = SetupState(await host.setUpPrinter()) }
+        setupResult = nil
+        Task {
+            let outcome = await host.setUpPrinter()
+            if outcome != .busy { setupResult = outcome }
+        }
     }
 
     private var printerText: String {
@@ -313,35 +329,6 @@ struct HostStatusView: View {
         let entered = code
         Task {
             if await host.enroll(code: entered) == nil { code = "" }
-        }
-    }
-}
-
-/// What the "Set up printer" control shows. Never ZPL, only the step that failed and the typed reason.
-enum SetupState: Equatable {
-    case idle
-    case running
-    case done
-    case failed(String)
-
-    init(_ outcome: PrinterSetup.Outcome) {
-        switch outcome {
-        case .done: self = .done
-        case .busy: self = .running
-        case .failed(let step, let error): self = .failed("\(step.title) failed: \(error)")
-        }
-    }
-
-    var isFailure: Bool {
-        if case .failed = self { true } else { false }
-    }
-
-    var message: String? {
-        switch self {
-        case .idle: nil
-        case .running: "Setting up the printer. Labels are feeding."
-        case .done: "Printer set up."
-        case .failed(let reason): reason
         }
     }
 }

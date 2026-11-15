@@ -44,7 +44,8 @@ final class SetUpPrinterUITests: XCTestCase {
         setup.tap()
         let confirm = app.buttons.matching(identifier: "host-setup-printer-confirm").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'cutter' AND label CONTAINS 'blank labels'")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Set up printer?"].exists)
+        XCTAssertTrue(app.staticTexts["For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates."].exists)
         snap(app, "setup-confirm")
 
         confirm.tap()
@@ -61,9 +62,24 @@ final class SetUpPrinterUITests: XCTestCase {
         let app = open(["-FavorHostFakeSetupFailure"])
         button(app).tap()
         app.buttons.matching(identifier: "host-setup-printer-confirm").firstMatch.tap()
-        status(app, contains: "Calibrate failed")
+        status(app, contains: "Calibrate failed: printer not attached")
         XCTAssertTrue(button(app).isEnabled)
         snap(app, "setup-failed")
+    }
+
+    func testButtonIsHiddenWithNoPrinter() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-FavorUITestMock", "-FavorUITestScenario", "unplugged"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["host-printer"].waitForExistence(timeout: 10))
+        wait(app, "host-printer", equals: "Not seen")
+        XCTAssertFalse(app.buttons["host-setup-printer"].exists)
+    }
+
+    private func wait(_ app: XCUIApplication, _ id: String, equals expected: String) {
+        let element = app.staticTexts[id]
+        let predicate = NSPredicate(format: "label == %@", expected)
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: predicate, evaluatedWith: element)], timeout: 10), .completed)
     }
 
     func testCancelSendsNothing() {

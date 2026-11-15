@@ -39,6 +39,11 @@ enum PrinterSetup {
     /// `^JUS` saves the current configuration to the printer.
     static let saveMediaTrackingCommand = Data("^XA^JUS^XZ".utf8)
 
+    /// Volunteer-readable reason for a failed write, in the same words the job loop uses.
+    static func reason(for error: UsbTransportError) -> String {
+        HostLoop.outcome(of: .failure(error), expected: 0).1 ?? "unknown error"
+    }
+
     /// Sends the three commands in order as separate writes and stops at the first failure.
     static func run(on transport: any UsbPrinterTransport) async -> Outcome {
         for step in Step.allCases {

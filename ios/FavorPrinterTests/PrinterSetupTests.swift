@@ -30,7 +30,38 @@ private actor GatedSetupTransport: UsbPrinterTransport {
     func readStatus() async -> Result<Data, UsbTransportError> { .failure(.timeout) }
 }
 
+/// Holds the first job write (anything that is not a setup command) until the test opens the gate.
+private actor HeldJobTransport: UsbPrinterTransport {
+    private(set) var writes: [Data] = []
+    private var held: CheckedContinuation<Void, Never>?
+    private var gateOpen = false
+
+    func openGate() {
+        gateOpen = true
+        held?.resume()
+        held = nil
+    }
+
+    func status() async -> UsbPrinterStatus { FakeUsbTransport.readyStatus }
+
+    func send(_ zpl: Data) async -> Result<Int, UsbTransportError> {
+        writes.append(zpl)
+        if !PrinterSetup.Step.allCases.map(\.payload).contains(zpl), !gateOpen {
+            await withCheckedContinuation { held = $0 }
+        }
+        return .success(zpl.count)
+    }
+
+    func readStatus() async -> Result<Data, UsbTransportError> { .failure(.timeout) }
+}
+
 struct PrinterSetupTests {
+    @Test func failureReasonsAreVolunteerReadable() {
+        #expect(PrinterSetup.reason(for: .notAttached) == "printer not attached")
+        #expect(PrinterSetup.reason(for: .driverNotFound) == "driver not running")
+        #expect(PrinterSetup.reason(for: .timeout) == "write timed out; outcome unknown")
+    }
+
     @Test func sendsThreeSeparateWritesInOrder() async {
         let transport = FakeUsbTransport()
         #expect(await PrinterSetup.run(on: transport) == .done)
@@ -118,6 +149,30 @@ struct HostPrinterSetupControllerTests {
         #expect(Array(writes.prefix(3)) == expectedPayloads, "a job was written between setup commands")
         #expect(writes.count == 4)
         #expect(controller.isLoopRunning)
+
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+    }
+
+    @Test func setupStartedMidJobWaitsForTheJobWriteToFinish() async throws {
+        let transport = HeldJobTransport()
+        let relay = FakeRelay()
+        await relay.enqueue(zpl: zpl(for: "a"), id: "a")
+        await relay.enqueue(zpl: zpl(for: "b"), id: "b")
+        let controller = try makeController(relay: relay, transport: transport)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+        #expect(await eventually { await transport.writes.count == 1 })
+
+        let setup = Task { await controller.setUpPrinter() }
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(await transport.writes == [Data(zpl(for: "a").utf8)], "setup bytes went out while a job was sending")
+
+        await transport.openGate()
+        #expect(await setup.value == .done)
+        let writes = await transport.writes
+        #expect(Array(writes[1...3]) == expectedPayloads, "a job write landed between setup commands")
+        #expect(await eventually { await relay.reports.map(\.jobId).sorted() == ["a", "b"] })
 
         controller.scenePhaseChanged(.background)
         await controller.settled()
