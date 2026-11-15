@@ -125,7 +125,6 @@ export function createSetupWindowManager(deps: {
     if (window && !window.isDestroyed()) return window;
     const created = deps.create(setupWindowOptions(deps.preloadPath));
     window = created;
-    dockShown = false;
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.webContents.session.setPermissionRequestHandler((...args) => {
@@ -137,12 +136,21 @@ export function createSetupWindowManager(deps: {
       if (window !== created || created.isDestroyed()) return;
       dockShown = true;
       cancelPendingDockHide();
+      let dockShowResult: unknown;
       try {
-        void Promise.resolve(deps.dock?.show()).catch(() => undefined);
+        dockShowResult = deps.dock?.show();
       } catch {
         // Ignore synchronous dock.show() failures so the window still appears.
       }
       created.show();
+      deps.activate?.();
+      if (dockShowResult && typeof (dockShowResult as PromiseLike<unknown>).then === "function") {
+        void Promise.resolve(dockShowResult)
+          .catch(() => undefined)
+          .finally(() => {
+            if (window === created && !created.isDestroyed()) deps.activate?.();
+          });
+      }
     });
     created.on("closed", () => {
       if (window === created) {

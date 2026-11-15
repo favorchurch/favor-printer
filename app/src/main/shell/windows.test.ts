@@ -353,4 +353,52 @@ describe("createSetupWindowManager", () => {
     created[1].handlers.closed();
     expect(onClosed).toHaveBeenCalledTimes(1);
   });
+
+  it("still hides the Dock icon if a shown window is destroyed without closed and its replacement closes early", () => {
+    const { manager, created, dock } = setup();
+    manager.show();
+    created[0].handlers["ready-to-show"]();
+    expect(dock.show).toHaveBeenCalledTimes(1);
+
+    created[0].destroy();
+    manager.show();
+    manager.close();
+    expect(dock.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-activates the app once an async dock.show() settles", async () => {
+    let resolveDockShow!: () => void;
+    const dock = {
+      show: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveDockShow = resolve;
+          }),
+      ),
+      hide: vi.fn(),
+    };
+    const activate = vi.fn();
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const manager = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(50 + created.length);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      activate,
+      dock,
+    });
+
+    manager.show();
+    expect(activate).toHaveBeenCalledTimes(1);
+    created[0].handlers["ready-to-show"]();
+    expect(activate).toHaveBeenCalledTimes(2);
+
+    resolveDockShow();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(activate).toHaveBeenCalledTimes(3);
+  });
 });
