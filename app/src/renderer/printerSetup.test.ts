@@ -77,6 +77,19 @@ describe("the Set up printer control", () => {
   });
 });
 
+describe("the confirm copy", () => {
+  it("says it is for Zebra printers with a cutter and that blank labels feed", () => {
+    const rendered = renderScreen("status", {
+      snapshot: fixtureFor("setup-printer-confirm").snapshot,
+      local: { ...INITIAL_LOCAL, ...fixtureFor("setup-printer-confirm").local },
+      actions: noop,
+    }) as unknown as FakeElement;
+    const shown = text(rendered).join(" ");
+    expect(shown).toContain("Set up printer?");
+    expect(shown).toContain("For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates.");
+  });
+});
+
 describe("the Set up printer fixtures", () => {
   const states = {
     "setup-printer-confirm": "confirm",
@@ -175,5 +188,42 @@ describe("driving the control", () => {
     buttonLabelled(root, PRINTER_SETUP_COPY.confirmYes)?.click();
     await settle();
     expect(control(root)?.attrs.get("data-state")).toBe("failed");
+  });
+
+  it("a rejected call does not blame a setup step", async () => {
+    const { root } = start(async () => {
+      throw new Error("Invalid payload");
+    });
+    buttonLabelled(root, PRINTER_SETUP_COPY.start)?.click();
+    buttonLabelled(root, PRINTER_SETUP_COPY.confirmYes)?.click();
+    await settle();
+    const shown = text(root).join(" ");
+    expect(shown).not.toMatch(/calibrating|setting the mode|saving/);
+    expect(shown).toContain(printerSetupFailureCopy({ ok: false, reason: "rejected" }));
+  });
+
+  it("ignores a result that arrives after the window moved to another step", async () => {
+    const snapshot = fixtureFor("connected").snapshot;
+    const listeners: ((next: AppSnapshot) => void)[] = [];
+    let release: ((result: PrinterSetupResult) => void) | undefined;
+    const api = {
+      ...createMockApi(snapshot),
+      onSnapshot: (listener: (next: AppSnapshot) => void) => {
+        listeners.push(listener);
+        return () => undefined;
+      },
+      configurePrinter: () => new Promise<PrinterSetupResult>((resolve) => (release = resolve)),
+    } as FavorPrinterApi;
+    const root = new FakeElement("div");
+    startApp(root as unknown as HTMLElement, api, snapshot);
+    buttonLabelled(root, PRINTER_SETUP_COPY.start)?.click();
+    buttonLabelled(root, PRINTER_SETUP_COPY.confirmYes)?.click();
+    expect(control(root)?.attrs.get("data-state")).toBe("running");
+
+    for (const listener of listeners) listener({ ...snapshot, setupStep: null });
+    expect(control(root)?.attrs.get("data-state")).toBe("idle");
+    release?.({ ok: true });
+    await settle();
+    expect(control(root)?.attrs.get("data-state")).toBe("idle");
   });
 });

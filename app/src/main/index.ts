@@ -196,8 +196,8 @@ async function runApp(): Promise<void> {
       confirmPrinterSetup: async () => {
         const { response } = await dialog.showMessageBox({
           type: "question",
-          message: "Set up the printer?",
-          detail: "Favor Printer will set the printer's mode, calibrate it and save the settings. The printer feeds a few labels while it calibrates.",
+          message: "Set up printer?",
+          detail: "For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates.",
           buttons: ["Set up printer", "Cancel"],
           defaultId: 0,
           cancelId: 1,

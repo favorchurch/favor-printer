@@ -164,9 +164,9 @@ export const TEST_PRINT_ERROR_COPY: Record<Extract<TestPrintResult, { ok: false 
 
 export const PRINTER_SETUP_COPY = {
   title: "Set up the printer",
-  lead: "This sets the printer's mode, calibrates it to the label stock and saves the settings. The printer feeds a few labels while it calibrates.",
+  lead: "For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates.",
   start: "Set up printer",
-  confirm: "Set up the printer now? Load your label stock first.",
+  confirm: "Set up printer?",
   confirmYes: "Yes, set up printer",
   running: "Setting up the printer...",
   done: "The printer is set up: mode set, calibrated and saved.",

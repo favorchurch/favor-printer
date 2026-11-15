@@ -206,6 +206,22 @@ export function createAppController(deps: ControllerDeps): AppController {
 
   const backlogMonitor = new BacklogMonitor();
 
+  /** Printer setup is running: the relay is stopped and nothing may start it until the setup ends. */
+  let settingUp = false;
+
+  /** Starts the relay again after printer setup, unless the app is quitting, the laptop was un-enrolled or setup began again. */
+  async function resumeRelay(): Promise<void> {
+    if (settingUp || shuttingDown || !enrolled || prefs.get().revoked) return;
+    await supervisor.start();
+  }
+
+  function report(result: PrinterSetupResult): PrinterSetupResult {
+    if (!result.ok) {
+      log("warn", "printer-setup", result.reason === "failed" ? `printer setup failed at ${result.step}` : `printer setup not run: ${result.reason}`);
+    }
+    return result;
+  }
+
   const supervisor = deps.createSupervisor({
     resolveStart: async () => {
       const resolution = await resolveRelayStart();
@@ -436,7 +452,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     // The relay could not start without a queue, or was held until it had one; it can now.
     const waitingForQueue =
       relayHeldForQueue || (supervisorState.phase === "blocked" && supervisorState.blockedReason === "no_queue");
-    if (!shuttingDown && enrolled && waitingForQueue && queueForRelay()) {
+    if (!shuttingDown && !settingUp && enrolled && waitingForQueue && queueForRelay()) {
       await supervisor.start();
     }
     emit();
@@ -634,12 +650,31 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     async configurePrinter() {
-      // The queue the scan resolved for the attached printer, never a remembered name.
-      const result = await deps.printerSetup.run(scan.kind === "found" ? liveQueue : null);
-      if (!result.ok) {
-        log("warn", "printer-setup", result.reason === "failed" ? `printer setup failed at ${result.step}` : `printer setup not run: ${result.reason}`);
+      // Claimed before any await, so a second call sees it and spawns nothing.
+      if (settingUp) return { ok: false, reason: "busy" };
+      // Only a ready queue bound to the attached printer from a scan that listed cleanly. A disabled
+      // queue, a failed listing (liveQueue is then stale) or no printer all mean there is nothing to send to.
+      const queue = scan.kind === "found" && scan.queue === "ready" && !scanFailed ? liveQueue : null;
+      if (!queue) return report(await deps.printerSetup.run(null));
+      settingUp = true;
+      let resume = ["starting", "running", "restarting"].includes(supervisorState.phase);
+      try {
+        // The relay prints to this same queue, and a label job between the three setup jobs would
+        // land mid-sequence. Stop it first and wait until it has really exited.
+        const stopped = await supervisor.stop();
+        if (stopped === "abandoned" || supervisor.jobInFlight()) {
+          // A label is still being written and the relay is left to finish. Nothing was sent.
+          // The relay comes back once that child has exited, not before.
+          resume = false;
+          void supervisor.settled().then(resumeRelay);
+          return report({ ok: false, reason: "busy" });
+        }
+        await supervisor.settled();
+        return report(await deps.printerSetup.run(queue));
+      } finally {
+        settingUp = false;
+        if (resume) await resumeRelay();
       }
-      return result;
     },
 
     async setupPrinterFromMenu() {
@@ -696,7 +731,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         migrationFailed = !result.ok;
         // Fail closed: after any failure the old relay counts as still running, so ours stays blocked.
         if (!result.ok) legacyLoaded = true;
-        else if (enrolled && !prefs.get().revoked) await supervisor.start();
+        else if (enrolled && !prefs.get().revoked && !settingUp) await supervisor.start();
         emit();
         return result;
       })().finally(() => {

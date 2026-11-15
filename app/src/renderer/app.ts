@@ -75,12 +75,16 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
       void (async () => {
         // Only reachable from the confirm step. A second click while it runs finds no button.
         if (local.printerSetup.kind !== "confirm") return;
+        const step = current.setupStep;
         patch({ printerSetup: { kind: "running" } });
+        // A result that arrives after the window moved to another step belongs to a screen that is gone.
+        const stale = () => current.setupStep !== step;
         try {
           const result = await api.configurePrinter();
-          patch({ printerSetup: result.ok ? { kind: "done" } : { kind: "failed", result } });
+          if (!stale()) patch({ printerSetup: result.ok ? { kind: "done" } : { kind: "failed", result } });
         } catch {
-          patch({ printerSetup: { kind: "failed", result: { ok: false, reason: "failed", step: "mode" } } });
+          // A rejected call says nothing about which step ran, so it names none.
+          if (!stale()) patch({ printerSetup: { kind: "failed", result: { ok: false, reason: "rejected" } } });
         }
       })(),
     openPrinterSettings: () => void api.openPrinterSettings().catch(() => undefined),

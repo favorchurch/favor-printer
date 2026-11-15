@@ -43,8 +43,8 @@ export type PrinterSetupStep = "mode" | "calibrate" | "save";
 /** The "Set up printer" action: mode, calibration and save sent to the printer itself. */
 export type PrinterSetupResult =
   | { ok: true }
-  /** `no-queue`: no ready queue to send to. `busy`: a setup is already running. */
-  | { ok: false; reason: "no-queue" | "busy" }
+  /** `no-queue`: no ready queue to send to. `busy`: a setup or a label is running. `rejected`: the window's call was refused or failed, so no step is known (renderer only). */
+  | { ok: false; reason: "no-queue" | "busy" | "rejected" }
   /** `step` is the one that did not go through. Later steps were not sent. */
   | { ok: false; reason: "failed"; step: PrinterSetupStep };
 
@@ -60,7 +60,9 @@ export function printerSetupFailureCopy(result: Exclude<PrinterSetupResult, { ok
     case "no-queue":
       return "No printer is ready. Plug in the Zebra and check the menu bar icon.";
     case "busy":
-      return "The printer is already being set up. Wait for it to finish.";
+      return "The printer is busy with a label or another setup. Wait a moment, then try again.";
+    case "rejected":
+      return "Setup could not be started. Check the printer, then try again.";
     case "failed":
       return `Setup stopped while ${PRINTER_SETUP_STEP_COPY[result.step]}. Check the printer, then try again.`;
   }
