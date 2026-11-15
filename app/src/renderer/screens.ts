@@ -34,6 +34,11 @@ export type Actions = {
   cancelMigrateLegacy(): void;
   /** Confirmed: turns the old relay off. */
   migrateLegacy(): void;
+  /** "Pair with a new code": asks for confirmation, changes nothing yet. */
+  askReenroll(): void;
+  cancelReenroll(): void;
+  /** Confirmed: opens the code step. Printing stays off until a new code is entered. */
+  reenroll(): void;
   /** Saves the typed name. The screen reads the input itself: it is not kept in local state. */
   renameLaptop(name: string): void;
   renamePrinter(name: string): void;
@@ -360,6 +365,19 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         actions(button("Enter a new code", a.advance, { primary: true })),
       );
 
+    case "reenroll-confirm":
+      return frame(
+        screen,
+        snapshot,
+        "Pair with a new code?",
+        lead("This laptop stops printing until you enter a new code from an admin."),
+        h("p", { class: "hint" }, "Ask an admin for a six-digit code in Favor RSVP first. Cancel if you do not have one yet."),
+        actions(
+          button("Pair with a new code", a.reenroll, { primary: true, disabled: local.busy }),
+          button("Cancel", a.cancelReenroll, { disabled: local.busy }),
+        ),
+      );
+
     case "status": {
       const seenAt = lastSeenTime(snapshot);
       const backlogWarning = snapshot.warnings.find((warning) => warning.startsWith("Print backlog is "));
@@ -385,7 +403,10 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
           h("p", { class: "hint" }, `Version ${snapshot.version} (${channelLabel(snapshot.channel)})`),
           h("p", { class: "hint" }, updateStatusText(snapshot.update)),
         ),
-        actions(button("Close", a.closeWindow, { primary: true })),
+        actions(
+          button("Close", a.closeWindow, { primary: true }),
+          ...(snapshot.enrolled ? [button("Pair with a new code", a.askReenroll, { disabled: local.busy })] : []),
+        ),
       );
     }
   }

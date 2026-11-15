@@ -21,6 +21,8 @@ const EXPECTED: Record<(typeof FIXTURE_NAMES)[number], ScreenId> = {
   unplugged: "status",
   waiting: "status",
   "in-use-elsewhere": "status",
+  "no-enabled-printers": "status",
+  "reenroll-confirm": "reenroll-confirm",
   "backlog-warning": "status",
   "update-ready": "status",
   "update-error": "status",

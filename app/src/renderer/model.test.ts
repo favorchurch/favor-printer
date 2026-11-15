@@ -117,6 +117,13 @@ describe("pickScreen", () => {
     it("shows a plain status page otherwise", () => {
       expect(pick({ setupStep: null })).toBe("status");
     });
+
+    it("asks before pairing with a new code, only for an enrolled laptop outside setup", () => {
+      expect(pick({ setupStep: null, enrolled: true }, { confirmingReenroll: true })).toBe("reenroll-confirm");
+      expect(pick({ setupStep: null, enrolled: true }, { confirmingReenroll: false })).toBe("status");
+      expect(pick({ setupStep: null, enrolled: false }, { confirmingReenroll: true })).toBe("status");
+      expect(pick({ setupStep: "code", enrolled: true }, { confirmingReenroll: true })).toBe("code");
+    });
   });
 });
 

@@ -33,6 +33,8 @@ export type ScreenId =
   | "test-print"
   | "done"
   | "revoked"
+  /** Asks the volunteer to confirm before this laptop stops printing for a new code. */
+  | "reenroll-confirm"
   | "status";
 
 export type EnrollFailureReason = EnrollPlainFailure;
@@ -56,6 +58,8 @@ export type LocalState = {
   busy: boolean;
   /** The volunteer chose "Move to Favor Printer" and is being asked to confirm. */
   confirmingMigration: boolean;
+  /** The volunteer chose "Pair with a new code" on the status screen and is being asked to confirm. */
+  confirmingReenroll: boolean;
   /** The last move failed. Printing stays off. */
   migrateError: boolean;
   /** A rename RSVP refused or could not take. `name` is what was typed, so it is not lost on re-render. */
@@ -69,6 +73,7 @@ export const INITIAL_LOCAL: LocalState = {
   testPrint: { kind: "idle" },
   busy: false,
   confirmingMigration: false,
+  confirmingReenroll: false,
   migrateError: false,
   renameError: null,
 };
@@ -94,7 +99,10 @@ export function pickScreen(snapshot: AppSnapshot, local: LocalState): ScreenId {
   if (snapshot.legacyRelayLoaded && (step === null || step === "welcome")) {
     return local.confirmingMigration ? "legacy-confirm" : "legacy";
   }
-  if (step === null) return snapshot.status.color === "red" ? "revoked" : "status";
+  if (step === null) {
+    if (snapshot.status.color === "red") return "revoked";
+    return local.confirmingReenroll && snapshot.enrolled ? "reenroll-confirm" : "status";
+  }
   switch (step) {
     case "welcome":
       return "welcome";

@@ -46,7 +46,7 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   const applySnapshot = (next: AppSnapshot) => {
     // A new step starts clean: an old error does not follow the volunteer forward.
     if (next.setupStep !== current.setupStep) {
-      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false, renameError: null };
+      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, confirmingReenroll: false, migrateError: false, renameError: null };
     }
     current = next;
     render();
@@ -104,6 +104,14 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
         const result = await api.migrateLegacyRelay().catch(() => ({ ok: false }) as const);
         local = { ...local, confirmingMigration: false, migrateError: !result.ok };
         applySnapshot(await api.getSnapshot());
+      }),
+    askReenroll: () => patch({ confirmingReenroll: true }),
+    cancelReenroll: () => patch({ confirmingReenroll: false }),
+    reenroll: () =>
+      void busy(async () => {
+        // Only reachable from the confirmation screen. Main moves the window to the code step.
+        local = { ...local, confirmingReenroll: false };
+        applySnapshot(await api.beginReenroll());
       }),
     renameLaptop: (name) => void busy(() => rename("laptop", name, () => api.renameLaptop(name))),
     renamePrinter: (name) => void busy(() => rename("printer", name, () => api.renamePrinter(name))),

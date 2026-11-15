@@ -663,3 +663,48 @@ describe("rename controls on the connected screen", () => {
     expect(field(render({ enrolled: true, printerName: "" }), "printer-name")).toBeDefined();
   });
 });
+
+describe("pairing with a new code from the status screen", () => {
+  const text = (root: FakeElement): string[] =>
+    root.children.flatMap((child) => (child instanceof FakeElement ? text(child) : [(child as { text: string }).text]));
+  const buttonLabeled = (root: FakeElement, label: string) =>
+    descendants(root).find((node) => node.tagName === "button" && node.children.some((child) => (child as { text?: string }).text === label));
+
+  it("says there is no enabled printer and names the fix, from the state fixture", () => {
+    const { snapshot } = fixtureFor("no-enabled-printers");
+    const rendered = renderScreen("status", { snapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
+    const lines = text(rendered);
+    expect(lines).toContain("RSVP has no enabled printer for this laptop, so nothing can print.");
+    expect(lines.some((line) => /Ask an admin to turn the printer on/.test(line) && /pair with a new code/.test(line))).toBe(true);
+  });
+
+  it("offers Pair with a new code only to an enrolled laptop", () => {
+    const status = fixtureFor("status").snapshot;
+    const render = (snapshot: AppSnapshot) => renderScreen("status", { snapshot, local: INITIAL_LOCAL, actions: {} as never }) as unknown as FakeElement;
+    expect(buttonLabeled(render(status), "Pair with a new code")).toBeDefined();
+    expect(buttonLabeled(render({ ...status, enrolled: false }), "Pair with a new code")).toBeUndefined();
+  });
+
+  it("asks first, and goes to the code screen only after the volunteer confirms", async () => {
+    const root = el();
+    const api = createMockApi(fixtureFor("status").snapshot);
+    const beginReenroll = vi.spyOn(api, "beginReenroll");
+    startApp(root as unknown as HTMLElement, api, fixtureFor("status").snapshot);
+    const screenOf = () => (root.children[0] as FakeElement).getAttribute("data-screen");
+    expect(screenOf()).toBe("status");
+
+    buttonLabeled(root.children[0] as FakeElement, "Pair with a new code")?.click();
+    expect(screenOf()).toBe("reenroll-confirm");
+    expect(beginReenroll).not.toHaveBeenCalled();
+
+    // Cancel changes nothing.
+    buttonLabeled(root.children[0] as FakeElement, "Cancel")?.click();
+    expect(screenOf()).toBe("status");
+    expect(beginReenroll).not.toHaveBeenCalled();
+
+    buttonLabeled(root.children[0] as FakeElement, "Pair with a new code")?.click();
+    buttonLabeled(root.children[0] as FakeElement, "Pair with a new code")?.click();
+    await vi.waitFor(() => expect(screenOf()).toBe("code"));
+    expect(beginReenroll).toHaveBeenCalledTimes(1);
+  });
+});

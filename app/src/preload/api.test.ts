@@ -24,6 +24,7 @@ describe("preload API", () => {
     expect(Object.keys(api).sort()).toEqual(
       [
         "advance",
+        "beginReenroll",
         "confirmTestPrint",
         "enroll",
         "getSnapshot",
@@ -61,6 +62,7 @@ describe("preload API", () => {
     ["renameLaptop", IPC_CHANNELS.renameLaptop, ["Lobby desk"]],
     ["renamePrinter", IPC_CHANNELS.renamePrinter, ["Front Zebra"]],
     ["advance", IPC_CHANNELS.advance, []],
+    ["beginReenroll", IPC_CHANNELS.beginReenroll, []],
     ["quit", IPC_CHANNELS.quit, []],
   ] as const)("%s invokes its own channel with its own arguments", async (method, channel, args) => {
     const { ipc } = fakeIpc();

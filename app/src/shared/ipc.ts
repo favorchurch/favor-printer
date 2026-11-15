@@ -25,6 +25,7 @@ export const IPC_CHANNELS = {
   renameLaptop: "favor-printer:rename-laptop",
   renamePrinter: "favor-printer:rename-printer",
   advance: "favor-printer:advance",
+  beginReenroll: "favor-printer:begin-reenroll",
   quit: "favor-printer:quit",
 } as const;
 
@@ -80,6 +81,8 @@ export type FavorPrinterApi = {
   renamePrinter(name: string): Promise<RenameResult>;
   /** Moves the setup window to its next step. Main decides whether the step is reachable. */
   advance(): Promise<AppSnapshot>;
+  /** The tray's "Enter a new code...": opens the code step. Printing stays off until a new code is entered. */
+  beginReenroll(): Promise<AppSnapshot>;
   quit(): Promise<void>;
 };
 

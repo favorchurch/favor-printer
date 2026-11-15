@@ -11,6 +11,7 @@ import {
   type ControllerHarness,
   type HarnessOptions,
 } from "./testing/controllerHarness";
+import { NO_ENABLED_PRINTERS_DETAIL, NO_ENABLED_PRINTERS_RECOVERY } from "../../shared";
 import type { EnrollOutcome, ScanOutcome } from "../services";
 import { LEGACY_FAILED_DETAIL } from "./controller";
 import { relayStatus } from "./testing/fakeChild";
@@ -678,6 +679,42 @@ describe("enroll", () => {
     // Running and back at the cloud under the binding it holds: the conflict is over.
     h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "ok" }) });
     expect(h.controller.snapshot().fiveState).toBe("Connected");
+  });
+
+  describe("no enabled printers", () => {
+    const answered = (patch: Partial<ReturnType<typeof relayStatus>>) =>
+      relayStatus({ state: "running", cloud: "ok", lastHeartbeatAt: "2026-10-04T01:00:00.000Z", ...patch });
+
+    it("says so and names the fix when RSVP answers with no printer for this laptop", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: answered({ printerIds: [] }) });
+      const snap = h.controller.snapshot();
+      expect(snap.status).toEqual({ color: "amber", headline: "Waiting for connection", detail: NO_ENABLED_PRINTERS_DETAIL });
+      expect(snap.fiveState).toBe("Waiting");
+      expect(snap.recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
+      expect(snap.recoveryAction).toMatch(/admin/);
+      expect(snap.recoveryAction).toMatch(/new code/);
+    });
+
+    it("covers a printer handed to another host", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: answered({ printerIds: [], handedOverPrinterIds: ["printer-1"], lastError: "printer_handed_over" }) });
+      expect(h.controller.snapshot().recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
+    });
+
+    it("stays Connected while the relay has not heard from RSVP yet", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: answered({ printerIds: [], lastHeartbeatAt: null }) });
+      expect(h.controller.snapshot().fiveState).toBe("Connected");
+    });
+
+    it("stays Connected when RSVP lists a printer", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: answered({}) });
+      const snap = h.controller.snapshot();
+      expect(snap.fiveState).toBe("Connected");
+      expect(snap.recoveryAction).not.toBe(NO_ENABLED_PRINTERS_RECOVERY);
+    });
   });
 
   it("clears In use elsewhere when setup closes without enrolling", async () => {

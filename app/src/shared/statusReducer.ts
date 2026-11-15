@@ -80,6 +80,29 @@ export const RECOVERY_ACTIONS: Record<FiveState, string> = {
   "In use elsewhere": "Ask an admin to disconnect this printer from the other laptop.",
 };
 
+/** Shown when RSVP answers but lists no enabled printer for this laptop (turned off, removed or handed over). */
+export const NO_ENABLED_PRINTERS_DETAIL = "RSVP has no enabled printer for this laptop, so nothing can print.";
+export const NO_ENABLED_PRINTERS_RECOVERY =
+  "Ask an admin to turn the printer on in RSVP printing settings, or pair with a new code.";
+
+/**
+ * True when this laptop would read as Connected but RSVP lists no enabled printer for it.
+ * Needs a heartbeat answer first: before one, an empty list only means the relay is still starting.
+ */
+export function hasNoEnabledPrinters(
+  state: FiveState,
+  relay: { state: string; cloud: string; printerIds: readonly string[]; lastHeartbeatAt: string | null } | null,
+): boolean {
+  return (
+    state === "Connected" &&
+    relay !== null &&
+    relay.state === "running" &&
+    relay.cloud === "ok" &&
+    relay.lastHeartbeatAt !== null &&
+    relay.printerIds.length === 0
+  );
+}
+
 export type PrinterSignal =
   | { type: "printer_attached" }
   | { type: "printer_unplugged" }

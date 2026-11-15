@@ -6,8 +6,11 @@
  */
 
 import {
+  hasNoEnabledPrinters,
   isEnrollmentCode,
   isUsableUsbSerial,
+  NO_ENABLED_PRINTERS_DETAIL,
+  NO_ENABLED_PRINTERS_RECOVERY,
   isUpdateChannel,
   type AppSnapshot,
   type EnrollResult,
@@ -30,6 +33,7 @@ import {
   BacklogMonitor,
   deriveFiveState,
   deriveStatus,
+  FIVE_STATE_HEADLINES,
   powerWarnings,
   recentJobs,
   type EnrollOutcome,
@@ -248,7 +252,12 @@ export function createAppController(deps: ControllerDeps): AppController {
     };
     const derived = deriveStatus(statusInputs);
     const fiveStateResult = deriveFiveState(statusInputs);
-    const status = legacyLoaded && migrationFailed && derived.color !== "red" ? { ...derived, detail: LEGACY_FAILED_DETAIL } : derived;
+    const noEnabledPrinters = hasNoEnabledPrinters(fiveStateResult.state, relay);
+    const status = noEnabledPrinters
+      ? { color: "amber" as const, headline: FIVE_STATE_HEADLINES.Waiting, detail: NO_ENABLED_PRINTERS_DETAIL }
+      : legacyLoaded && migrationFailed && derived.color !== "red"
+        ? { ...derived, detail: LEGACY_FAILED_DETAIL }
+        : derived;
     const warnings = powerWarnings({ onBattery: power.onBattery === true });
     if (power.asleep) warnings.push(ASLEEP_WARNING);
     if (power.locked) warnings.push(LOCKED_WARNING);
@@ -257,8 +266,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     return {
       version: deps.version,
       status,
-      fiveState: fiveStateResult.state,
-      recoveryAction: fiveStateResult.recoveryAction,
+      fiveState: noEnabledPrinters ? "Waiting" : fiveStateResult.state,
+      recoveryAction: noEnabledPrinters ? NO_ENABLED_PRINTERS_RECOVERY : fiveStateResult.recoveryAction,
       enrolled,
       label: current.label,
       printerName: enrolled ? current.printerName : null,
