@@ -990,6 +990,51 @@ describe("test print", () => {
   });
 });
 
+describe("set up printer", () => {
+  it("runs the setup on the queue the scan resolved and returns its result", async () => {
+    const h = await started();
+    expect(await h.controller.configurePrinter()).toEqual({ ok: true });
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith("Favor_S1");
+  });
+
+  it("passes no queue when no printer is attached, so nothing is sent", async () => {
+    const h = await started({ ...ENROLLED, scan: NO_PRINTER });
+    h.printerSetup.run.mockResolvedValueOnce({ ok: false, reason: "no-queue" });
+    expect(await h.controller.configurePrinter()).toEqual({ ok: false, reason: "no-queue" });
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("never uses a remembered queue name when the scan has no ready queue", async () => {
+    const h = await started({ ...ENROLLED, scan: foundPrinter("missing"), prefs: { ...ENROLLED.prefs, queue: "Remembered" } });
+    await h.controller.configurePrinter();
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("returns a failed step as is and logs it without the queue name", async () => {
+    const h = await started();
+    h.printerSetup.run.mockResolvedValueOnce({ ok: false, reason: "failed", step: "calibrate" });
+    expect(await h.controller.configurePrinter()).toEqual({ ok: false, reason: "failed", step: "calibrate" });
+    expect(h.logLines.join("\n")).toContain("failed at calibrate");
+    expect(h.logLines.join("\n")).not.toContain("Favor_S1");
+  });
+
+  it("from the menu, asks first and reports the result", async () => {
+    const h = await started();
+    await h.controller.setupPrinterFromMenu();
+    expect(h.ui.confirmPrinterSetup).toHaveBeenCalledTimes(1);
+    expect(h.printerSetup.run).toHaveBeenCalledTimes(1);
+    expect(h.ui.showPrinterSetupResult).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it("from the menu, sends nothing when the volunteer cancels", async () => {
+    const h = await started();
+    h.ui.confirmPrinterSetup.mockResolvedValueOnce(false);
+    await h.controller.setupPrinterFromMenu();
+    expect(h.printerSetup.run).not.toHaveBeenCalled();
+    expect(h.ui.showPrinterSetupResult).not.toHaveBeenCalled();
+  });
+});
+
 describe("pause and settings", () => {
   it("forwards pause and resume and shows them", async () => {
     const h = await started();

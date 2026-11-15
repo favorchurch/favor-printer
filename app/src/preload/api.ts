@@ -28,6 +28,7 @@ export function createApi(ipc: IpcRendererLike): FavorPrinterApi {
     enroll: (code) => call(IPC_CHANNELS.enroll, code),
     requestTestPrint: () => call(IPC_CHANNELS.requestTestPrint),
     confirmTestPrint: (labelCameOut) => call(IPC_CHANNELS.confirmTestPrint, labelCameOut),
+    configurePrinter: () => call(IPC_CHANNELS.configurePrinter),
     setPaused: (paused) => call(IPC_CHANNELS.setPaused, paused),
     setOpenAtLogin: (enabled) => call(IPC_CHANNELS.setOpenAtLogin, enabled),
     setChannel: (channel) => call(IPC_CHANNELS.setChannel, channel),

@@ -12,6 +12,7 @@ import {
   type AppSnapshot,
   type EnrollResult,
   type MigrateLegacyResult,
+  type PrinterSetupResult,
   type PrinterDevice,
   type PrinterScan,
   INITIAL_PRINTER_PRESENCE,
@@ -37,6 +38,7 @@ import {
   type LegacyRelay,
   type PowerController,
   type PrinterService,
+  type PrinterSetup,
   type RenameCloudOutcome,
   type SecretStore,
   type StoredCredentials,
@@ -65,6 +67,8 @@ export type ControllerDeps = {
   prefs: PrefsStore;
   secrets: SecretStore;
   printers: PrinterService;
+  /** Sends the printer its mode, calibration and save commands. */
+  printerSetup: PrinterSetup;
   legacy: LegacyRelay;
   enroll(request: EnrollRequest): Promise<EnrollOutcome>;
   /** Renames in the cloud registry. Never enrolls and never changes the saved pairing. */
@@ -80,6 +84,9 @@ export type ControllerDeps = {
     /** "Did a label come out?" for a test print started from the menu. */
     askLabelCameOut(): Promise<boolean>;
     openPrinterSettings(): Promise<void>;
+    /** "Set up printer" from the menu: calibration moves the media, so ask first. */
+    confirmPrinterSetup(): Promise<boolean>;
+    showPrinterSetupResult(result: PrinterSetupResult): void;
   };
   applyOpenAtLogin(enabled: boolean): void;
   log: Logger;
@@ -100,6 +107,7 @@ export type AppController = {
   enroll(code: string): Promise<EnrollResult>;
   requestTestPrint(): Promise<TestPrintResult>;
   confirmTestPrint(labelCameOut: boolean): Promise<void>;
+  configurePrinter(): Promise<PrinterSetupResult>;
   setPaused(paused: boolean): Promise<void>;
   setOpenAtLogin(enabled: boolean): Promise<void>;
   setChannel(channel: UpdateChannel): Promise<void>;
@@ -110,6 +118,7 @@ export type AppController = {
 
   /** Menu actions that combine a request with the confirmation question. */
   testPrintFromMenu(): Promise<void>;
+  setupPrinterFromMenu(): Promise<void>;
   beginReenroll(): void;
   openSetup(): void;
 
@@ -622,6 +631,20 @@ export function createAppController(deps: ControllerDeps): AppController {
     async confirmTestPrint(labelCameOut) {
       testPrintConfirmed = labelCameOut;
       emit();
+    },
+
+    async configurePrinter() {
+      // The queue the scan resolved for the attached printer, never a remembered name.
+      const result = await deps.printerSetup.run(scan.kind === "found" ? liveQueue : null);
+      if (!result.ok) {
+        log("warn", "printer-setup", result.reason === "failed" ? `printer setup failed at ${result.step}` : `printer setup not run: ${result.reason}`);
+      }
+      return result;
+    },
+
+    async setupPrinterFromMenu() {
+      if (!(await deps.ui.confirmPrinterSetup())) return;
+      deps.ui.showPrinterSetupResult(await controller.configurePrinter());
     },
 
     async testPrintFromMenu() {

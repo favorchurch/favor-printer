@@ -46,7 +46,7 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   const applySnapshot = (next: AppSnapshot) => {
     // A new step starts clean: an old error does not follow the volunteer forward.
     if (next.setupStep !== current.setupStep) {
-      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false, renameError: null };
+      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, printerSetup: { kind: "idle" }, confirmingMigration: false, migrateError: false, renameError: null };
     }
     current = next;
     render();
@@ -69,6 +69,20 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
         if (!result.ok && result.reason === "permission") local = { ...local, setUpRefused: true };
         applySnapshot(await api.getSnapshot());
       }),
+    askConfigurePrinter: () => patch({ printerSetup: { kind: "confirm" } }),
+    cancelConfigurePrinter: () => patch({ printerSetup: { kind: "idle" } }),
+    configurePrinter: () =>
+      void (async () => {
+        // Only reachable from the confirm step. A second click while it runs finds no button.
+        if (local.printerSetup.kind !== "confirm") return;
+        patch({ printerSetup: { kind: "running" } });
+        try {
+          const result = await api.configurePrinter();
+          patch({ printerSetup: result.ok ? { kind: "done" } : { kind: "failed", result } });
+        } catch {
+          patch({ printerSetup: { kind: "failed", result: { ok: false, reason: "failed", step: "mode" } } });
+        }
+      })(),
     openPrinterSettings: () => void api.openPrinterSettings().catch(() => undefined),
     submitCode: (code) =>
       void busy(async () => {

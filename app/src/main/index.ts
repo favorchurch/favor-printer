@@ -25,13 +25,14 @@ import {
 } from "electron";
 import { autoUpdater } from "electron-updater";
 
-import { PRODUCT_NAME, type StatusColor } from "../shared";
+import { PRODUCT_NAME, printerSetupFailureCopy, type StatusColor } from "../shared";
 import {
   appSupportDir,
   createCommandRunner,
   createLegacyRelay,
   createPowerController,
   createPrinterService,
+  createPrinterSetup,
   createSecretStore,
   createUpdateController,
   enroll,
@@ -158,6 +159,7 @@ async function runApp(): Promise<void> {
     prefs,
     secrets: createSecretStore({ file: path.join(supportDir, "relay-token.bin"), safeStorage }),
     printers: createPrinterService({ run }),
+    printerSetup: createPrinterSetup({ run }),
     legacy: createLegacyRelay({
       run,
       homeDir: os.homedir(),
@@ -190,6 +192,24 @@ async function runApp(): Promise<void> {
           cancelId: 1,
         });
         return response === 0;
+      },
+      confirmPrinterSetup: async () => {
+        const { response } = await dialog.showMessageBox({
+          type: "question",
+          message: "Set up the printer?",
+          detail: "Favor Printer will set the printer's mode, calibrate it and save the settings. The printer feeds a few labels while it calibrates.",
+          buttons: ["Set up printer", "Cancel"],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        return response === 0;
+      },
+      showPrinterSetupResult: (result) => {
+        void dialog.showMessageBox({
+          type: result.ok ? "info" : "warning",
+          message: result.ok ? "Printer set up" : "Printer setup did not finish",
+          detail: result.ok ? "The mode is set, the printer is calibrated and the settings are saved." : printerSetupFailureCopy(result),
+        });
       },
       openPrinterSettings: () => shell.openExternal(PRINTER_SETTINGS_URL),
     },
@@ -232,6 +252,7 @@ async function runApp(): Promise<void> {
       pause: () => void controller.setPaused(true),
       resume: () => void controller.setPaused(false),
       testPrint: () => void controller.testPrintFromMenu(),
+      setupPrinter: () => void controller.setupPrinterFromMenu(),
       openSetup: () => controller.openSetup(),
       reenroll: () => controller.beginReenroll(),
       // The window asks for confirmation before anything is turned off.

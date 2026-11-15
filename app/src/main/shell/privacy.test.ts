@@ -57,6 +57,7 @@ const NO_ACTIONS: TrayActions = {
   pause: () => undefined,
   resume: () => undefined,
   testPrint: () => undefined,
+  setupPrinter: () => undefined,
   openSetup: () => undefined,
   reenroll: () => undefined,
   migrateLegacy: () => undefined,

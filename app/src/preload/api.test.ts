@@ -24,6 +24,7 @@ describe("preload API", () => {
     expect(Object.keys(api).sort()).toEqual(
       [
         "advance",
+        "configurePrinter",
         "confirmTestPrint",
         "enroll",
         "getSnapshot",
@@ -54,6 +55,7 @@ describe("preload API", () => {
     ["enroll", IPC_CHANNELS.enroll, ["123456"]],
     ["requestTestPrint", IPC_CHANNELS.requestTestPrint, []],
     ["confirmTestPrint", IPC_CHANNELS.confirmTestPrint, [true]],
+    ["configurePrinter", IPC_CHANNELS.configurePrinter, []],
     ["setPaused", IPC_CHANNELS.setPaused, [true]],
     ["setOpenAtLogin", IPC_CHANNELS.setOpenAtLogin, [false]],
     ["setChannel", IPC_CHANNELS.setChannel, ["preview"]],
