@@ -707,4 +707,30 @@ describe("pairing with a new code from the status screen", () => {
     await vi.waitFor(() => expect(screenOf()).toBe("code"));
     expect(beginReenroll).toHaveBeenCalledTimes(1);
   });
+  it("the code screen offers Cancel only while pairing again, and Cancel goes back to status", async () => {
+    const root = el();
+    const fixture = fixtureFor("repair-code");
+    const api = createMockApi(fixture.snapshot);
+    const cancelReenroll = vi.spyOn(api, "cancelReenroll");
+    startApp(root as unknown as HTMLElement, api, fixture.snapshot);
+    const screenOf = () => (root.children[0] as FakeElement).getAttribute("data-screen");
+    expect(screenOf()).toBe("code");
+    buttonLabeled(root.children[0] as FakeElement, "Cancel")?.click();
+    await vi.waitFor(() => expect(screenOf()).toBe("status"));
+    expect(cancelReenroll).toHaveBeenCalledTimes(1);
+
+    const first = createMockApi(fixtureFor("enter-code").snapshot);
+    const firstRoot = el();
+    startApp(firstRoot as unknown as HTMLElement, first, fixtureFor("enter-code").snapshot);
+    expect(buttonLabeled(firstRoot.children[0] as FakeElement, "Cancel")).toBeUndefined();
+  });
+
+  it("the confirmation copy does not promise printing stops", () => {
+    const root = el();
+    const snapshot = fixtureFor("reenroll-confirm");
+    startApp(root as unknown as HTMLElement, createMockApi(snapshot.snapshot), snapshot.snapshot, { initialLocal: snapshot.local });
+    const text = JSON.stringify(root.children[0]);
+    expect(text).not.toMatch(/stops printing/);
+    expect(text).toMatch(/keeps printing/);
+  });
 });

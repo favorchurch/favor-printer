@@ -6,6 +6,7 @@
 
 import {
   NO_ENABLED_PRINTERS_DETAIL,
+  NO_ENABLED_PRINTERS_HEADLINE,
   NO_ENABLED_PRINTERS_RECOVERY,
   type AppSnapshot,
   type FavorPrinterApi,
@@ -61,6 +62,7 @@ export const FIXTURE_NAMES = [
   "several-printers",
   "queue-fallback",
   "enter-code",
+  "repair-code",
   "invalid-code",
   "connected",
   "test-print-confirm",
@@ -131,6 +133,8 @@ export function fixtureFor(requested: string | null): Fixture {
         snapshot: withStep("printer", { printer: { kind: "found", devices: [ZD421], selectedId: ZD421.id, queue: "missing" } }),
         local: { setUpRefused: true },
       };
+    case "repair-code":
+      return { snapshot: withStep("code", { ...enrolled }) };
     case "enter-code":
       return { snapshot: withStep("code", { printer: oneReady }) };
     case "invalid-code":
@@ -202,7 +206,7 @@ export function fixtureFor(requested: string | null): Fixture {
       return {
         snapshot: withStep(null, {
           ...enrolled,
-          status: { color: "amber", headline: "Waiting for connection", detail: NO_ENABLED_PRINTERS_DETAIL },
+          status: { color: "amber", headline: NO_ENABLED_PRINTERS_HEADLINE, detail: NO_ENABLED_PRINTERS_DETAIL },
           fiveState: "Waiting",
           recoveryAction: NO_ENABLED_PRINTERS_RECOVERY,
         }),
@@ -294,6 +298,7 @@ export function createMockApi(start: AppSnapshot, options: { failMigration?: boo
       return set({ setupStep: next[step] ?? null });
     },
     beginReenroll: async () => set({ setupStep: "code" }),
+    cancelReenroll: async () => set({ setupStep: null }),
     quit: async () => undefined,
   };
 }

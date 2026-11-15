@@ -299,6 +299,26 @@ describe("hasNoEnabledPrinters", () => {
     expect(hasNoEnabledPrinters("Connected", relay)).toBe(false);
   });
 
+  const silent = { state: "running", cloud: "ok", printerIds: [] as string[], lastHeartbeatAt: null as string | null };
+
+  it.each([
+    ["config_invalid (disabled or removed)", { ...silent, lastError: "config_invalid" }],
+    ["printer_handed_over", { ...silent, lastError: "printer_handed_over" }],
+    ["a handed over printer id", { ...silent, handedOverPrinterIds: ["printer-1"] }],
+  ])("is true with no heartbeat ever sent when the relay reports %s", (_label, relay) => {
+    expect(hasNoEnabledPrinters("Connected", relay)).toBe(true);
+  });
+
+  it.each([
+    ["an unrelated error", { ...silent, lastError: "send_failed" }],
+    ["a null error", { ...silent, lastError: null }],
+    ["no handed over ids", { ...silent, handedOverPrinterIds: [] }],
+    ["config_invalid but a listed printer", { ...silent, printerIds: ["printer-1"], lastError: "config_invalid" }],
+    ["config_invalid but the cloud unreachable", { ...silent, cloud: "unreachable", lastError: "config_invalid" }],
+  ])("is false with %s and no heartbeat", (_label, relay) => {
+    expect(hasNoEnabledPrinters("Connected", relay)).toBe(false);
+  });
+
   it.each(FIVE_STATES.filter((state) => state !== "Connected"))("leaves the %s state to its own recovery action", (state) => {
     expect(hasNoEnabledPrinters(state, answered)).toBe(false);
   });

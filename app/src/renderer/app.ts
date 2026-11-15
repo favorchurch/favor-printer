@@ -113,6 +113,7 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
         local = { ...local, confirmingReenroll: false };
         applySnapshot(await api.beginReenroll());
       }),
+    leaveReenroll: () => void busy(async () => applySnapshot(await api.cancelReenroll())),
     renameLaptop: (name) => void busy(() => rename("laptop", name, () => api.renameLaptop(name))),
     renamePrinter: (name) => void busy(() => rename("printer", name, () => api.renamePrinter(name))),
     closeWindow: options.closeWindow ?? (() => window.close()),

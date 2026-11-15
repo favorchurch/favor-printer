@@ -9,6 +9,7 @@ const EXPECTED: Record<(typeof FIXTURE_NAMES)[number], ScreenId> = {
   "several-printers": "printer-several",
   "queue-fallback": "printer-fallback",
   "enter-code": "code",
+  "repair-code": "code",
   "invalid-code": "code",
   connected: "connected",
   "test-print-confirm": "test-print",

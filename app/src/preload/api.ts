@@ -36,6 +36,7 @@ export function createApi(ipc: IpcRendererLike): FavorPrinterApi {
     renamePrinter: (name) => call(IPC_CHANNELS.renamePrinter, name),
     advance: () => call(IPC_CHANNELS.advance),
     beginReenroll: () => call(IPC_CHANNELS.beginReenroll),
+    cancelReenroll: () => call(IPC_CHANNELS.cancelReenroll),
     quit: () => call(IPC_CHANNELS.quit),
   };
 }

@@ -25,6 +25,7 @@ describe("preload API", () => {
       [
         "advance",
         "beginReenroll",
+        "cancelReenroll",
         "confirmTestPrint",
         "enroll",
         "getSnapshot",
@@ -63,6 +64,7 @@ describe("preload API", () => {
     ["renamePrinter", IPC_CHANNELS.renamePrinter, ["Front Zebra"]],
     ["advance", IPC_CHANNELS.advance, []],
     ["beginReenroll", IPC_CHANNELS.beginReenroll, []],
+    ["cancelReenroll", IPC_CHANNELS.cancelReenroll, []],
     ["quit", IPC_CHANNELS.quit, []],
   ] as const)("%s invokes its own channel with its own arguments", async (method, channel, args) => {
     const { ipc } = fakeIpc();

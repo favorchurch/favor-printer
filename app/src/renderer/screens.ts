@@ -37,8 +37,10 @@ export type Actions = {
   /** "Pair with a new code": asks for confirmation, changes nothing yet. */
   askReenroll(): void;
   cancelReenroll(): void;
-  /** Confirmed: opens the code step. Printing stays off until a new code is entered. */
+  /** Confirmed: opens the code step. The current pairing keeps printing until a new code is accepted. */
   reenroll(): void;
+  /** Leaves the code step of a re-pair and goes back to the status screen. */
+  leaveReenroll(): void;
   /** Saves the typed name. The screen reads the input itself: it is not kept in local state. */
   renameLaptop(name: string): void;
   renamePrinter(name: string): void;
@@ -300,7 +302,8 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
           h("label", { for: "code", class: "field-label" }, "Six-digit code"),
           input,
           error ? h("p", { id: "code-error", class: "note error", role: "alert" }, error) : h("p", { id: "code-help", class: "hint" }, "Numbers only."),
-          actions(submit),
+          snapshot.enrolled ? h("p", { class: "hint" }, "This laptop keeps printing with its current pairing until the new code works.") : null,
+          actions(submit, ...(snapshot.enrolled ? [button("Cancel", a.leaveReenroll, { disabled: local.busy })] : [])),
         ),
       );
     }
@@ -370,7 +373,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         screen,
         snapshot,
         "Pair with a new code?",
-        lead("This laptop stops printing until you enter a new code from an admin."),
+        lead("This laptop keeps printing with its current pairing until a new code works."),
         h("p", { class: "hint" }, "Ask an admin for a six-digit code in Favor RSVP first. Cancel if you do not have one yet."),
         actions(
           button("Pair with a new code", a.reenroll, { primary: true, disabled: local.busy }),

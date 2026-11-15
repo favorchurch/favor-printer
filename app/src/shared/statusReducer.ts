@@ -85,21 +85,33 @@ export const NO_ENABLED_PRINTERS_DETAIL = "RSVP has no enabled printer for this 
 export const NO_ENABLED_PRINTERS_RECOVERY =
   "Ask an admin to turn the printer on in RSVP printing settings, or pair with a new code.";
 
+/** Pill label for the same state. RSVP did answer, so it is not "Waiting for connection". */
+export const NO_ENABLED_PRINTERS_HEADLINE = "Needs attention";
+
 /**
  * True when this laptop would read as Connected but RSVP lists no enabled printer for it.
- * Needs a heartbeat answer first: before one, an empty list only means the relay is still starting.
+ * An empty list alone only means the relay is still starting, so it needs proof that RSVP answered:
+ * a heartbeat, or the relay's own report of a config it cannot use (a printer that was turned off,
+ * removed or handed over never gets a heartbeat, so lastHeartbeatAt stays null for it).
  */
 export function hasNoEnabledPrinters(
   state: FiveState,
-  relay: { state: string; cloud: string; printerIds: readonly string[]; lastHeartbeatAt: string | null } | null,
+  relay: {
+    state: string;
+    cloud: string;
+    printerIds: readonly string[];
+    lastHeartbeatAt: string | null;
+    lastError?: string | null;
+    handedOverPrinterIds?: readonly string[];
+  } | null,
 ): boolean {
+  if (state !== "Connected" || relay === null || relay.state !== "running" || relay.cloud !== "ok") return false;
+  if (relay.printerIds.length > 0) return false;
   return (
-    state === "Connected" &&
-    relay !== null &&
-    relay.state === "running" &&
-    relay.cloud === "ok" &&
-    relay.lastHeartbeatAt !== null &&
-    relay.printerIds.length === 0
+    relay.lastHeartbeatAt !== null ||
+    relay.lastError === "config_invalid" ||
+    relay.lastError === "printer_handed_over" ||
+    (relay.handedOverPrinterIds?.length ?? 0) > 0
   );
 }
 

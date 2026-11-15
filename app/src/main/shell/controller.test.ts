@@ -11,7 +11,7 @@ import {
   type ControllerHarness,
   type HarnessOptions,
 } from "./testing/controllerHarness";
-import { NO_ENABLED_PRINTERS_DETAIL, NO_ENABLED_PRINTERS_RECOVERY } from "../../shared";
+import { NO_ENABLED_PRINTERS_DETAIL, NO_ENABLED_PRINTERS_HEADLINE, NO_ENABLED_PRINTERS_RECOVERY } from "../../shared";
 import type { EnrollOutcome, ScanOutcome } from "../services";
 import { LEGACY_FAILED_DETAIL } from "./controller";
 import { relayStatus } from "./testing/fakeChild";
@@ -689,7 +689,8 @@ describe("enroll", () => {
       const h = await started({ ...ENROLLED });
       h.forks.last().emitMessage({ type: "event", event: answered({ printerIds: [] }) });
       const snap = h.controller.snapshot();
-      expect(snap.status).toEqual({ color: "amber", headline: "Waiting for connection", detail: NO_ENABLED_PRINTERS_DETAIL });
+      expect(snap.status).toEqual({ color: "amber", headline: NO_ENABLED_PRINTERS_HEADLINE, detail: NO_ENABLED_PRINTERS_DETAIL });
+      expect(snap.status.headline).not.toBe("Waiting for connection");
       expect(snap.fiveState).toBe("Waiting");
       expect(snap.recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
       expect(snap.recoveryAction).toMatch(/admin/);
@@ -699,6 +700,31 @@ describe("enroll", () => {
     it("covers a printer handed to another host", async () => {
       const h = await started({ ...ENROLLED });
       h.forks.last().emitMessage({ type: "event", event: answered({ printerIds: [], handedOverPrinterIds: ["printer-1"], lastError: "printer_handed_over" }) });
+      expect(h.controller.snapshot().recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
+    });
+
+    // The relay never sends a heartbeat for a printer RSVP does not list, so lastHeartbeatAt stays null.
+    const silent = (patch: Partial<ReturnType<typeof relayStatus>>) =>
+      relayStatus({ state: "running", cloud: "ok", lastHeartbeatAt: null, printerIds: [], ...patch });
+
+    it.each([
+      ["disabled or removed", { lastError: "config_invalid" as const }],
+      ["handed over", { lastError: "printer_handed_over" as const, handedOverPrinterIds: ["printer-1"] }],
+      ["handed over without the error code", { handedOverPrinterIds: ["printer-1"] }],
+    ])("fires at startup for a printer that is %s, with no heartbeat ever sent", async (_name, patch) => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: silent(patch) });
+      const snap = h.controller.snapshot();
+      expect(snap.status).toEqual({ color: "amber", headline: NO_ENABLED_PRINTERS_HEADLINE, detail: NO_ENABLED_PRINTERS_DETAIL });
+      expect(snap.recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
+    });
+
+    it("fires again after a relay restart that still has no printer and no heartbeat", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: answered({}) });
+      expect(h.controller.snapshot().recoveryAction).not.toBe(NO_ENABLED_PRINTERS_RECOVERY);
+      h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "starting" }) });
+      h.forks.last().emitMessage({ type: "event", event: silent({ lastError: "config_invalid" }) });
       expect(h.controller.snapshot().recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
     });
 
@@ -717,31 +743,98 @@ describe("enroll", () => {
     });
   });
 
-  it("clears In use elsewhere when setup closes without enrolling", async () => {
-    const h = await started({
-      ...ENROLLED,
-      prefs: { openAtLogin: true, setupComplete: false },
-      enroll: async () => ({ ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 }),
+  describe("pairing again (a swap, not a teardown)", () => {
+    const rejecting = (reason: "invalid_code" | "expired_code"): Partial<HarnessOptions> => ({
+      enroll: async () => ({ ok: false, reason }) as EnrollOutcome,
     });
-    h.controller.beginReenroll();
-    await h.controller.enroll("123456");
-    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
 
-    // The volunteer walks the rest of the flow without ever enrolling again.
-    await h.controller.advance(); // connected: this laptop is still enrolled from before
-    // A starting relay that reached the cloud advances the flow but proves nothing yet.
-    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "starting", cloud: "ok" }) });
-    await h.controller.advance(); // test-print
-    await h.controller.confirmTestPrint(true);
-    await h.controller.advance(); // done
-    expect(h.controller.snapshot().fiveState).toBe("In use elsewhere");
+    it("keeps the old pairing, the relay and printing while the code screen is open", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "ok" }) });
+      h.controller.beginReenroll();
+      const snap = h.controller.snapshot();
+      expect(snap.setupStep).toBe("code");
+      expect(snap.enrolled).toBe(true);
+      expect(snap.fiveState).toBe("Connected");
+      expect(h.secrets.clear).not.toHaveBeenCalled();
+      expect(h.forks.last().types()).not.toContain("stop");
+      expect(h.forks.children).toHaveLength(1);
+    });
 
-    await h.controller.advance(); // done -> setup closes
-    const closed = h.controller.snapshot();
-    expect(closed.setupStep).toBeNull();
-    expect(closed.fiveState).toBe("Waiting");
-    expect(h.ui.closeSetupWindow).toHaveBeenCalled();
-    expect(h.prefsFs.saved()).toMatchObject({ setupComplete: true });
+    it("does not skip the code step to connected without a new code", async () => {
+      const h = await started({ ...ENROLLED });
+      h.controller.beginReenroll();
+      expect((await h.controller.advance()).setupStep).toBe("code");
+    });
+
+    it("an invalid code leaves the old pairing printing and the code screen open", async () => {
+      const h = await started({ ...ENROLLED, ...rejecting("invalid_code") });
+      h.controller.beginReenroll();
+      await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: false, reason: "invalid_code" });
+      expect(h.controller.snapshot().enrolled).toBe(true);
+      expect(h.secrets.clear).not.toHaveBeenCalled();
+      expect(h.forks.children).toHaveLength(1);
+      expect((await h.controller.advance()).setupStep).toBe("code");
+    });
+
+    it("a conflict on the new code does not mark the live pairing as in use elsewhere", async () => {
+      const h = await started({
+        ...ENROLLED,
+        enroll: async () => ({ ok: false, reason: "printer_conflict", conflict: "serial_in_use", status: 409 }),
+      });
+      h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "ok" }) });
+      h.controller.beginReenroll();
+      await h.controller.enroll("123456");
+      expect(h.controller.snapshot().fiveState).toBe("Connected");
+    });
+
+    it("leaving the code screen returns to status with the old pairing intact", async () => {
+      const h = await started({ ...ENROLLED });
+      h.controller.beginReenroll();
+      const snap = h.controller.cancelReenroll();
+      expect(snap.setupStep).toBeNull();
+      expect(snap.enrolled).toBe(true);
+      expect(h.secrets.clear).not.toHaveBeenCalled();
+      expect(h.forks.last().types()).not.toContain("stop");
+      // Nothing was waiting: a second cancel changes nothing.
+      expect(h.controller.cancelReenroll().setupStep).toBeNull();
+    });
+
+    it("reopening the window after leaving starts at status, not at the code step", async () => {
+      const h = await started({ ...ENROLLED });
+      h.controller.beginReenroll();
+      h.controller.openSetup();
+      expect(h.controller.snapshot().setupStep).toBeNull();
+    });
+
+    it("cancel does nothing outside a re-pair, so it cannot close first-time setup", async () => {
+      const h = createControllerHarness({ scan: foundPrinter() });
+      await h.controller.initialize();
+      expect(h.controller.snapshot().setupStep).toBe("welcome");
+      expect(h.controller.cancelReenroll().setupStep).toBe("welcome");
+    });
+
+    it("a restart mid re-pair comes back printing on the old pairing, at status", async () => {
+      const first = await started({ ...ENROLLED });
+      first.controller.beginReenroll();
+      const restarted = await started({ ...ENROLLED });
+      const snap = restarted.controller.snapshot();
+      expect(snap.enrolled).toBe(true);
+      expect(snap.setupStep).toBeNull();
+      expect(restarted.forks.last().messages[0]).toMatchObject({ type: "start" });
+    });
+
+    it("a new code replaces the pairing and restarts the relay", async () => {
+      const h = await started({ ...ENROLLED });
+      h.controller.beginReenroll();
+      const enrolling = h.controller.enroll("654321");
+      await finishStop(h);
+      await expect(enrolling).resolves.toEqual({ ok: true });
+      expect(h.controller.snapshot().setupStep).toBe("connected");
+      expect(h.forks.children).toHaveLength(2);
+      // The re-pair is over: the flow now moves on normally.
+      expect(h.controller.cancelReenroll().setupStep).toBe("connected");
+    });
   });
 
   it("starts the relay once enrolled", async () => {
