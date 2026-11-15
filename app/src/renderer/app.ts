@@ -120,6 +120,8 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   };
 
   const unsubscribe = api.onSnapshot(applySnapshot);
+  // Closing the window (close button, Cmd+W) abandons a re-pair: the saved pairing was never touched.
+  if (typeof window !== "undefined") window.addEventListener("pagehide", () => void api.cancelReenroll().catch(() => undefined));
   render();
   return () => {
     disposed = true;

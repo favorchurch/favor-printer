@@ -390,6 +390,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
         "Favor Printer",
         statusPill(snapshot),
         snapshot.status.detail ? lead(snapshot.status.detail) : null,
+        codeErrorCopy(local) ? note(`${codeErrorCopy(local)} This laptop is still printing with its current pairing.`, "error") : null,
         snapshot.fiveState && snapshot.recoveryAction
           ? h("p", { class: "recovery-action hint" }, `${snapshot.fiveState}: ${snapshot.recoveryAction}`)
           : null,

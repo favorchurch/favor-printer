@@ -89,7 +89,7 @@ export const NO_ENABLED_PRINTERS_RECOVERY =
 export const NO_ENABLED_PRINTERS_HEADLINE = "Needs attention";
 
 /**
- * True when this laptop would read as Connected but RSVP lists no enabled printer for it.
+ * True when RSVP lists no enabled printer for this laptop, whatever the local printer is doing.
  * An empty list alone only means the relay is still starting, so it needs proof that RSVP answered:
  * a heartbeat, or the relay's own report of a config it cannot use (a printer that was turned off,
  * removed or handed over never gets a heartbeat, so lastHeartbeatAt stays null for it).
@@ -105,7 +105,9 @@ export function hasNoEnabledPrinters(
     handedOverPrinterIds?: readonly string[];
   } | null,
 ): boolean {
-  if (state !== "Connected" || relay === null || relay.state !== "running" || relay.cloud !== "ok") return false;
+  // RSVP's answer does not depend on the local printer, so an unplugged or unknown printer does not hide it.
+  // The two states that mean this laptop's own pairing is wrong keep their own recovery.
+  if (state === "Needs re-enrollment" || state === "In use elsewhere" || relay === null || relay.state !== "running" || relay.cloud !== "ok") return false;
   if (relay.printerIds.length > 0) return false;
   return (
     relay.lastHeartbeatAt !== null ||

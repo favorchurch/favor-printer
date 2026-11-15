@@ -733,4 +733,15 @@ describe("pairing with a new code from the status screen", () => {
     expect(text).not.toMatch(/stops printing/);
     expect(text).toMatch(/keeps printing/);
   });
+  it("closing the window asks main to abandon a re-pair", () => {
+    const handlers: Record<string, () => void> = {};
+    vi.stubGlobal("window", { addEventListener: (name: string, handler: () => void) => (handlers[name] = handler) });
+    const fixture = fixtureFor("repair-code");
+    const api = createMockApi(fixture.snapshot);
+    const cancelReenroll = vi.spyOn(api, "cancelReenroll");
+    startApp(el() as unknown as HTMLElement, api, fixture.snapshot);
+    expect(cancelReenroll).not.toHaveBeenCalled();
+    handlers.pagehide?.();
+    expect(cancelReenroll).toHaveBeenCalledTimes(1);
+  });
 });

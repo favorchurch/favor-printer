@@ -319,7 +319,12 @@ describe("hasNoEnabledPrinters", () => {
     expect(hasNoEnabledPrinters("Connected", relay)).toBe(false);
   });
 
-  it.each(FIVE_STATES.filter((state) => state !== "Connected"))("leaves the %s state to its own recovery action", (state) => {
+  it.each(["Needs re-enrollment", "In use elsewhere"] as const)("leaves the %s state to its own recovery action", (state) => {
     expect(hasNoEnabledPrinters(state, answered)).toBe(false);
+  });
+
+  it.each(["Unplugged", "Waiting"] as const)("still fires in the %s state: RSVP answered whatever the local printer is doing", (state) => {
+    expect(hasNoEnabledPrinters(state, { ...silent, lastError: "config_invalid" })).toBe(true);
+    expect(hasNoEnabledPrinters(state, { ...silent, handedOverPrinterIds: ["printer-1"] })).toBe(true);
   });
 });

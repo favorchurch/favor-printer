@@ -719,6 +719,17 @@ describe("enroll", () => {
       expect(snap.recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
     });
 
+    it("fires at startup even when the local printer is unplugged", async () => {
+      const h = await started({ ...ENROLLED });
+      h.state.scan = NO_PRINTER;
+      await h.controller.scanPrinters();
+      expect(h.controller.snapshot().fiveState).toBe("Unplugged");
+      h.forks.last().emitMessage({ type: "event", event: silent({ lastError: "config_invalid" }) });
+      const snap = h.controller.snapshot();
+      expect(snap.status.headline).toBe(NO_ENABLED_PRINTERS_HEADLINE);
+      expect(snap.recoveryAction).toBe(NO_ENABLED_PRINTERS_RECOVERY);
+    });
+
     it("fires again after a relay restart that still has no printer and no heartbeat", async () => {
       const h = await started({ ...ENROLLED });
       h.forks.last().emitMessage({ type: "event", event: answered({}) });
@@ -767,14 +778,19 @@ describe("enroll", () => {
       expect((await h.controller.advance()).setupStep).toBe("code");
     });
 
-    it.each(["invalid_code", "code_expired"] as const)("a %s leaves the old pairing printing and the code screen open", async (reason) => {
+    it.each(["invalid_code", "code_expired"] as const)("a %s leaves the old pairing printing and goes back to status", async (reason) => {
       const h = await started({ ...ENROLLED, ...rejecting(reason) });
+      h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "ok" }) });
       h.controller.beginReenroll();
       await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: false, reason });
+      const after = h.controller.snapshot();
+      expect(after.setupStep).toBeNull();
+      expect(after.fiveState).toBe("Connected");
+      expect(after.status.color).toBe("green");
       expect(h.controller.snapshot().enrolled).toBe(true);
       expect(h.secrets.clear).not.toHaveBeenCalled();
       expect(h.forks.children).toHaveLength(1);
-      expect((await h.controller.advance()).setupStep).toBe("code");
+      expect(h.forks.last().types()).not.toContain("stop");
     });
 
     it("a conflict on the new code does not mark the live pairing as in use elsewhere", async () => {
@@ -798,6 +814,17 @@ describe("enroll", () => {
       expect(h.forks.last().types()).not.toContain("stop");
       // Nothing was waiting: a second cancel changes nothing.
       expect(h.controller.cancelReenroll().setupStep).toBeNull();
+    });
+
+    it("abandoning the re-pair (window closed) returns the tray and status to the normal paired state", async () => {
+      const h = await started({ ...ENROLLED });
+      h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "running", cloud: "ok" }) });
+      h.controller.beginReenroll();
+      expect(h.controller.snapshot().setupStep).toBe("code");
+      const snap = h.controller.cancelReenroll();
+      expect(snap.setupStep).toBeNull();
+      expect(snap.fiveState).toBe("Connected");
+      expect((await h.controller.advance()).setupStep).toBeNull();
     });
 
     it("reopening the window after leaving starts at status, not at the code step", async () => {

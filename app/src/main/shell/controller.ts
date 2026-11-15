@@ -301,6 +301,15 @@ export function createAppController(deps: ControllerDeps): AppController {
     deps.power.update({ printerAttached, lastJobAt: supervisorState.relay?.lastJobAt ?? null });
   }
 
+  /** A new code that did not work while pairing again: the old pairing carries on and the window goes back to status. */
+  function leaveRepairAfterFailure(): boolean {
+    if (!reenrolling) return false;
+    reenrolling = false;
+    setupStep = null;
+    emit();
+    return true;
+  }
+
   const setStep = (step: SetupStep | null) => {
     const previous = setupStep;
     setupStep = step;
@@ -541,7 +550,9 @@ export function createAppController(deps: ControllerDeps): AppController {
         if (!isUsableUsbSerial(usbSerial)) {
           log("warn", "enroll", "enrollment not sent: printer_not_found, printer serial missing");
           // Back to the plug-in step; the code can be entered again once the printer is seen.
-          if (setupStep === "code") {
+          if (leaveRepairAfterFailure()) {
+            // Pairing again: nothing was sent, so the old pairing carries on and the window goes back to status.
+          } else if (setupStep === "code") {
             setupStep = "printer";
             emit();
           }
@@ -555,13 +566,14 @@ export function createAppController(deps: ControllerDeps): AppController {
           osVersion: deps.osVersion,
         });
         if (!outcome.ok) {
+          const wasReenrolling = leaveRepairAfterFailure();
           // Never the code, the token or the serial: only whether a serial was there.
           const status = outcome.status === undefined ? "" : ` (HTTP ${outcome.status})`;
           const detail = outcome.reason === "printer_conflict" ? ` (${outcome.conflict})` : "";
           log("warn", "enroll", `enrollment failed: ${outcome.reason}${detail}${status}, printer serial ${usbSerial ? "present" : "missing"}`);
           if (outcome.reason === "printer_conflict" && outcome.conflict === "serial_in_use") {
             // While pairing again the old pairing still prints: the conflict is shown on the code screen only.
-            if (!reenrolling) inUseElsewhere = true;
+            if (!wasReenrolling) inUseElsewhere = true;
             emit();
           }
           return outcome.reason === "printer_conflict"
