@@ -57,9 +57,12 @@ private actor HeldJobTransport: UsbPrinterTransport {
 
 struct PrinterSetupTests {
     @Test func failureReasonsAreVolunteerReadable() {
-        #expect(PrinterSetup.reason(for: .notAttached) == "printer not attached")
-        #expect(PrinterSetup.reason(for: .driverNotFound) == "driver not running")
-        #expect(PrinterSetup.reason(for: .timeout) == "write timed out; outcome unknown")
+        let step = PrinterSetup.Step.calibrate
+        #expect(PrinterSetup.reason(for: .notAttached, step: step) == "printer not attached")
+        #expect(PrinterSetup.reason(for: .driverNotFound, step: step) == "driver not running")
+        #expect(PrinterSetup.reason(for: .timeout, step: step) == "write timed out; outcome unknown")
+        #expect(PrinterSetup.reason(for: .writeFailed(code: -5, bytesWritten: 1), step: step) == "write failed (-5) after 1 of 3 bytes")
+        #expect(PrinterSetup.reason(for: .shortWrite(written: 2, expected: 10), step: .continuousMedia) == "wrote 2 of 10 bytes")
     }
 
     @Test func sendsThreeSeparateWritesInOrder() async {
@@ -122,6 +125,34 @@ struct HostPrinterSetupControllerTests {
 
         controller.scenePhaseChanged(.background)
         await controller.settled()
+    }
+
+    @Test func aFailedSetupClearsBusyAndCanBeRetried() async throws {
+        let transport = FakeUsbTransport()
+        await transport.enqueueSend(.failure(.timeout))
+        let controller = try makeController(relay: FakeRelay(), transport: transport)
+        controller.scenePhaseChanged(.active)
+        await controller.settled()
+
+        #expect(await controller.setUpPrinter() == .failed(step: .continuousMedia, error: .timeout))
+        #expect(controller.isSettingUpPrinter == false)
+        #expect(await controller.setUpPrinter() == .done)
+        #expect(await transport.writes == [expectedPayloads[0]] + expectedPayloads)
+
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+    }
+
+    @Test func setupWhileBackgroundedLeavesTheLoopStopped() async throws {
+        let transport = FakeUsbTransport()
+        let controller = try makeController(relay: FakeRelay(), transport: transport)
+        controller.scenePhaseChanged(.background)
+        await controller.settled()
+
+        #expect(await controller.setUpPrinter() == .done)
+        #expect(await transport.writes == expectedPayloads)
+        #expect(controller.isLoopRunning == false, "setup restarted the loop while the app was in the background")
+        #expect(controller.isSettingUpPrinter == false)
     }
 
     @Test func theLoopIsStoppedDuringSetupAndNoJobInterleaves() async throws {

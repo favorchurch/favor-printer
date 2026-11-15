@@ -40,8 +40,8 @@ enum PrinterSetup {
     static let saveMediaTrackingCommand = Data("^XA^JUS^XZ".utf8)
 
     /// Volunteer-readable reason for a failed write, in the same words the job loop uses.
-    static func reason(for error: UsbTransportError) -> String {
-        HostLoop.outcome(of: .failure(error), expected: 0).1 ?? "unknown error"
+    static func reason(for error: UsbTransportError, step: Step) -> String {
+        HostLoop.outcome(of: .failure(error), expected: step.payload.count).1 ?? "unknown error"
     }
 
     /// Sends the three commands in order as separate writes and stops at the first failure.

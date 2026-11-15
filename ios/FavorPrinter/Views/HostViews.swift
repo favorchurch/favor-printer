@@ -32,6 +32,9 @@ struct HostStatusView: View {
             .frame(maxWidth: .infinity)
         }
         .background(FavorColor.paper.ignoresSafeArea())
+        .onChange(of: host.status.printerAttached) { _, attached in
+            if attached != true { setupResult = nil }
+        }
         .navigationTitle("Printer host")
         .task {
             // The loop reports the printer only while it runs; poll gently otherwise, as the pending screen does.
@@ -63,6 +66,7 @@ struct HostStatusView: View {
         if host.status.driver != .running || host.status.printerAttached != true {
             return Headline(title: "Needs attention", detail: "Check the printer connection and driver.", badge: .attention)
         }
+        if host.isSettingUpPrinter { return Headline(title: "Setting up", detail: "The printer is being set up. Printing resumes when it finishes.", badge: .unavailable) }
         if host.isLoopRunning { return Headline(title: "Ready", detail: "This iPad is connected and ready to print.", badge: .ready) }
         return Headline(title: "Paused", detail: "Printing resumes when this app is active.", badge: .unavailable)
     }
@@ -130,7 +134,7 @@ struct HostStatusView: View {
         if host.isSettingUpPrinter { return "Setting up the printer. Labels are feeding." }
         switch setupResult {
         case .done: return "Printer set up."
-        case .failed(let step, let error): return "\(step.title) failed: \(PrinterSetup.reason(for: error))"
+        case .failed(let step, let error): return "\(step.title) failed: \(PrinterSetup.reason(for: error, step: step))"
         case .busy, nil: return nil
         }
     }
