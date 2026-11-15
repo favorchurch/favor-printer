@@ -109,6 +109,7 @@ async function runApp(): Promise<void> {
     return;
   }
   app.dock?.hide();
+  const dockHiddenAt = app.dock ? Date.now() : undefined;
 
   const log = createLogger(
     createRotatingFileSink(path.join(app.getPath("logs"), "main.log"), {
@@ -143,6 +144,7 @@ async function runApp(): Promise<void> {
     pagePath,
     activate: () => app.focus({ steal: true }),
     dock: app.dock,
+    dockHiddenAt,
   });
   setupWindowRef.current = windows;
 
