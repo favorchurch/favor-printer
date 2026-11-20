@@ -492,9 +492,12 @@ describe("migrateWindowsSupportData", () => {
     const open = new Map<number, string>();
     const flushed = new Set<string>();
     const order: string[] = [];
+    const flags: string[] = [];
     const watched = fsWith({
-      openSync: ((file: string, flags: string) => {
-        const fd = nodeFs.openSync(file, flags);
+      openSync: ((file: string, flag: string) => {
+        // Windows only flushes a handle opened for writing; POSIX would accept "r" and hide the mistake.
+        flags.push(flag);
+        const fd = nodeFs.openSync(file, flag);
         open.set(fd, String(file));
         return fd;
       }) as MigrationFs["openSync"],
@@ -515,6 +518,60 @@ describe("migrateWindowsSupportData", () => {
     expect(flushed.has(path.join(to, MIGRATION_MARKER))).toBe(true);
     expect(order.at(-1)).toBe(`fsync ${path.join(to, MIGRATION_MARKER)}`);
     expect(order.filter((step) => step.startsWith("rename"))).toHaveLength(MIGRATED_ITEMS.length);
+    expect(flags.length).toBeGreaterThan(0);
+    expect(new Set(flags)).toEqual(new Set(["r+"]));
+  });
+
+  it("retries a staged file Windows reports as briefly held while it is written and flushed", () => {
+    seedOld();
+    let held = 2;
+    const slept: number[] = [];
+    const scanned = fsWith({
+      openSync: ((file: string, flag: string) => {
+        if (String(file).includes(".migrating") && held > 0) {
+          held -= 1;
+          throw fsError("EBUSY");
+        }
+        return nodeFs.openSync(file, flag);
+      }) as MigrationFs["openSync"],
+    });
+    const results = migrateWindowsSupportData({ from, to, fs: scanned, sleep: (ms) => void slept.push(ms) });
+    expect(migrationFailed(results)).toBe(false);
+    expect(held).toBe(0);
+    expect(slept).toEqual([100, 200]);
+    expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
+  });
+
+  it("never reports a commit after it removed a marker it could not inspect", () => {
+    seedOld();
+    const marker = path.join(to, MIGRATION_MARKER);
+    let written = false;
+    const broken = fsWith({
+      writeFileSync: ((file: string, data: string | Uint8Array) => {
+        if (String(file) === marker) {
+          written = true;
+          nodeFs.writeFileSync(file, "");
+          throw fsError("EIO");
+        }
+        nodeFs.writeFileSync(file, data);
+      }) as MigrationFs["writeFileSync"],
+      statSync: ((target: string, options?: unknown) => {
+        // Not a code that is retried, and it keeps failing even after the marker is gone.
+        if (String(target) === marker && written) throw fsError("EIO");
+        return (nodeFs.statSync as (t: string, o?: unknown) => nodeFs.Stats)(target, options);
+      }) as MigrationFs["statSync"],
+    });
+    let calls = 0;
+    const counted = { ...broken, writeFileSync: ((file: string, data: string | Uint8Array) => {
+      if (String(file) === marker) calls += 1;
+      (broken.writeFileSync as (f: string, d: string | Uint8Array) => void)(file, data);
+    }) as MigrationFs["writeFileSync"] };
+    const results = migrateWindowsSupportData({ from, to, fs: counted, sleep: noSleep });
+    expect(calls).toBe(1);
+    expect(migrationFailed(results)).toBe(true);
+    expect(hasMarker()).toBe(false);
+    expect(newItems()).toEqual([]);
+    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(true);
   });
 
   it("does nothing, and deletes nothing, when the new folder is a junction or symlink to the old one", () => {

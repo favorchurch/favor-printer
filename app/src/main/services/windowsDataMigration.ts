@@ -132,14 +132,16 @@ function writeDurably(fs: MigrationFs, file: string, data: Uint8Array | string):
   }
 }
 
-function copyTree(fs: MigrationFs, from: string, to: string): void {
+function copyTree(fs: MigrationFs, sleep: (ms: number) => void, from: string, to: string): void {
   if (!fs.statSync(from).isDirectory()) {
     fs.mkdirSync(path.dirname(to), { recursive: true });
-    writeDurably(fs, to, fs.readFileSync(from));
+    const data = fs.readFileSync(from);
+    // Antivirus can briefly hold a file it just saw written.
+    withRetries(sleep, () => writeDurably(fs, to, data));
     return;
   }
   fs.mkdirSync(to, { recursive: true });
-  for (const name of fs.readdirSync(from)) copyTree(fs, path.join(from, name), path.join(to, name));
+  for (const name of fs.readdirSync(from)) copyTree(fs, sleep, path.join(from, name), path.join(to, name));
 }
 
 function sameTree(fs: MigrationFs, a: string, b: string): boolean {
@@ -290,12 +292,8 @@ function migrate(fs: MigrationFs, log: (message: string) => void, sleep: (ms: nu
     } catch {
       // Unknown. Removing it settles the question; a marker that cannot be removed is assumed to be there.
     }
-    if (!removeQuietly(fs, sleep, marker)) return true;
-    try {
-      return exists(fs, marker);
-    } catch {
-      return true;
-    }
+    // A removal that succeeded means it is gone: `rmSync` with `force` only succeeds once nothing is there.
+    return !removeQuietly(fs, sleep, marker);
   };
 
   // Nothing to move (a fresh install, or nothing was ever paired): the new folder is the truth from now on.
@@ -316,7 +314,7 @@ function migrate(fs: MigrationFs, log: (message: string) => void, sleep: (ms: nu
   // 1. Stage and verify everything before anything is put in place.
   try {
     for (const item of plan) {
-      copyTree(fs, path.join(from, item), staging(item));
+      copyTree(fs, sleep, path.join(from, item), staging(item));
       if (!sameTree(fs, path.join(from, item), staging(item))) throw new Error("read-back mismatch");
     }
   } catch (error) {
