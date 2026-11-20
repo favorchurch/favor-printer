@@ -140,13 +140,13 @@ volunteer's Mac needs the old relay again.
 
    ```powershell
    Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Favor Printer"
+   Remove-Item -Recurse -Force "$env:APPDATA\Favor Printer"
    ```
 
-   Earlier Windows builds kept this data in `%APPDATA%\Favor Printer`. The app moves it to
-   `%LOCALAPPDATA%\Favor Printer` the first time the newer build starts, so it stays on this PC and does
-   not roam with the account. If a PC never ran a newer build, also remove the old folder:
-   `Remove-Item -Recurse -Force "$env:APPDATA\Favor Printer"`. Logs are in `logs\main.log` inside the same
-   folder.
+   The enrollment token, the paired printer and the spool are kept per PC in `%LOCALAPPDATA%\Favor Printer`.
+   Logs, caches and the key that decrypts the token stay in `%APPDATA%\Favor Printer` (logs are in
+   `logs\main.log`). Earlier Windows builds kept the token, settings and spool in the `%APPDATA%` folder too; the
+   app moves them to the local folder the first time the newer build starts. Remove both folders.
 
 4. Leave the Zebra driver and its queue alone unless IT asks; Favor Printer never created them.
 5. Ask a Favor RSVP admin to remove this PC from the printer list so the cloud stops assigning labels

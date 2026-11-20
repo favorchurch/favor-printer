@@ -16,18 +16,21 @@ import type { StoredCredentials } from "./secretStore";
 export const DEFAULT_API_URL = "https://rsvp.favor.church";
 
 /**
- * macOS: `~/Library/Application Support/Favor Printer`.
- * Windows: `%LOCALAPPDATA%\Favor Printer`. The relay token, the paired printer serial and the spool belong to
- * this PC, so they stay out of the roaming profile (`%APPDATA%`), which follows an account to other PCs.
+ * Electron's `userData`. macOS: `~/Library/Application Support/Favor Printer`. Windows: `%APPDATA%\\Favor Printer`.
+ * On Windows it must stay here: the token is encrypted with a key Chromium keeps in `<userData>\\Local State`, so
+ * moving `userData` strands the token and the PC loses its pairing.
  */
-export function appSupportDir(homeDir: string, platform: NodeJS.Platform = "darwin", localAppData?: string): string {
-  if (platform === "win32") return path.win32.join(localAppData ?? path.win32.join(homeDir, "AppData", "Local"), PRODUCT_NAME);
+export function appSupportDir(homeDir: string, platform: NodeJS.Platform = "darwin", appData?: string): string {
+  if (platform === "win32") return path.win32.join(appData || path.win32.join(homeDir, "AppData", "Roaming"), PRODUCT_NAME);
   return path.posix.join(homeDir, "Library", "Application Support", PRODUCT_NAME);
 }
 
-/** Where the Windows builds before this change kept that state: `%APPDATA%\Favor Printer`. Read only by the migration. */
-export function legacyWindowsSupportDir(homeDir: string, appData?: string): string {
-  return path.win32.join(appData ?? path.win32.join(homeDir, "AppData", "Roaming"), PRODUCT_NAME);
+/**
+ * Where the Windows relay keeps its token, preferences and spool: `%LOCALAPPDATA%\\Favor Printer`. These describe this
+ * PC, so they stay out of the roaming profile that follows an account to other PCs. See windowsDataMigration.ts.
+ */
+export function windowsStateDir(homeDir: string, localAppData?: string): string {
+  return path.win32.join(localAppData || path.win32.join(homeDir, "AppData", "Local"), PRODUCT_NAME);
 }
 
 export type RelayConfigInput = {
