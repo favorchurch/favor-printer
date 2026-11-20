@@ -133,7 +133,8 @@ volunteer's Mac needs the old relay again.
 1. Notification-area icon > **Quit**.
 2. **Settings > Apps > Installed apps** > **Favor Printer** > **Uninstall**. This removes the app, its
    Start menu shortcut and its open-at-login entry. If the installer set your PowerShell policy, it puts
-   back the earlier value.
+   back the earlier value. Windows may keep its own Startup apps on/off record for the app; it is
+   harmless.
 3. Remove its data (enrollment, settings and any unsent spool). Unsent labels are lost. The enrollment
    token is encrypted for this Windows account, but delete it when the PC leaves the check-in team:
 

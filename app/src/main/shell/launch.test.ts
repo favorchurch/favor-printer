@@ -1,6 +1,17 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import { createDeferredOpen, detectLoginLaunch, loginItemSettings, shouldShowWindowAtLaunch, WINDOWS_LOGIN_ARG, type LaunchWindowInput } from "./launch";
+import type { CommandResult, CommandRunner } from "../services/command";
+import {
+  createDeferredOpen,
+  detectLoginLaunch,
+  loginItemSettings,
+  readWindowsStartupApproval,
+  shouldShowWindowAtLaunch,
+  WINDOWS_LOGIN_ARG,
+  WINDOWS_LOGIN_ITEM_NAME,
+  type LaunchWindowInput,
+} from "./launch";
 
 describe("shouldShowWindowAtLaunch", () => {
   it.each<[string, LaunchWindowInput, boolean]>([
@@ -88,9 +99,52 @@ describe("detectLoginLaunch", () => {
 
 describe("loginItemSettings", () => {
   it("registers the Windows login item with the login argument and leaves macOS unchanged", () => {
-    expect(loginItemSettings(true, "win32")).toEqual({ openAtLogin: true, args: [WINDOWS_LOGIN_ARG] });
-    expect(loginItemSettings(false, "win32")).toEqual({ openAtLogin: false, args: [WINDOWS_LOGIN_ARG] });
-    expect(loginItemSettings(true, "darwin")).toEqual({ openAtLogin: true });
+    expect(loginItemSettings(true, "win32")).toEqual({ openAtLogin: true, args: [WINDOWS_LOGIN_ARG], name: WINDOWS_LOGIN_ITEM_NAME, enabled: true });
+    expect(loginItemSettings(false, "win32")).toMatchObject({ openAtLogin: false, args: [WINDOWS_LOGIN_ARG] });
+    expect(loginItemSettings(true, "darwin", false)).toEqual({ openAtLogin: true });
+  });
+
+  it("writes the Startup apps state it is given, so a re-register can keep 'off'", () => {
+    expect(loginItemSettings(true, "win32", false).enabled).toBe(false);
+  });
+
+  it("the uninstaller deletes the same Run value name the app writes", () => {
+    const nsis = readFileSync(new URL("../../../../build/installer.nsh", import.meta.url), "utf8");
+    expect(nsis).toContain(`DeleteRegValue HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Run" "${WINDOWS_LOGIN_ITEM_NAME}"`);
+  });
+});
+
+describe("readWindowsStartupApproval", () => {
+  // Shapes copied from reg.exe on Windows 11 26200.
+  const value = (hex: string) =>
+    `\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run\r\n    ${WINDOWS_LOGIN_ITEM_NAME}    REG_BINARY    ${hex}\r\n\r\n`;
+  const runner = (result: Partial<CommandResult>) => {
+    const calls: { file: string; args: readonly string[] }[] = [];
+    const run: CommandRunner = async (file, args) => {
+      calls.push({ file, args });
+      return { code: 0, stdout: "", stderr: "", timedOut: false, ...result };
+    };
+    return { run, calls };
+  };
+
+  it("reads Task Manager's off (03/07) and on (02/06) for this app's value only", async () => {
+    for (const [hex, on] of [["0300000079C7A3AF8678DD01", false], ["070000000000000000000000", false], ["020000000000000000000000", true], ["06000000", true]] as const) {
+      const { run, calls } = runner({ stdout: value(hex) });
+      expect(await readWindowsStartupApproval(run)).toBe(on);
+      expect(calls[0].file).toBe("C:\\Windows\\System32\\reg.exe");
+      expect(calls[0].args).toEqual(["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run", "/v", WINDOWS_LOGIN_ITEM_NAME]);
+    }
+  });
+
+  it("treats no record as on", async () => {
+    const { run } = runner({ code: 1, stderr: "ERROR: The system was unable to find the specified registry key or value.\r\n" });
+    expect(await readWindowsStartupApproval(run)).toBe(true);
+  });
+
+  it("returns null when it cannot tell, so the entry is left alone", async () => {
+    for (const result of [{ code: null, stderr: "spawn ENOENT" }, { code: null, timedOut: true }, { code: 0, stdout: "garbage" }, { code: 1, stdout: "partial" }, { code: 5 }]) {
+      expect(await readWindowsStartupApproval(runner(result).run)).toBeNull();
+    }
   });
 });
 

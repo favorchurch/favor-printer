@@ -52,7 +52,8 @@ describe("first run and login item", () => {
   it("on Windows re-applies the saved choice each launch without changing it", async () => {
     for (const openAtLogin of [true, false]) {
       const h = await started({ scan: NO_PRINTER, platform: "win32", prefs: { openAtLogin } });
-      expect(h.applyOpenAtLogin).toHaveBeenCalledExactlyOnceWith(openAtLogin);
+      // keepApproval: the re-register must not undo a Startup apps entry turned off in Windows.
+      expect(h.applyOpenAtLogin).toHaveBeenCalledExactlyOnceWith(openAtLogin, { keepApproval: true });
       expect(h.controller.snapshot().openAtLogin).toBe(openAtLogin);
     }
   });

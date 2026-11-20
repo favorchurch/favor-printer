@@ -94,7 +94,8 @@ export type ControllerDeps = {
     confirmPrinterSetup(): Promise<boolean>;
     showPrinterSetupResult(result: PrinterSetupResult): void;
   };
-  applyOpenAtLogin(enabled: boolean): void;
+  /** `keepApproval`: a launch-time re-register that must not override Windows' Startup apps on/off state. */
+  applyOpenAtLogin(enabled: boolean, options?: { keepApproval: boolean }): void;
   log: Logger;
   timers?: Timers;
 };
@@ -560,7 +561,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         deps.applyOpenAtLogin(true);
       } else if (isWindows) {
         // Re-register the saved choice each launch, so a login item from an older build gains the login argument.
-        deps.applyOpenAtLogin(loaded.openAtLogin);
+        deps.applyOpenAtLogin(loaded.openAtLogin, { keepApproval: true });
       }
       enrolled = (await secrets.load()) !== null && !prefs.get().revoked;
       await refreshLegacy();

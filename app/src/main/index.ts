@@ -46,7 +46,7 @@ import {
 } from "./services";
 import { createAppController } from "./shell/controller";
 import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
-import { createDeferredOpen, detectLoginLaunch, loginItemSettings, shouldShowWindowAtLaunch } from "./shell/launch";
+import { createDeferredOpen, detectLoginLaunch, loginItemSettings, readWindowsStartupApproval, shouldShowWindowAtLaunch } from "./shell/launch";
 import { acquireSingleInstance, wireActivate } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
@@ -239,7 +239,13 @@ async function runApp(): Promise<void> {
       },
       openPrinterSettings: () => shell.openExternal(PRINTER_SETTINGS_URL),
     },
-    applyOpenAtLogin: (enabled) => app.setLoginItemSettings(loginItemSettings(enabled, process.platform)),
+    applyOpenAtLogin: (enabled, options) => {
+      if (!options?.keepApproval || !isWindows) return app.setLoginItemSettings(loginItemSettings(enabled, process.platform));
+      // Unknown approval: leave the entry as it is rather than override a choice made in Windows.
+      void readWindowsStartupApproval(run).then((approved) => {
+        if (approved !== null) app.setLoginItemSettings(loginItemSettings(enabled, process.platform, approved));
+      });
+    },
     log,
   });
   wireActivate(app, () => controller.showSetup());

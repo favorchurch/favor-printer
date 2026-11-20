@@ -3,7 +3,8 @@
  * on startup, and detects whether macOS launched the app as a login item.
  */
 
-import type { SetupStep } from "../../shared";
+import { PRODUCT_NAME, type SetupStep } from "../../shared";
+import type { CommandRunner } from "../services/command";
 
 export type LoginItemSettingsApp = {
   getLoginItemSettings?: () => { wasOpenedAtLogin?: unknown };
@@ -23,9 +24,38 @@ export type LaunchWindowInput = {
  */
 export const WINDOWS_LOGIN_ARG = "--login-launch";
 
-/** What `app.setLoginItemSettings` takes on this platform. */
-export function loginItemSettings(openAtLogin: boolean, platform: NodeJS.Platform): { openAtLogin: boolean; args?: string[] } {
-  return platform === "win32" ? { openAtLogin, args: [WINDOWS_LOGIN_ARG] } : { openAtLogin };
+/** The HKCU Run value name. `build/installer.nsh` deletes this exact name on uninstall. */
+export const WINDOWS_LOGIN_ITEM_NAME = `electron.app.${PRODUCT_NAME}`;
+
+export type LoginItemSettings = { openAtLogin: boolean; args?: string[]; name?: string; enabled?: boolean };
+
+/**
+ * What `app.setLoginItemSettings` takes on this platform. On Windows `approved` is the Startup apps on/off state
+ * to write: a launch-time re-register passes what Task Manager or Settings currently has
+ * (`readWindowsStartupApproval`), so the volunteer's or IT's choice stands; an in-app toggle leaves it out and approves.
+ */
+export function loginItemSettings(openAtLogin: boolean, platform: NodeJS.Platform, approved = true): LoginItemSettings {
+  if (platform !== "win32") return { openAtLogin };
+  return { openAtLogin, args: [WINDOWS_LOGIN_ARG], name: WINDOWS_LOGIN_ITEM_NAME, enabled: approved };
+}
+
+const REG_EXE = "C:\\Windows\\System32\\reg.exe";
+const STARTUP_APPROVED_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
+
+/**
+ * Reads whether Windows' Startup apps list has this app on. Electron's own `getLoginItemSettings().launchItems`
+ * is empty when the exe path has spaces (`...\Favor Printer\Favor Printer.exe`), so this asks `reg.exe` directly.
+ * No value means Windows has no record yet, which is "on". Returns null when it cannot tell, so the caller can
+ * leave the entry alone instead of guessing.
+ */
+export async function readWindowsStartupApproval(run: CommandRunner): Promise<boolean | null> {
+  const result = await run(REG_EXE, ["query", STARTUP_APPROVED_KEY, "/v", WINDOWS_LOGIN_ITEM_NAME], { timeoutMs: 5_000 });
+  // reg.exe exits 1 both for a missing value and other failures, so the stdout shape decides.
+  if (result.code !== 0) return result.code === 1 && !result.timedOut && result.stdout.trim() === "" ? true : null;
+  const match = /REG_BINARY\s+([0-9A-Fa-f]{2})/.exec(result.stdout);
+  if (!match) return null;
+  // Windows writes 02 (or 06) for on and 03 (or 07) for off: the low bit means disabled.
+  return (Number.parseInt(match[1], 16) & 1) === 0;
 }
 
 /**
