@@ -44,7 +44,11 @@ export type PrinterDevice = {
 export type QueueState = "ready" | "missing" | "disabled";
 
 export type PrinterScan =
-  | { kind: "none" }
+  | {
+      kind: "none";
+      /** Windows: a Zebra queue exists but cannot be used, and what to change. Absent when no Zebra was seen. */
+      notice?: string;
+    }
   | { kind: "found"; devices: PrinterDevice[]; selectedId: string | null; queue: QueueState };
 
 export type AppSnapshot = {

@@ -457,7 +457,7 @@ export function createAppController(deps: ControllerDeps): AppController {
     const outcome = await printers.scan(prefs.get().selectedPrinterId);
     scan = outcome.scan;
     scanFailed = outcome.listFailed;
-    scanWarning = outcome.listFailed ? outcome.failureWarning ?? null : null;
+    scanWarning = outcome.listFailed ? outcome.failureWarning ?? null : outcome.scan.kind === "none" ? outcome.scan.notice ?? null : null;
     if (outcome.scan.kind === "found") {
       printerPresence = printerPresenceReducer(printerPresence, {
         type: "printer_found",

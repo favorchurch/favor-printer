@@ -242,6 +242,17 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
       );
 
     case "printer-none":
+      // Windows has a Zebra queue it cannot use: say what to change instead of asking for a printer.
+      if (snapshot.printer.kind === "none" && snapshot.printer.notice) {
+        return frame(
+          screen,
+          snapshot,
+          "This Zebra can't be used yet",
+          lead(snapshot.printer.notice),
+          h("p", { class: "hint" }, "Then choose Look again."),
+          actions(button("Look again", a.scanAgain, { primary: true, disabled: local.busy })),
+        );
+      }
       return frame(
         screen,
         snapshot,

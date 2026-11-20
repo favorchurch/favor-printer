@@ -1768,6 +1768,17 @@ describe("Windows relay launch and device binding", () => {
     expect(h.controller.snapshot().warnings).not.toContain("Windows is blocking the helpers");
   });
 
+  it("passes on why a Zebra queue cannot be used, and drops it once a printer is found", async () => {
+    const notice = 'Favor Printer cannot print to a queue named "Kids Zebra #1".';
+    const h = await started({ ...current, scan: { ...NO_PRINTER, scan: { kind: "none", notice } } });
+    expect(h.forks.children).toHaveLength(0);
+    expect(h.controller.snapshot().printer).toEqual({ kind: "none", notice });
+    expect(h.controller.snapshot().warnings).toContain(notice);
+    h.state.scan = foundPrinter();
+    await h.controller.scanPrinters();
+    expect(h.controller.snapshot().warnings).not.toContain(notice);
+  });
+
   it("refuses to launch against an invalid helper path without forwarding a token", async () => {
     const h = await started({ ...current, windowsScriptPath: "https://untrusted.example/print-raw.ps1" });
     expect(h.forks.children).toHaveLength(0);

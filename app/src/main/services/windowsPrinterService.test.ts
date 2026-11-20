@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createWindowsPrinterService, POWERSHELL_BLOCKED_WARNING, WINDOWS_SCAN_FAILED_WARNING } from "./windowsPrinterService";
+import { createWindowsPrinterService, POWERSHELL_BLOCKED_WARNING, WINDOWS_SCAN_FAILED_WARNING, windowsUnusableZebraNotice } from "./windowsPrinterService";
+import { parseWindowsPrinterProbe } from "./windowsDiscovery";
 import type { CommandRunner } from "./command";
 
 const DEVICE = "USBPRINT\\Zebra_TechnologiesZTCZD421\\7&ABCDEF&0&USB001";
@@ -37,8 +38,59 @@ describe("Windows printer host binding", () => {
   it("never infers a hardware serial from synthetic PnP, USB001, or a renamed queue", async () => {
     for (const change of [{ verifiedUsbSerial: null, serialEvidence: null }, { serialEvidence: null }, { portName: "IP_127.0.0.1" }, { isNetwork: true }]) {
       const service = createWindowsPrinterService(input(vi.fn().mockResolvedValue(ok(response(row(change))))));
-      expect((await service.scan(null)).scan).toEqual({ kind: "none" });
+      expect((await service.scan(null)).scan).toMatchObject({ kind: "none" });
     }
+  });
+
+  describe("a Zebra queue that cannot be used says what to change, not 'plug in a Zebra'", () => {
+    const scanOf = async (...printers: unknown[]) => (await createWindowsPrinterService(input(vi.fn().mockResolvedValue(ok(response(...printers))))).scan(null));
+
+    it("asks to rename a queue name printing would refuse, naming the allowed characters", async () => {
+      const outcome = await scanOf(row({ queueName: "Kids Zebra #1" }));
+      expect(outcome).toMatchObject({ queue: null, listFailed: false });
+      expect(outcome.scan).toEqual({
+        kind: "none",
+        notice: 'Favor Printer cannot print to a queue named "Kids Zebra #1". In Printers & scanners, rename it using only letters, numbers, spaces and _ ( ) . - (up to 127 characters).',
+      });
+    });
+
+    it.each([
+      ["serial-unverified", { verifiedUsbSerial: null, serialEvidence: null }, "cannot read the USB serial number"],
+      ["network-queue", { isNetwork: true }, "network or shared printer"],
+      ["not-local", { isLocal: false }, "network or shared printer"],
+      ["non-usb-port", { portName: "IP_192.0.2.1" }, "does not use a USB port"],
+      ["hardware-id-unverified", { pnpDeviceId: "SWD\\PRINTENUM\\{queue}" }, "does not show"],
+    ])("%s gets its own message", async (_problem, change, expected) => {
+      const { scan } = await scanOf(row(change));
+      expect(scan.kind === "none" && scan.notice).toContain(expected);
+    });
+
+    it("names duplicates: the same serial or the same device behind two queues", async () => {
+      const second = row({ queueName: "Zebra Lobby", portName: "USB002", pnpDeviceId: "USBPRINT\\Zebra_TechnologiesZTCZD421\\7&OTHER&0&USB002" });
+      const sameSerial = await scanOf(row(), second);
+      expect(sameSerial.scan.kind === "none" && sameSerial.scan.notice).toContain("reports the serial number");
+      const sameDevice = await scanOf(row(), row({ queueName: "Zebra Lobby", verifiedUsbSerial: "OTHER01" }));
+      expect(sameDevice.scan.kind === "none" && sameDevice.scan.notice).toContain("points at the Zebra");
+    });
+
+    it("explains the queue closest to usable, and the cable before the name", () => {
+      const report = parseWindowsPrinterProbe(response(
+        row({ queueName: "Zebra Far", isNetwork: true, isLocal: false, portName: "IP_192.0.2.1", verifiedUsbSerial: null, serialEvidence: null }),
+        row({ queueName: "Zebra #2", verifiedUsbSerial: null, serialEvidence: null, pnpDeviceId: "USBPRINT\\ZTCZD421\\7&2&0&USB002", portName: "USB002" }),
+      ));
+      expect(windowsUnusableZebraNotice(report)).toContain('Zebra on "Zebra #2"');
+      expect(windowsUnusableZebraNotice(report)).toContain("cannot read the USB serial number");
+    });
+
+    it("keeps the plain 'no printer' answer when Windows has no Zebra queue at all", async () => {
+      expect((await scanOf(row({ queueName: "Office Laser", driverName: "Generic", pnpDeviceId: null }))).scan).toEqual({ kind: "none" });
+      expect((await scanOf()).scan).toEqual({ kind: "none" });
+    });
+
+    it("says nothing extra while a usable Zebra is offered", async () => {
+      const { scan } = await scanOf(row(), row({ queueName: "Kids Zebra #1", portName: "USB002", pnpDeviceId: "USBPRINT\\ZTCZD421\\7&2&0&USB002", verifiedUsbSerial: "Z2" }));
+      expect(scan).toMatchObject({ kind: "found", devices: [{ usbSerial: "ZD421A01" }] });
+    });
   });
 
   it("requires explicit selection of multiple devices and does not silently replace a selected printer", async () => {
