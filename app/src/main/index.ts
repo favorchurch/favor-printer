@@ -46,7 +46,7 @@ import {
 } from "./services";
 import { createAppController } from "./shell/controller";
 import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
-import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch } from "./shell/launch";
+import { createDeferredOpen, detectLoginLaunch, loginItemSettings, shouldShowWindowAtLaunch } from "./shell/launch";
 import { acquireSingleInstance, wireActivate } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
@@ -236,7 +236,7 @@ async function runApp(): Promise<void> {
       },
       openPrinterSettings: () => shell.openExternal(PRINTER_SETTINGS_URL),
     },
-    applyOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
+    applyOpenAtLogin: (enabled) => app.setLoginItemSettings(loginItemSettings(enabled, process.platform)),
     log,
   });
   wireActivate(app, () => controller.showSetup());
@@ -310,7 +310,7 @@ async function runApp(): Promise<void> {
   if (
     !honoredEarlyRequest &&
     shouldShowWindowAtLaunch({
-      wasOpenedAtLogin: detectLoginLaunch(app),
+      wasOpenedAtLogin: detectLoginLaunch(app, process.platform, process.argv),
       setupStep: first.setupStep,
       legacyRelayLoaded: first.legacyRelayLoaded,
       revoked: first.status.color === "red",

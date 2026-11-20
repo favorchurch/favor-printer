@@ -60,7 +60,7 @@ const PRINTER_SETUP_STEP_COPY: Record<PrinterSetupStep, string> = {
 export function printerSetupFailureCopy(result: Exclude<PrinterSetupResult, { ok: true }>): string {
   switch (result.reason) {
     case "no-queue":
-      return "No printer is ready. Plug in the Zebra and check the menu bar icon.";
+      return "No printer is ready. Plug in the Zebra and check the Favor Printer icon.";
     case "busy":
       return "The printer is busy with a label or another setup. Wait a moment, then try again.";
     case "rejected":

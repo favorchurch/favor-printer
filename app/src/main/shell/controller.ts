@@ -725,7 +725,8 @@ export function createAppController(deps: ControllerDeps): AppController {
       if (settingUp) return { ok: false, reason: "busy" };
       // Only a ready queue bound to the attached printer from a scan that listed cleanly. A disabled
       // queue, a failed listing (liveQueue is then stale) or no printer all mean there is nothing to send to.
-      const queue = scan.kind === "found" && scan.queue === "ready" && !scanFailed ? liveQueue : null;
+      // On Windows the queue must also pass the relay's paired-serial check, so setup never reaches another Zebra.
+      const queue = scan.kind === "found" && scan.queue === "ready" && !scanFailed && (!isWindows || queueForRelay() === liveQueue) ? liveQueue : null;
       if (!queue) return report(await deps.printerSetup.run(null));
       settingUp = true;
       resumeAfterSetup ||= ["starting", "running", "restarting"].includes(supervisorState.phase);

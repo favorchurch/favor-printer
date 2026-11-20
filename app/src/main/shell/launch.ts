@@ -18,10 +18,23 @@ export type LaunchWindowInput = {
 };
 
 /**
- * Uses Electron's `app.getLoginItemSettings().wasOpenedAtLogin` (supported in
- * Electron 44 on macOS). Returns `null` when detection is unavailable.
+ * Windows has no `wasOpenedAtLogin`, so the login item is registered with this
+ * argument (`loginItemSettings`) and a login launch is read from `argv`.
  */
-export function detectLoginLaunch(app: LoginItemSettingsApp): boolean | null {
+export const WINDOWS_LOGIN_ARG = "--login-launch";
+
+/** What `app.setLoginItemSettings` takes on this platform. */
+export function loginItemSettings(openAtLogin: boolean, platform: NodeJS.Platform): { openAtLogin: boolean; args?: string[] } {
+  return platform === "win32" ? { openAtLogin, args: [WINDOWS_LOGIN_ARG] } : { openAtLogin };
+}
+
+/**
+ * Uses Electron's `app.getLoginItemSettings().wasOpenedAtLogin` (supported in
+ * Electron 44 on macOS) and `WINDOWS_LOGIN_ARG` on Windows. Returns `null`
+ * when detection is unavailable.
+ */
+export function detectLoginLaunch(app: LoginItemSettingsApp, platform: NodeJS.Platform = "darwin", argv: readonly string[] = []): boolean | null {
+  if (platform === "win32") return argv.includes(WINDOWS_LOGIN_ARG);
   if (typeof app.getLoginItemSettings !== "function") return null;
   try {
     const settings = app.getLoginItemSettings();

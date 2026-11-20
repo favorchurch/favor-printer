@@ -162,7 +162,7 @@ export const LOCAL_TEST_COPY = {
 } as const;
 
 export const TEST_PRINT_ERROR_COPY: Record<Extract<TestPrintResult, { ok: false }>["reason"], string> = {
-  no_printer: "No printer is ready. Plug in the Zebra and check the menu bar icon.",
+  no_printer: "No printer is ready. Plug in the Zebra and check the Favor Printer icon.",
   printer_not_ready:
     "This printer is not ready yet. Wait a minute and try again. If it keeps happening, ask an admin to check that this printer is enabled in RSVP printing settings.",
   paused: "Printing is paused. Choose Resume printing in the menu, then try again.",

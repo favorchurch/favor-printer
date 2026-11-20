@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch, type LaunchWindowInput } from "./launch";
+import { createDeferredOpen, detectLoginLaunch, loginItemSettings, shouldShowWindowAtLaunch, WINDOWS_LOGIN_ARG, type LaunchWindowInput } from "./launch";
 
 describe("shouldShowWindowAtLaunch", () => {
   it.each<[string, LaunchWindowInput, boolean]>([
@@ -70,6 +70,27 @@ describe("detectLoginLaunch", () => {
       }),
     ).toBeNull();
     expect(detectLoginLaunch({ getLoginItemSettings: () => ({}) })).toBeNull();
+  });
+
+  it("on Windows reads the login argument from argv, never wasOpenedAtLogin", () => {
+    const settings = { getLoginItemSettings: () => ({ wasOpenedAtLogin: undefined }) };
+    expect(detectLoginLaunch(settings, "win32", ["Favor Printer.exe", WINDOWS_LOGIN_ARG])).toBe(true);
+    expect(detectLoginLaunch(settings, "win32", ["Favor Printer.exe"])).toBe(false);
+    expect(detectLoginLaunch({ getLoginItemSettings: () => ({ wasOpenedAtLogin: true }) }, "win32", ["Favor Printer.exe"])).toBe(false);
+  });
+
+  it("keeps a paired Windows host in the tray at login and shows the window on a user launch", () => {
+    const paired = { setupStep: null, legacyRelayLoaded: false, revoked: false };
+    expect(shouldShowWindowAtLaunch({ ...paired, wasOpenedAtLogin: detectLoginLaunch({}, "win32", ["x", WINDOWS_LOGIN_ARG]) })).toBe(false);
+    expect(shouldShowWindowAtLaunch({ ...paired, wasOpenedAtLogin: detectLoginLaunch({}, "win32", ["x"]) })).toBe(true);
+  });
+});
+
+describe("loginItemSettings", () => {
+  it("registers the Windows login item with the login argument and leaves macOS unchanged", () => {
+    expect(loginItemSettings(true, "win32")).toEqual({ openAtLogin: true, args: [WINDOWS_LOGIN_ARG] });
+    expect(loginItemSettings(false, "win32")).toEqual({ openAtLogin: false, args: [WINDOWS_LOGIN_ARG] });
+    expect(loginItemSettings(true, "darwin")).toEqual({ openAtLogin: true });
   });
 });
 

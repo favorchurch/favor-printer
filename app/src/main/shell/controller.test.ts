@@ -1723,6 +1723,21 @@ describe("Windows relay launch and device binding", () => {
     }
   });
 
+  it("sets up only the Zebra whose USB serial matches the pairing", async () => {
+    const h = await started(current);
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    expect(await pending).toEqual({ ok: true });
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith("Favor_S1");
+
+    for (const pairedUsbSerial of [null, "S2"]) {
+      const other = await started({ ...current, prefs: { ...current.prefs, pairedUsbSerial } });
+      other.printerSetup.run.mockResolvedValueOnce({ ok: false, reason: "no-queue" });
+      expect(await other.controller.configurePrinter()).toEqual({ ok: false, reason: "no-queue" });
+      expect(other.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+    }
+  });
+
   it("does not trust cached Windows spooler queue names after an unplug or failed discovery", async () => {
     for (const scan of [NO_PRINTER, LIST_FAILED]) {
       const h = await started({ ...current, scan });
