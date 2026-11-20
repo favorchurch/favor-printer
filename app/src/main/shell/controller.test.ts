@@ -49,6 +49,14 @@ describe("first run and login item", () => {
     expect(h.controller.snapshot().openAtLogin).toBe(false);
   });
 
+  it("on Windows re-applies the saved choice each launch without changing it", async () => {
+    for (const openAtLogin of [true, false]) {
+      const h = await started({ scan: NO_PRINTER, platform: "win32", prefs: { openAtLogin } });
+      expect(h.applyOpenAtLogin).toHaveBeenCalledExactlyOnceWith(openAtLogin);
+      expect(h.controller.snapshot().openAtLogin).toBe(openAtLogin);
+    }
+  });
+
   it("persists the toggle and applies it", async () => {
     const h = await started();
     await h.controller.setOpenAtLogin(false);

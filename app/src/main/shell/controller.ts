@@ -558,6 +558,9 @@ export function createAppController(deps: ControllerDeps): AppController {
         // First run: open at login unless the volunteer turns it off.
         await prefs.update({ openAtLogin: true }).catch(() => undefined);
         deps.applyOpenAtLogin(true);
+      } else if (isWindows) {
+        // Re-register the saved choice each launch, so a login item from an older build gains the login argument.
+        deps.applyOpenAtLogin(loaded.openAtLogin);
       }
       enrolled = (await secrets.load()) !== null && !prefs.get().revoked;
       await refreshLegacy();
