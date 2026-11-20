@@ -118,14 +118,16 @@ describe("readWindowsStartupApproval", () => {
   // Shapes copied from reg.exe on Windows 11 26200.
   const value = (hex: string) =>
     `\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run\r\n    ${WINDOWS_LOGIN_ITEM_NAME}    REG_BINARY    ${hex}\r\n\r\n`;
-  const runner = (result: Partial<CommandResult>) => {
+  /** `key` answers the follow-up query of the whole key (no `/v`). */
+  const runner = (result: Partial<CommandResult>, key: Partial<CommandResult> = { code: 0 }) => {
     const calls: { file: string; args: readonly string[] }[] = [];
     const run: CommandRunner = async (file, args) => {
       calls.push({ file, args });
-      return { code: 0, stdout: "", stderr: "", timedOut: false, ...result };
+      return { code: 0, stdout: "", stderr: "", timedOut: false, ...(args.includes("/v") ? result : key) };
     };
     return { run, calls };
   };
+  const missingValue = { code: 1, stderr: "ERROR: The system was unable to find the specified registry key or value.\r\n" };
 
   it("reads Task Manager's off (03/07) and on (02/06) for this app's value only", async () => {
     for (const [hex, on] of [["0300000079C7A3AF8678DD01", false], ["070000000000000000000000", false], ["020000000000000000000000", true], ["06000000", true]] as const) {
@@ -136,13 +138,14 @@ describe("readWindowsStartupApproval", () => {
     }
   });
 
-  it("treats no record as on", async () => {
-    const { run } = runner({ code: 1, stderr: "ERROR: The system was unable to find the specified registry key or value.\r\n" });
-    expect(await readWindowsStartupApproval(run)).toBe(true);
+  it("treats no record as on, but only when the key itself reads cleanly", async () => {
+    expect(await readWindowsStartupApproval(runner(missingValue).run)).toBe(true);
+    // Access denied, a broken or absent key: same exit 1 for the value, but the key query fails too.
+    expect(await readWindowsStartupApproval(runner(missingValue, { code: 1 }).run)).toBeNull();
   });
 
   it("returns null when it cannot tell, so the entry is left alone", async () => {
-    for (const result of [{ code: null, stderr: "spawn ENOENT" }, { code: null, timedOut: true }, { code: 0, stdout: "garbage" }, { code: 1, stdout: "partial" }, { code: 5 }]) {
+    for (const result of [{ code: null, stderr: "spawn ENOENT" }, { code: null, timedOut: true }, { code: 0, stdout: "garbage" }, { code: 1, timedOut: true }, { code: 5 }]) {
       expect(await readWindowsStartupApproval(runner(result).run)).toBeNull();
     }
   });

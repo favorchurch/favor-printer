@@ -166,6 +166,7 @@ async function runApp(): Promise<void> {
   });
 
   const run = createCommandRunner();
+  let loginItemGeneration = 0;
   const isWindows = process.platform === "win32";
   const windowsPaths = windowsResourcePaths({
     packaged: app.isPackaged,
@@ -240,11 +241,15 @@ async function runApp(): Promise<void> {
       openPrinterSettings: () => shell.openExternal(PRINTER_SETTINGS_URL),
     },
     applyOpenAtLogin: (enabled, options) => {
+      const generation = ++loginItemGeneration;
       if (!options?.keepApproval || !isWindows) return app.setLoginItemSettings(loginItemSettings(enabled, process.platform));
-      // Unknown approval: leave the entry as it is rather than override a choice made in Windows.
-      void readWindowsStartupApproval(run).then((approved) => {
-        if (approved !== null) app.setLoginItemSettings(loginItemSettings(enabled, process.platform, approved));
-      });
+      // Unknown approval: leave the entry as it is rather than override a choice made in Windows. A later call
+      // (the in-app toggle) wins over this read if it lands first.
+      void readWindowsStartupApproval(run)
+        .then((approved) => {
+          if (approved !== null && generation === loginItemGeneration) app.setLoginItemSettings(loginItemSettings(enabled, process.platform, approved));
+        })
+        .catch((error: unknown) => log("warn", "main", `login item: ${describeError(error)}`));
     },
     log,
   });

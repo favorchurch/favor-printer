@@ -50,8 +50,13 @@ const STARTUP_APPROVED_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion
  */
 export async function readWindowsStartupApproval(run: CommandRunner): Promise<boolean | null> {
   const result = await run(REG_EXE, ["query", STARTUP_APPROVED_KEY, "/v", WINDOWS_LOGIN_ITEM_NAME], { timeoutMs: 5_000 });
-  // reg.exe exits 1 both for a missing value and other failures, so the stdout shape decides.
-  if (result.code !== 0) return result.code === 1 && !result.timedOut && result.stdout.trim() === "" ? true : null;
+  if (result.code !== 0) {
+    // reg.exe exits 1 for a missing value and for other failures alike (its message is localized). Only a key
+    // that reads cleanly makes a failed value query mean "no record".
+    if (result.code !== 1 || result.timedOut) return null;
+    const key = await run(REG_EXE, ["query", STARTUP_APPROVED_KEY], { timeoutMs: 5_000 });
+    return key.code === 0 ? true : null;
+  }
   const match = /REG_BINARY\s+([0-9A-Fa-f]{2})/.exec(result.stdout);
   if (!match) return null;
   // Windows writes 02 (or 06) for on and 03 (or 07) for off: the low bit means disabled.
