@@ -137,6 +137,9 @@ async function runApp(): Promise<void> {
   app.on("window-all-closed", () => undefined);
 
   await app.whenReady();
+  // Windows would draw Electron's default File/Edit/View/Window bar inside the setup window. macOS keeps it in the
+  // system menu bar, where its Edit roles provide Cmd+C/V for the pairing code.
+  if (process.platform === "win32") Menu.setApplicationMenu(null);
 
   const prefs = createPrefsStore({ file: path.join(supportDir, "prefs.json") });
   await prefs.load();
