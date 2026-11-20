@@ -28,6 +28,8 @@ import { autoUpdater } from "electron-updater";
 import { PRODUCT_NAME, printerSetupFailureCopy, type StatusColor } from "../shared";
 import {
   appSupportDir,
+  legacyWindowsSupportDir,
+  migrateWindowsSupportData,
   createCommandRunner,
   createLegacyRelay,
   createPowerController,
@@ -99,7 +101,7 @@ async function runSelfTestMode(apiUrl: string): Promise<void> {
 }
 
 async function runApp(): Promise<void> {
-  const supportDir = appSupportDir(os.homedir(), process.platform, process.env.APPDATA);
+  const supportDir = appSupportDir(os.homedir(), process.platform, process.env.LOCALAPPDATA);
   app.setPath("userData", supportDir);
 
   const setupWindowRef: { current: ReturnType<typeof createSetupWindowManager> | null } = { current: null };
@@ -130,6 +132,14 @@ async function runApp(): Promise<void> {
       mkdir: (dir) => void mkdirSync(dir, { recursive: true }),
     }),
   );
+  // Before the preferences, the token or the spool are read: Windows builds kept them in the roaming profile.
+  if (process.platform === "win32") {
+    migrateWindowsSupportData({
+      from: legacyWindowsSupportDir(os.homedir(), process.env.APPDATA),
+      to: supportDir,
+      log: (message) => log("info", "migrate", message),
+    });
+  }
   process.on("uncaughtException", (error) => log("error", "main", `uncaught: ${describeError(error)}`));
   process.on("unhandledRejection", (reason) => log("error", "main", `unhandled rejection: ${describeError(reason)}`));
 
