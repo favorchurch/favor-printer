@@ -1,0 +1,17 @@
+# LOCAL, DEV-ONLY signing override (issue #42). Never used for a release.
+#
+#   pwsh scripts/dev-signing/Build-DevSigned.ps1
+#
+# It extends the production config and changes only Windows signing: the packaged app,
+# the NSIS installer and the uninstaller are signed by scripts/dev-signing/sign.mjs with a
+# self-signed "Favor Printer DEV ONLY" certificate chosen by thumbprint from the environment.
+# No certificate, thumbprint or key is stored here. Updater publisher verification stays on
+# (verifyUpdateCodeSignature is not touched), so a dev-signed install is not a release.
+extends: ./electron-builder.yml
+win:
+  artifactName: "Favor-Printer-${version}-${arch}-DEV-SIGNED-LOCAL.${ext}"
+  signtoolOptions:
+    certificateSha1: "${env.FAVOR_DEV_SIGN_SHA1}"
+    signingHashAlgorithms: [sha256]
+    publisherName: "Favor Printer DEV ONLY"
+    sign: ./scripts/dev-signing/sign.mjs
