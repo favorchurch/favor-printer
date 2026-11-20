@@ -7,6 +7,8 @@
  * it never touches a trust store. There is no timestamp: the signature is for a disposable,
  * short-lived DEV ONLY test certificate and is not a release signature.
  *
+ * It refuses to run when CI or GITHUB_ACTIONS is set, so it can never sign in a pipeline.
+ *
  * Environment (set by scripts/dev-signing/Build-DevSigned.ps1):
  *   FAVOR_DEV_SIGN_SHA1      thumbprint of the DEV ONLY certificate (40 hex chars)
  *   FAVOR_DEV_SIGNTOOL       absolute path to the Windows SDK signtool.exe
@@ -21,13 +23,20 @@ export function buildSignArgs({ thumbprint, file }) {
   return ["sign", "/sha1", thumbprint, "/s", "My", "/fd", "sha256", "/d", DEV_DESCRIPTION, file];
 }
 
-export default async function sign(configuration) {
+/** Testable core of the hook; `deps` replaces the environment, existsSync and spawnSync. */
+export function signWith(configuration, { env = process.env, exists = existsSync, spawn = spawnSync } = {}) {
+  if (env.CI || env.GITHUB_ACTIONS) throw new Error("DEV ONLY signing refuses to run in CI (CI or GITHUB_ACTIONS is set)");
   if (configuration.hash && configuration.hash.toLowerCase() !== "sha256") return; // SHA-256 only
-  const signtool = process.env.FAVOR_DEV_SIGNTOOL;
-  if (!signtool || !existsSync(signtool)) throw new Error("FAVOR_DEV_SIGNTOOL must point at the Windows SDK signtool.exe");
-  const args = buildSignArgs({ thumbprint: process.env.FAVOR_DEV_SIGN_SHA1, file: configuration.path });
-  const result = spawnSync(signtool, args, { encoding: "utf8" });
+  const signtool = env.FAVOR_DEV_SIGNTOOL;
+  if (!signtool || !exists(signtool)) throw new Error("FAVOR_DEV_SIGNTOOL must point at the Windows SDK signtool.exe");
+  const args = buildSignArgs({ thumbprint: env.FAVOR_DEV_SIGN_SHA1, file: configuration.path });
+  const result = spawn(signtool, args, { encoding: "utf8" });
   if (result.status !== 0) {
     throw new Error(`signtool failed (${result.status}) for ${configuration.path}\n${result.stdout}${result.stderr}`);
   }
+}
+
+// electron-builder calls the hook as (configuration, packager); the packager is not used.
+export default async function sign(configuration) {
+  signWith(configuration);
 }

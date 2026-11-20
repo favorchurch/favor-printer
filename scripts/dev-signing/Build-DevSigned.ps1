@@ -21,7 +21,6 @@ $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\si
 if (-not $signtool) { throw 'signtool.exe not found. Install the Windows SDK signing tools (winget install Microsoft.WindowsSDK.10.0.26100).' }
 $env:FAVOR_DEV_SIGN_SHA1 = $cert.Thumbprint
 $env:FAVOR_DEV_SIGNTOOL = $signtool.FullName
-$env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 Push-Location $root
 try {
   pnpm.cmd build

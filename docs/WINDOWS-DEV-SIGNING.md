@@ -16,14 +16,18 @@ Releases stay as in [RELEASING.md](RELEASING.md): nothing here publishes, tags, 
 | `electron-builder.dev-signed.yml` | `extends` the production config; sets only Windows signing. The thumbprint comes from `FAVOR_DEV_SIGN_SHA1`, never from a file. Artifacts are named `...-DEV-SIGNED-LOCAL.exe`. |
 | `scripts/dev-signing/sign.mjs` | electron-builder `sign` hook: SDK `signtool sign /sha1 <thumbprint> /s My /fd sha256`. No timestamp, no key export. |
 | `scripts/dev-signing/Build-DevSigned.ps1` | Finds the certificate and the SDK `signtool.exe`, exports them to the process environment only, runs `pnpm build` and `electron-builder --win nsis --x64 --publish never`. |
-| `scripts/dev-signing/Verify-DevSigned.ps1` | `Get-AuthenticodeSignature` and `signtool verify /pa /v` per file; fails on `NotSigned` or a different thumbprint. |
-| `scripts/dev-signing/Remove-DevSigningCert.ps1` | Removes only the certificate with this exact subject, from CurrentUser `My`, `Root` and `TrustedPublisher`. |
+| `scripts/dev-signing/Verify-DevSigned.ps1` | `Get-AuthenticodeSignature` and `signtool verify /pa /v` per file; fails on a different thumbprint or any status other than `Valid` or `UnknownError` (only `Valid` with `-ExpectTrusted`). |
+| `scripts/dev-signing/Remove-DevSigningCert.ps1` | Removes only the certificate with this exact subject, from CurrentUser `TrustedPublisher`, `My` and `Root`, in that order. |
 
 electron-builder 26.15.3 signs the packaged app executable, `resources\elevate.exe`, the NSIS uninstaller
 and the NSIS installer. The `.blockmap` and the update manifest are produced after signing. Always take the
 SHA-256, sha512 and size from the final files, never from an earlier build.
 
 ## Use
+
+Run the `.ps1` scripts from a PowerShell 7 (`pwsh`) session. Windows PowerShell 5.1 under its default
+`Restricted` policy refuses to run them; use `powershell -File <script>` only where the existing policy
+already allows scripts. Do not change the execution policy and do not use `Bypass` for this.
 
 ```powershell
 # one-time: Windows SDK signing tools (SignTool)
@@ -34,7 +38,7 @@ scripts\dev-signing\Build-DevSigned.ps1            # output in release\
 
 $t = (Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subject -eq 'CN=Favor Printer DEV ONLY').Thumbprint
 scripts\dev-signing\Verify-DevSigned.ps1 -ExpectedThumbprint $t -Path (Resolve-Path release\Favor-Printer-*-DEV-SIGNED-LOCAL.exe), (Resolve-Path 'release\win-unpacked\Favor Printer.exe')
-scripts\verify-windows-release.mjs --dir release --channel <latest|beta> --version <version>
+node scripts\verify-windows-release.mjs --dir release --channel <latest|beta> --version <version>
 ```
 
 ## Expected results
@@ -55,6 +59,10 @@ Import-Certificate -FilePath "$env:TEMP\favor-dev-only.cer" -CertStoreLocation C
 Import-Certificate -FilePath "$env:TEMP\favor-dev-only.cer" -CertStoreLocation Cert:\CurrentUser\Root   # prompts for confirmation
 ```
 
+While the certificate is trusted in `Root` or `TrustedPublisher`, any process running as this user can sign
+files with its key that this profile then accepts as `Valid`, including updates and scripts under an
+`AllSigned` policy. Run `Remove-DevSigningCert.ps1` as soon as testing ends.
+
 Record which stores you changed. Root is only needed to make the chain `Valid`; `TrustedPublisher` alone does
 not make a self-signed chain valid.
 
@@ -65,10 +73,23 @@ scripts\dev-signing\Remove-DevSigningCert.ps1 -WhatIf   # preview
 scripts\dev-signing\Remove-DevSigningCert.ps1           # removes the key and every copy listed above
 ```
 
-It matches the exact subject, so unrelated certificates are untouched. Delete the `.cer` temp file as well.
+It matches the exact subject, so unrelated certificates are untouched. It removes the `TrustedPublisher` copy
+first and the `Root` copy last. If you decline the Windows confirmation for `Root`, it reports the copy it
+could not remove, finishes the rest and exits 1; run it again to remove that copy.
+
+Then finish the cleanup:
+
+- Uninstall the dev-signed Favor Printer from Settings > Apps.
+- Delete the `.cer` temp file (`$env:TEMP\favor-dev-only.cer`).
+- Delete the dev build output: every `release\*-DEV-SIGNED-LOCAL*` file and `release\latest.yml`, so neither
+  can be mistaken for a release artifact.
 
 ## Limits
 
+- A dev-signed install writes `publisherName: Favor Printer DEV ONLY` into its `app-update.yml` and still
+  checks the real GitHub release feed. electron-updater then refuses every real release, including the
+  unsigned `-beta` previews, and reports update errors on each check. The only fix is to uninstall the dev
+  build and reinstall from a real release.
 - The app's updater keeps `verifyUpdateCodeSignature` on. A dev-signed install cannot validly update to a
   build signed by a different publisher, so a later CA-signed release needs an uninstall and reinstall of any
   dev-signed pilot. Do not weaken that check to make the transition work.
