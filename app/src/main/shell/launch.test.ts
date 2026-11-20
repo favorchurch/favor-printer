@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CommandResult, CommandRunner } from "../services/command";
 import {
   createDeferredOpen,
+  createLoginItemApplier,
   detectLoginLaunch,
   loginItemSettings,
   readWindowsStartupApproval,
@@ -118,12 +119,14 @@ describe("readWindowsStartupApproval", () => {
   // Shapes copied from reg.exe on Windows 11 26200.
   const value = (hex: string) =>
     `\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run\r\n    ${WINDOWS_LOGIN_ITEM_NAME}    REG_BINARY    ${hex}\r\n\r\n`;
-  /** `key` answers the follow-up query of the whole key (no `/v`). */
-  const runner = (result: Partial<CommandResult>, key: Partial<CommandResult> = { code: 0 }) => {
+  const RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
+  /** `key` answers the follow-up query of the StartupApproved\Run key, `explorer` that of its Explorer parent. */
+  const runner = (result: Partial<CommandResult>, key: Partial<CommandResult> = { code: 0 }, explorer: Partial<CommandResult> = { code: 0 }) => {
     const calls: { file: string; args: readonly string[] }[] = [];
     const run: CommandRunner = async (file, args) => {
       calls.push({ file, args });
-      return { code: 0, stdout: "", stderr: "", timedOut: false, ...(args.includes("/v") ? result : key) };
+      const reply = args.includes("/v") ? result : args[1] === RUN_KEY ? key : explorer;
+      return { code: 0, stdout: "", stderr: "", timedOut: false, ...reply };
     };
     return { run, calls };
   };
@@ -138,16 +141,63 @@ describe("readWindowsStartupApproval", () => {
     }
   });
 
-  it("treats no record as on, but only when the key itself reads cleanly", async () => {
+  it("treats no record as on, but only when the registry itself reads cleanly", async () => {
     expect(await readWindowsStartupApproval(runner(missingValue).run)).toBe(true);
-    // Access denied, a broken or absent key: same exit 1 for the value, but the key query fails too.
-    expect(await readWindowsStartupApproval(runner(missingValue, { code: 1 }).run)).toBeNull();
+    // A profile where Windows has not created StartupApproved\Run yet: still no record.
+    expect(await readWindowsStartupApproval(runner(missingValue, { code: 1 }).run)).toBe(true);
+    // Nothing readable: same exit 1 for the value, but it cannot tell why.
+    expect(await readWindowsStartupApproval(runner(missingValue, { code: 1 }, { code: 1 }).run)).toBeNull();
   });
 
   it("returns null when it cannot tell, so the entry is left alone", async () => {
     for (const result of [{ code: null, stderr: "spawn ENOENT" }, { code: null, timedOut: true }, { code: 0, stdout: "garbage" }, { code: 1, timedOut: true }, { code: 5 }]) {
       expect(await readWindowsStartupApproval(runner(result).run)).toBeNull();
     }
+  });
+});
+
+describe("createLoginItemApplier", () => {
+  const setup = (platform: NodeJS.Platform, readApproval: () => Promise<boolean | null>) => {
+    const app = { setLoginItemSettings: vi.fn() };
+    const onError = vi.fn();
+    return { app, onError, apply: createLoginItemApplier({ app, platform, readApproval, onError }) };
+  };
+
+  it("writes the read Startup apps state on a Windows re-register, and nothing when it is unknown", async () => {
+    const off = setup("win32", async () => false);
+    await off.apply(true, { keepApproval: true });
+    expect(off.app.setLoginItemSettings).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ openAtLogin: true, enabled: false }));
+
+    const unknown = setup("win32", async () => null);
+    await unknown.apply(true, { keepApproval: true });
+    expect(unknown.app.setLoginItemSettings).not.toHaveBeenCalled();
+  });
+
+  it("drops a re-register whose read returns after an in-app toggle", async () => {
+    let answer: (approved: boolean) => void = () => undefined;
+    const { app, apply } = setup("win32", () => new Promise((resolve) => (answer = resolve)));
+    const reRegister = apply(true, { keepApproval: true });
+    await apply(false);
+    answer(true);
+    await reRegister;
+    expect(app.setLoginItemSettings).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ openAtLogin: false }));
+  });
+
+  it("reports a failed write instead of rejecting", async () => {
+    const { app, onError, apply } = setup("win32", async () => true);
+    app.setLoginItemSettings.mockImplementation(() => {
+      throw new Error("denied");
+    });
+    await expect(apply(true, { keepApproval: true })).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("on macOS writes at once and never reads the Windows registry", async () => {
+    const read = vi.fn(async () => false);
+    const { app, apply } = setup("darwin", read);
+    await apply(true, { keepApproval: true });
+    expect(app.setLoginItemSettings).toHaveBeenCalledExactlyOnceWith({ openAtLogin: true });
+    expect(read).not.toHaveBeenCalled();
   });
 });
 

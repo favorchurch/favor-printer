@@ -40,7 +40,8 @@ export function loginItemSettings(openAtLogin: boolean, platform: NodeJS.Platfor
 }
 
 const REG_EXE = "C:\\Windows\\System32\\reg.exe";
-const STARTUP_APPROVED_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
+const EXPLORER_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+const STARTUP_APPROVED_KEY = `${EXPLORER_KEY}\\StartupApproved\\Run`;
 
 /**
  * Reads whether Windows' Startup apps list has this app on. Electron's own `getLoginItemSettings().launchItems`
@@ -54,13 +55,46 @@ export async function readWindowsStartupApproval(run: CommandRunner): Promise<bo
     // reg.exe exits 1 for a missing value and for other failures alike (its message is localized). Only a key
     // that reads cleanly makes a failed value query mean "no record".
     if (result.code !== 1 || result.timedOut) return null;
-    const key = await run(REG_EXE, ["query", STARTUP_APPROVED_KEY], { timeoutMs: 5_000 });
-    return key.code === 0 ? true : null;
+    // Windows creates the StartupApproved keys only once it records a startup choice, so a readable Explorer key
+    // without them is also "no record".
+    for (const key of [STARTUP_APPROVED_KEY, EXPLORER_KEY]) {
+      if ((await run(REG_EXE, ["query", key], { timeoutMs: 5_000 })).code === 0) return true;
+    }
+    return null;
   }
   const match = /REG_BINARY\s+([0-9A-Fa-f]{2})/.exec(result.stdout);
   if (!match) return null;
   // Windows writes 02 (or 06) for on and 03 (or 07) for off: the low bit means disabled.
   return (Number.parseInt(match[1], 16) & 1) === 0;
+}
+
+type LoginItemApp = { setLoginItemSettings(settings: LoginItemSettings): void };
+
+/**
+ * `applyOpenAtLogin` for the controller. A launch-time re-register on Windows (`keepApproval`) first reads the
+ * Startup apps state, so it writes later than it was asked; any call made meanwhile (the in-app toggle) wins.
+ */
+export function createLoginItemApplier(deps: {
+  app: LoginItemApp;
+  platform: NodeJS.Platform;
+  readApproval: () => Promise<boolean | null>;
+  onError: (error: unknown) => void;
+}): (enabled: boolean, options?: { keepApproval: boolean }) => Promise<void> {
+  let generation = 0;
+  return async (enabled, options) => {
+    const mine = ++generation;
+    if (!options?.keepApproval || deps.platform !== "win32") {
+      deps.app.setLoginItemSettings(loginItemSettings(enabled, deps.platform));
+      return;
+    }
+    try {
+      const approved = await deps.readApproval();
+      // Unknown approval: leave the entry as it is rather than override a choice made in Windows.
+      if (approved !== null && mine === generation) deps.app.setLoginItemSettings(loginItemSettings(enabled, deps.platform, approved));
+    } catch (error) {
+      deps.onError(error);
+    }
+  };
 }
 
 /**
