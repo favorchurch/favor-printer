@@ -377,7 +377,9 @@ describe("assertSpoolEmpty", () => {
   });
 });
 
-describe("smoke-packaged.sh", () => {
+// The script checks a macOS .app bundle (plutil, codesign, spctl) and the test
+// fakes it with POSIX shell stubs, so there is nothing to run on Windows.
+describe.skipIf(process.platform === "win32")("smoke-packaged.sh", () => {
   it("uses the packaged binary for its runtime checks and reports the self-test", async () => {
     const temp = await mkdtemp(path.join(os.tmpdir(), "favor-printer-smoke-test-"));
     const app = path.join(temp, "Favor Printer.app");
