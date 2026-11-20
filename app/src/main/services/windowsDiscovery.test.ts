@@ -241,6 +241,7 @@ const realZd421 = {
   queueName: "ZDesigner ZD421-203dpi ZPL", driverName: "ZDesigner ZD421-203dpi ZPL", portName: "USB001",
   pnpDeviceId: null, usbPrintInstanceId: REAL_USBPRINT, verifiedUsbSerial: "D8J253115309", serialEvidence: "usbprint-port",
   isLocal: true, isNetwork: false, workOffline: false, printerStatus: 3, detectedErrorState: 0,
+  printerState: 0, extendedDetectedErrorState: 0,
 };
 const realOthers = [
   { queueName: "OneNote (Desktop)", driverName: "Send to Microsoft OneNote 16 Driver", portName: "nul:", pnpDeviceId: null, usbPrintInstanceId: null, verifiedUsbSerial: null, serialEvidence: null, isLocal: true, isNetwork: false, workOffline: false, printerStatus: 3, detectedErrorState: 0 },
@@ -326,8 +327,67 @@ describe("real ZD421 on the ZDesigner driver (empty PNPDeviceID, DetectedErrorSt
       expect(parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates[0].queueState).toBe(expected);
     }
   });
+
+  // DetectedErrorState 0 is "the driver reports no status", so PrinterState (PRINTER_STATUS_* bits) and
+  // ExtendedDetectedErrorState must still turn the queue away. Not yet captured on hardware: synthetic values.
+  const stateOf = (patch: Record<string, unknown>) => parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates[0].queueState;
+
+  it("keeps the real idle values (PrinterState 0, ExtendedDetectedErrorState 0) available", () => {
+    expect(stateOf({})).toBe("available");
+  });
+
+  it("keeps the old rule when an older probe omits PrinterState or reports it as null", () => {
+    const older = Object.fromEntries(Object.entries(realZd421).filter(([key]) => key !== "printerState" && key !== "extendedDetectedErrorState"));
+    expect(older).not.toHaveProperty("printerState");
+    expect(parseWindowsPrinterProbe(probe([older])).candidates[0].queueState).toBe("available");
+    expect(stateOf({ printerState: null, extendedDetectedErrorState: null })).toBe("available");
+    expect(stateOf({ printerState: null, printerStatus: 7 })).toBe("offline");
+  });
+
+  it("needs attention for paused, error, paper, door, toner, memory, and intervention bits", () => {
+    for (const bit of [0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x800, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000, 0x4000000]) {
+      expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "attention"]);
+      expect([bit, stateOf({ printerState: bit | 0x400 })]).toEqual([bit, "attention"]);
+    }
+  });
+
+  it("is offline for offline, not-available, and server bits, ahead of any attention bit", () => {
+    for (const bit of [0x80, 0x1000, 0x800000, 0x2000000]) {
+      expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "offline"]);
+      expect([bit, stateOf({ printerState: bit | 0x1 | 0x10 })]).toEqual([bit, "offline"]);
+    }
+  });
+
+  it("stays available for busy, printing, warming-up, toner-low, and power-save bits", () => {
+    for (const bit of [0x100, 0x200, 0x400, 0x2000, 0x4000, 0x8000, 0x10000, 0x20000, 0x1000000]) {
+      expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "available"]);
+    }
+  });
+
+  it("does not call a queue available when PrinterState has a bit this code does not name", () => {
+    for (const bit of [0x8000000, 0x80000000]) expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "unknown"]);
+    expect(stateOf({ printerState: 0xffffffff })).toBe("offline");
+  });
+
+  it("needs attention for any non-zero ExtendedDetectedErrorState", () => {
+    for (const extendedDetectedErrorState of [1, 2, 3, 7, 65535]) {
+      expect([extendedDetectedErrorState, stateOf({ extendedDetectedErrorState })]).toEqual([extendedDetectedErrorState, "attention"]);
+    }
+    expect(stateOf({ extendedDetectedErrorState: 3, workOffline: true })).toBe("offline");
+  });
+
+  it("fails closed on a PrinterState or ExtendedDetectedErrorState outside its CIM type", () => {
+    for (const patch of [
+      { printerState: -1 }, { printerState: 0x100000000 }, { printerState: 1.5 }, { printerState: "0" },
+      { extendedDetectedErrorState: -1 }, { extendedDetectedErrorState: 65536 }, { extendedDetectedErrorState: "0" },
+    ]) {
+      expect(() => parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }]))).toThrow("invalid-probe");
+    }
+  });
 });
 
+// The .ps1 port binding and status fields are only checked as text here: PowerShell does not run in this suite, so
+// a logic error the assertions below do not spell out would only show on a Windows PC (review nit).
 describe("probe script port binding (read as text; PowerShell does not run here)", () => {
   const script = readFileSync(new URL("../../../../scripts/windows/probe-printers.ps1", import.meta.url), "utf8");
   const fn = (name: string) => {
@@ -367,5 +427,13 @@ describe("probe script port binding (read as text; PowerShell does not run here)
   it("stays read-only and does not bypass execution policy", () => {
     expect(script).not.toMatch(/\b(?:Set|Remove|Add|Enable|Disable|Install|Uninstall|Restart|Invoke|Start|Stop)-[A-Z]|\bNew-(?!Object\b)/);
     expect(script).not.toMatch(/Bypass|Unrestricted/i);
+  });
+
+  it("reports PrinterState as a full uint32 and ExtendedDetectedErrorState, null when Windows has none", () => {
+    expect(script).toContain("printerState = if ($null -eq $queue.PrinterState) { $null } else { [int64]$queue.PrinterState }");
+    expect(script).toContain(
+      "extendedDetectedErrorState = if ($null -eq $queue.ExtendedDetectedErrorState) { $null } else { [int]$queue.ExtendedDetectedErrorState }",
+    );
+    expect(script).toContain("schemaVersion = 1");
   });
 });

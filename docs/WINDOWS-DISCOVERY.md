@@ -40,7 +40,9 @@ allowlist; do not manufacture a serial from `USB001` or a queue label.
 | PortName | `USB001` ("Virtual printer port for USB") | `nul:`, `PORTPROMPT:` |
 | PNPDeviceID | empty | empty |
 | PrinterStatus / DetectedErrorState | 3 (Idle) / 0 (Unknown) | 3 / 0 |
+| PrinterState (PRINTER_STATUS_* bits) | 0 | — |
 | ExtendedPrinterStatus / ExtendedDetectedErrorState | 2 / 0 | — |
+| Status | `Unknown` | — |
 | WorkOffline / Local / Network | False / True / False | — |
 
 PnP had exactly one present USBPRINT device,
@@ -72,15 +74,51 @@ re-checks the port suffix and the evidence/PNPDeviceID pairing before it accepts
 a serial, and uses `usbPrintInstanceId` as the selection key only when
 PNPDeviceID is empty.
 
+That USBPRINT instance ID ends in the port, so when PNPDeviceID is empty the
+selection key includes the port. If Windows gives the same printer a different
+`USB<nnn>` port after a replug, the saved selection no longer matches and
+printing stays off until someone picks the printer again. This fails closed: it
+never prints to a different printer.
+
+The port-binding logic in `probe-printers.ps1` is checked only by text
+assertions in `windowsDiscovery.test.ts`. PowerShell does not run in the test
+suite, so a logic error those assertions do not spell out would only show on a
+Windows PC.
+
 ### Queue status
 
-A queue is `available` when WorkOffline is false, PrinterStatus is 3 (Idle),
-4 (Printing) or 5 (Warmup), and DetectedErrorState is 2 (No Error) or 0
-(Unknown, what the ZDesigner driver reports when idle and ready). PrinterStatus 7,
-WorkOffline true or DetectedErrorState 9 is `offline`; PrinterStatus 6 or
-DetectedErrorState 3–11 (for example 4 No Paper, 6 Door Open, 7 Offline) is
-`attention`; null or other values stay `unknown`. None of these prove the
-printer is attached.
+With the ZDesigner driver, DetectedErrorState 0 and ExtendedPrinterStatus 2 mean
+the driver reports no status. On their own they would keep a queue `available`
+whenever the printer is attached, even with paper out, the head open or the queue
+paused. So the probe also reports `printerState` (Win32_Printer.PrinterState,
+the spooler's PRINTER_STATUS_* bitmask) and `extendedDetectedErrorState`. Both
+are optional in schemaVersion 1: an older probe that omits them, or a null value,
+keeps the rules below unchanged.
+
+Checked in this order, first match wins:
+
+1. `offline`: WorkOffline true, PrinterStatus 7, DetectedErrorState 9, or a
+   PrinterState bit OFFLINE (0x80), NOT_AVAILABLE (0x1000), SERVER_UNKNOWN
+   (0x800000) or SERVER_OFFLINE (0x2000000).
+2. `attention`: PrinterStatus 6, DetectedErrorState 3–11 (for example 4 No
+   Paper, 6 Door Open, 7 Offline), or a PrinterState bit PAUSED (0x1), ERROR
+   (0x2), PENDING_DELETION (0x4), PAPER_JAM (0x8), PAPER_OUT (0x10), MANUAL_FEED
+   (0x20), PAPER_PROBLEM (0x40), OUTPUT_BIN_FULL (0x800), NO_TONER (0x40000),
+   PAGE_PUNT (0x80000), USER_INTERVENTION (0x100000), OUT_OF_MEMORY (0x200000),
+   DOOR_OPEN (0x400000) or DRIVER_UPDATE_NEEDED (0x4000000).
+3. `attention`: any ExtendedDetectedErrorState other than 0.
+4. `unknown`: a PrinterState bit this code does not name (0xF8000000).
+5. `available`: PrinterStatus 3 (Idle), 4 (Printing) or 5 (Warmup) and
+   DetectedErrorState 2 (No Error) or 0 (the driver reports no status). PrinterState
+   bits IO_ACTIVE, BUSY, PRINTING, WAITING, PROCESSING, INITIALIZING, WARMING_UP,
+   TONER_LOW and POWER_SAVE do not block this.
+6. Anything else, including null, is `unknown`.
+
+None of these prove the printer is attached. The real ZD421's PrinterState and
+ExtendedDetectedErrorState values for paper out, head open, a paused queue and
+an unplugged printer are **not yet captured on hardware**. Only the idle values
+above (PrinterState 0, ExtendedDetectedErrorState 0) are real. The mapping
+follows the documented PRINTER_STATUS_* bit names until those captures exist.
 
 ## Windows verification harness
 

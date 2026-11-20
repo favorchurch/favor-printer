@@ -66,6 +66,10 @@ type ProbePrinter = {
   workOffline: boolean;
   printerStatus: number | null;
   detectedErrorState: number | null;
+  /** Win32_Printer.PrinterState (PRINTER_STATUS_* bitmask). Optional in schemaVersion 1: null when absent. */
+  printerState: number | null;
+  /** Win32_Printer.ExtendedDetectedErrorState. Optional in schemaVersion 1: null when absent. */
+  extendedDetectedErrorState: number | null;
 };
 
 export class WindowsDiscoveryError extends Error {
@@ -105,6 +109,12 @@ function statusField(value: unknown): number | null {
   return value;
 }
 
+function bitmaskField(value: unknown): number | null {
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 0xffff_ffff) throw new WindowsDiscoveryError("invalid-probe");
+  return value;
+}
+
 function readPrinter(value: unknown): ProbePrinter {
   const row = object(value);
   return {
@@ -120,6 +130,8 @@ function readPrinter(value: unknown): ProbePrinter {
     workOffline: booleanField(row.workOffline),
     printerStatus: statusField(row.printerStatus),
     detectedErrorState: statusField(row.detectedErrorState),
+    printerState: row.printerState === undefined ? null : bitmaskField(row.printerState),
+    extendedDetectedErrorState: row.extendedDetectedErrorState === undefined ? null : statusField(row.extendedDetectedErrorState),
   };
 }
 
@@ -157,13 +169,45 @@ function instanceIdOf(row: ProbePrinter): string | null {
   return row.pnpDeviceId === null ? windowsZebraInstanceId(row.usbPrintInstanceId) : windowsZebraInstanceId(row.pnpDeviceId);
 }
 
+/*
+ * Win32_Printer.PrinterState carries the spooler's PRINTER_STATUS_* bits (winspool.h). The ZDesigner driver reports
+ * DetectedErrorState 0, which means the driver reports no status, so these bits are what can still show a paused
+ * queue or a printer the spooler cannot reach. Not yet captured on a real ZD421 with paper out, head open, paused,
+ * or unplugged: the mapping follows the documented bit names.
+ */
+// PRINTER_STATUS_OFFLINE 0x80, NOT_AVAILABLE 0x1000, SERVER_UNKNOWN 0x800000, SERVER_OFFLINE 0x2000000.
+const PRINTER_STATE_OFFLINE = 0x80 | 0x1000 | 0x80_0000 | 0x200_0000;
+// PRINTER_STATUS_PAUSED 0x1, ERROR 0x2, PENDING_DELETION 0x4, PAPER_JAM 0x8, PAPER_OUT 0x10, MANUAL_FEED 0x20,
+// PAPER_PROBLEM 0x40, OUTPUT_BIN_FULL 0x800, NO_TONER 0x40000, PAGE_PUNT 0x80000, USER_INTERVENTION 0x100000,
+// OUT_OF_MEMORY 0x200000, DOOR_OPEN 0x400000, DRIVER_UPDATE_NEEDED 0x4000000.
+const PRINTER_STATE_ATTENTION =
+  0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x20 | 0x40 | 0x800 | 0x4_0000 | 0x8_0000 | 0x10_0000 | 0x20_0000 | 0x40_0000 | 0x400_0000;
+// Not blocking: IO_ACTIVE 0x100, BUSY 0x200, PRINTING 0x400, WAITING 0x2000, PROCESSING 0x4000, INITIALIZING 0x8000,
+// WARMING_UP 0x10000, TONER_LOW 0x20000, POWER_SAVE 0x1000000.
+const PRINTER_STATE_BENIGN = 0x100 | 0x200 | 0x400 | 0x2000 | 0x4000 | 0x8000 | 0x1_0000 | 0x2_0000 | 0x100_0000;
+const PRINTER_STATE_KNOWN = PRINTER_STATE_OFFLINE | PRINTER_STATE_ATTENTION | PRINTER_STATE_BENIGN;
+
+/** Bitwise AND on a full uint32 (JavaScript's & works on signed 32-bit values). */
+function hasBits(value: number, mask: number): boolean {
+  return (BigInt(value) & BigInt(mask >>> 0)) !== 0n;
+}
+
 function queueState(row: ProbePrinter): WindowsQueueState {
+  const state = row.printerState;
   if (row.workOffline || row.printerStatus === 7 || row.detectedErrorState === 9) return "offline";
+  if (state !== null && hasBits(state, PRINTER_STATE_OFFLINE)) return "offline";
   if (row.printerStatus === 6 || (row.detectedErrorState !== null && row.detectedErrorState >= 3 && row.detectedErrorState <= 11)) return "attention";
+  if (state !== null && hasBits(state, PRINTER_STATE_ATTENTION)) return "attention";
+  // Fail safe: any ExtendedDetectedErrorState other than 0 (the idle ZD421's value) needs a look.
+  if (row.extendedDetectedErrorState !== null && row.extendedDetectedErrorState !== 0) return "attention";
+  // A bit this code does not name (0xF8000000) is not evidence of a ready queue.
+  if (state !== null && hasBits(state, ~PRINTER_STATE_KNOWN)) return "unknown";
   // Win32_Printer: Idle/Printing/Warmup with DetectedErrorState No Error (2) or Unknown (0). A real ZD421 on the
   // ZDesigner driver, idle and ready, reports PrinterStatus 3, DetectedErrorState 0, WorkOffline false (2026-11-20);
-  // so do the PC's other local queues. Any other error state (4 No Paper, 6 Door Open, 7 Offline, 9 Jammed, ...)
-  // was handled above or stays unknown, and so do missing (null) or new values. Not proof the hardware is attached.
+  // so do the PC's other local queues. With this driver 0 means the driver reports no status, so it holds whenever
+  // the printer is attached; the PrinterState and ExtendedDetectedErrorState checks above are what can still turn a
+  // paused or offline queue away. Any other error state (4 No Paper, 6 Door Open, 7 Offline, 9 Jammed, ...) was
+  // handled above or stays unknown, and so do missing (null) or new values. Not proof the hardware is attached.
   if ([3, 4, 5].includes(row.printerStatus ?? -1) && (row.detectedErrorState === 2 || row.detectedErrorState === 0)) return "available";
   return "unknown";
 }

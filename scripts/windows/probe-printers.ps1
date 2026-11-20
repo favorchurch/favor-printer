@@ -105,6 +105,11 @@ try {
             workOffline = if ($null -eq $queue.WorkOffline) { $null } else { [bool]$queue.WorkOffline }
             printerStatus = if ($null -eq $queue.PrinterStatus) { $null } else { [int]$queue.PrinterStatus }
             detectedErrorState = if ($null -eq $queue.DetectedErrorState) { $null } else { [int]$queue.DetectedErrorState }
+            # Optional since schemaVersion 1 (older probes omit them). PrinterState is the uint32 PRINTER_STATUS_*
+            # bitmask; [int64] keeps a high bit from overflowing [int]. The ZDesigner driver leaves
+            # DetectedErrorState at 0, so these are the fields that can still show paused, paper out, or offline.
+            printerState = if ($null -eq $queue.PrinterState) { $null } else { [int64]$queue.PrinterState }
+            extendedDetectedErrorState = if ($null -eq $queue.ExtendedDetectedErrorState) { $null } else { [int]$queue.ExtendedDetectedErrorState }
         }
     })
     [ordered]@{
