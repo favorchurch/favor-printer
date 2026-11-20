@@ -3,12 +3,21 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { MIGRATED_ITEMS, migrateWindowsSupportData, migrationFailed, type MigrationFs } from "./windowsDataMigration";
+import {
+  chooseSupportDir,
+  MIGRATED_ITEMS,
+  MIGRATION_MARKER,
+  migrateWindowsSupportData,
+  migrationFailed,
+  type MigrationFs,
+} from "./windowsDataMigration";
 
 let root: string;
 let from: string;
 let to: string;
 const token = Buffer.from([0x01, 0x00, 0x00, 0x00, 0xd0, 0x8c, 0x9d, 0xdf, 0x00, 0xff, 0x10]);
+const noSleep = () => undefined;
+const SPOOL_FILES = ["job-1.json", "job-1.send", path.join("nested", "job-2.json")];
 
 function write(file: string, data: string | Buffer): void {
   nodeFs.mkdirSync(path.dirname(file), { recursive: true });
@@ -34,6 +43,7 @@ const realFs: MigrationFs = {
   writeFileSync: nodeFs.writeFileSync,
 };
 const fsWith = (over: Partial<MigrationFs>): MigrationFs => ({ ...realFs, ...over });
+const fsError = (code: string, message = `${code}: C:\\Users\\secret\\path`) => Object.assign(new Error(message), { code });
 
 /** Every file under `dir`, relative, sorted. */
 function tree(dir: string): string[] {
@@ -46,6 +56,9 @@ function tree(dir: string): string[] {
 }
 
 const outcomes = (results: { item: string; outcome: string }[]) => Object.fromEntries(results.map((r) => [r.item, r.outcome]));
+const run = (extra: { fs?: MigrationFs; log?: (m: string) => void } = {}) => migrateWindowsSupportData({ from, to, sleep: noSleep, ...extra });
+const hasMarker = () => nodeFs.existsSync(path.join(to, MIGRATION_MARKER));
+const newItems = () => nodeFs.readdirSync(to).sort();
 
 beforeEach(() => {
   root = nodeFs.mkdtempSync(path.join(os.tmpdir(), "favor-printer-migrate-"));
@@ -56,25 +69,30 @@ beforeEach(() => {
 afterEach(() => nodeFs.rmSync(root, { recursive: true, force: true }));
 
 describe("migrateWindowsSupportData", () => {
-  it("moves the preferences, the token and the whole spool, byte for byte, and removes the old copies", () => {
+  it("moves the preferences, the token and the whole spool, byte for byte, commits, and removes the old copies", () => {
     seedOld();
     const logs: string[] = [];
-    const results = migrateWindowsSupportData({ from, to, log: (m) => logs.push(m) });
+    const results = run({ log: (m) => logs.push(m) });
     expect(results).toEqual(MIGRATED_ITEMS.map((item) => ({ item, outcome: "moved" })));
     expect(migrationFailed(results)).toBe(false);
     expect(nodeFs.readFileSync(path.join(to, "prefs.json"), "utf8")).toBe('{"pairedUsbSerial":"D9J200100001"}');
     expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
-    expect(tree(path.join(to, "spool"))).toEqual(["job-1.json", "job-1.send", path.join("nested", "job-2.json")]);
+    expect(tree(path.join(to, "spool"))).toEqual(SPOOL_FILES);
     expect(nodeFs.readFileSync(path.join(to, "spool", "job-1.send"), "utf8")).toBe("marker");
+    expect(hasMarker()).toBe(true);
     for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(false);
-    expect(nodeFs.readdirSync(to).sort()).toEqual([...MIGRATED_ITEMS].sort());
+    expect(newItems()).toEqual([...MIGRATED_ITEMS, MIGRATION_MARKER].sort());
     expect(logs.join("\n")).not.toContain("D9J200100001");
   });
 
-  it("does nothing, and creates nothing, when there is no old data", () => {
-    const results = migrateWindowsSupportData({ from, to });
-    expect(results).toEqual(MIGRATED_ITEMS.map((item) => ({ item, outcome: "absent" })));
-    expect(nodeFs.existsSync(to)).toBe(false);
+  it("commits a fresh install with nothing to move, so a later stray old folder is never imported", () => {
+    expect(run()).toEqual(MIGRATED_ITEMS.map((item) => ({ item, outcome: "absent" })));
+    expect(hasMarker()).toBe(true);
+    seedOld();
+    expect(migrationFailed(run())).toBe(false);
+    expect(newItems()).toEqual([MIGRATION_MARKER]);
+    // The stray old copies are cleaned up, not adopted.
+    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(false);
   });
 
   it("leaves everything else in the old folder alone, including Local State, which holds the token's key", () => {
@@ -82,127 +100,228 @@ describe("migrateWindowsSupportData", () => {
     write(path.join(from, "Local State"), '{"os_crypt":{"encrypted_key":"abc"}}');
     write(path.join(from, "logs", "main.log"), "log line");
     write(path.join(from, "GPUCache", "data_0"), "cache");
-    migrateWindowsSupportData({ from, to });
+    run();
     expect(nodeFs.readFileSync(path.join(from, "Local State"), "utf8")).toBe('{"os_crypt":{"encrypted_key":"abc"}}');
     expect(nodeFs.readFileSync(path.join(from, "logs", "main.log"), "utf8")).toBe("log line");
     expect(nodeFs.existsSync(path.join(from, "GPUCache", "data_0"))).toBe(true);
-    expect(nodeFs.readdirSync(to).sort()).toEqual([...MIGRATED_ITEMS].sort());
+    expect(newItems()).toEqual([...MIGRATED_ITEMS, MIGRATION_MARKER].sort());
   });
 
-  it("is a no-op the second time", () => {
+  it("is a no-op once committed", () => {
     seedOld();
-    migrateWindowsSupportData({ from, to });
-    expect(migrateWindowsSupportData({ from, to }).every((r) => r.outcome === "absent")).toBe(true);
+    run();
+    expect(run().every((r) => r.outcome === "absent")).toBe(true);
     expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
   });
 
-  it("never overwrites an item that already exists at the new path, and keeps that item's old copy", () => {
+  it("never brings an old copy back after a failed delete, even after the new token is revoked and removed", () => {
     seedOld();
-    write(path.join(to, "prefs.json"), '{"pairedUsbSerial":"NEWER"}');
-    write(path.join(to, "relay-token.bin"), "newer-token");
-    const results = migrateWindowsSupportData({ from, to });
-    expect(outcomes(results)).toEqual({ "prefs.json": "kept-existing", "relay-token.bin": "kept-existing", spool: "moved" });
-    expect(nodeFs.readFileSync(path.join(to, "prefs.json"), "utf8")).toBe('{"pairedUsbSerial":"NEWER"}');
-    expect(nodeFs.readFileSync(path.join(to, "relay-token.bin"), "utf8")).toBe("newer-token");
-    expect(nodeFs.existsSync(path.join(from, "prefs.json"))).toBe(true);
+    const locked = fsWith({
+      rmSync: ((target: string, options?: nodeFs.RmOptions) => {
+        if (String(target).startsWith(from)) throw fsError("EBUSY");
+        nodeFs.rmSync(target, options);
+      }) as MigrationFs["rmSync"],
+    });
+    const logs: string[] = [];
+    const results = run({ fs: locked, log: (m) => logs.push(m) });
+    expect(migrationFailed(results)).toBe(false);
+    expect(logs.join("\n")).toContain("old copy could not be removed yet");
     expect(nodeFs.existsSync(path.join(from, "relay-token.bin"))).toBe(true);
+
+    // The cloud revokes this PC, and the app deletes the new token.
+    nodeFs.rmSync(path.join(to, "relay-token.bin"));
+    expect(migrationFailed(run())).toBe(false);
+    expect(nodeFs.existsSync(path.join(to, "relay-token.bin"))).toBe(false);
+    // The leftover is cleaned up, never imported again.
+    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(false);
+    expect(tree(path.join(to, "spool"))).toEqual(SPOOL_FILES);
   });
 
-  it("is all or nothing: one item that cannot be copied stops the others from moving", () => {
+  it("finishes removing a half-deleted old spool on the next start without touching the new one", () => {
+    seedOld();
+    const partial = fsWith({
+      rmSync: ((target: string, options?: nodeFs.RmOptions) => {
+        if (String(target) === path.join(from, "spool")) {
+          nodeFs.rmSync(path.join(from, "spool", "job-1.json"));
+          throw fsError("EBUSY");
+        }
+        nodeFs.rmSync(target, options);
+      }) as MigrationFs["rmSync"],
+    });
+    expect(migrationFailed(run({ fs: partial }))).toBe(false);
+    expect(tree(path.join(from, "spool"))).toEqual(["job-1.send", path.join("nested", "job-2.json")]);
+    expect(tree(path.join(to, "spool"))).toEqual(SPOOL_FILES);
+    run();
+    expect(nodeFs.existsSync(path.join(from, "spool"))).toBe(false);
+    expect(tree(path.join(to, "spool"))).toEqual(SPOOL_FILES);
+  });
+
+  it("is all or nothing: one item that cannot be copied stops the others, and nothing is committed", () => {
     seedOld();
     const failing = fsWith({
       writeFileSync: ((file: string, data: string | Uint8Array) => {
-        if (String(file).includes("relay-token.bin")) throw new Error("disk full: C:\\secret\\path");
+        if (String(file).includes("relay-token.bin")) throw fsError("ENOSPC");
         nodeFs.writeFileSync(file, data);
       }) as MigrationFs["writeFileSync"],
     });
     const logs: string[] = [];
-    const results = migrateWindowsSupportData({ from, to, fs: failing, log: (m) => logs.push(m) });
+    const results = run({ fs: failing, log: (m) => logs.push(m) });
     expect(outcomes(results)).toEqual({ "prefs.json": "failed", "relay-token.bin": "failed", spool: "failed" });
     expect(migrationFailed(results)).toBe(true);
     expect(tree(to)).toEqual([]);
+    expect(hasMarker()).toBe(false);
     expect(nodeFs.readFileSync(path.join(from, "relay-token.bin")).equals(token)).toBe(true);
     expect(nodeFs.existsSync(path.join(from, "prefs.json"))).toBe(true);
     expect(tree(path.join(from, "spool"))).toHaveLength(3);
+    // The code is logged so support can tell the failures apart. A path or message never is.
+    expect(logs.join("\n")).toContain("ENOSPC");
     expect(logs.join("\n")).not.toContain("secret");
   });
 
-  it("discards a copy that does not read back identically and moves nothing", () => {
+  it("discards a copy that does not read back identically and commits nothing", () => {
     seedOld();
     const truncating = fsWith({
       writeFileSync: ((file: string, data: string | Uint8Array) => nodeFs.writeFileSync(file, Buffer.from(data).subarray(0, 3))) as MigrationFs["writeFileSync"],
     });
-    const results = migrateWindowsSupportData({ from, to, fs: truncating });
+    const results = run({ fs: truncating });
     expect(migrationFailed(results)).toBe(true);
     expect(tree(to)).toEqual([]);
+    expect(hasMarker()).toBe(false);
     for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(true);
   });
 
-  it("never leaves a partial new copy after a crash part way through, and finishes on the next start", () => {
+  it("finishes on the next start after staging debris from a crash, and never keeps a partial copy", () => {
     seedOld();
     let writes = 0;
     const crashing = fsWith({
       writeFileSync: ((file: string, data: string | Uint8Array) => {
         writes += 1;
         nodeFs.writeFileSync(file, data);
-        if (writes === 3) throw new Error("killed");
+        if (writes === 3) throw fsError("EIO");
       }) as MigrationFs["writeFileSync"],
     });
-    expect(migrationFailed(migrateWindowsSupportData({ from, to, fs: crashing }))).toBe(true);
-    // A crash that skips the cleanup altogether: staging debris is left behind.
+    expect(migrationFailed(run({ fs: crashing }))).toBe(true);
+    // A crash that skips the cleanup altogether leaves debris behind.
     write(path.join(to, "spool.migrating", "job-1.json"), "partial");
     write(path.join(to, "spool.migrating", "stray-from-a-crash.json"), "must not survive");
     write(path.join(to, "relay-token.bin.migrating"), "partial token");
-    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(to, item))).toBe(false);
+    expect(hasMarker()).toBe(false);
 
-    const results = migrateWindowsSupportData({ from, to });
-    expect(outcomes(results)).toEqual({ "prefs.json": "moved", "relay-token.bin": "moved", spool: "moved" });
-    expect(tree(path.join(to, "spool"))).toEqual(["job-1.json", "job-1.send", path.join("nested", "job-2.json")]);
+    expect(outcomes(run())).toEqual({ "prefs.json": "moved", "relay-token.bin": "moved", spool: "moved" });
+    expect(tree(path.join(to, "spool"))).toEqual(SPOOL_FILES);
     expect(nodeFs.readFileSync(path.join(to, "spool", "job-1.json"), "utf8")).toBe('{"state":"ambiguous"}');
-    expect(nodeFs.readdirSync(to).sort()).toEqual([...MIGRATED_ITEMS].sort());
+    expect(newItems()).toEqual([...MIGRATED_ITEMS, MIGRATION_MARKER].sort());
   });
 
-  it("puts nothing in place and keeps the old copies when a rename fails after another succeeded", () => {
+  it("after a crash between renames, the half-placed set loses to the newer old copy on the next start", () => {
     seedOld();
     let renames = 0;
-    const flaky = fsWith({
+    const crashing = fsWith({
       renameSync: ((a: string, b: string) => {
         renames += 1;
-        if (renames === 2) throw new Error("EPERM");
+        // Every attempt after the first item fails, so the retries cannot get past it either.
+        if (renames >= 2) throw fsError("EPERM");
         nodeFs.renameSync(a, b);
       }) as MigrationFs["renameSync"],
-    });
-    const results = migrateWindowsSupportData({ from, to, fs: flaky });
-    expect(migrationFailed(results)).toBe(true);
-    expect(tree(to)).toEqual([]);
-    expect(nodeFs.readdirSync(to)).toEqual([]);
-    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(true);
-  });
-
-  it("keeps the verified new copy when the old copy cannot be removed", () => {
-    seedOld();
-    const locked = fsWith({
+      // Antivirus is holding the freshly placed file, so the rollback fails too.
       rmSync: ((target: string, options?: nodeFs.RmOptions) => {
-        if (String(target).startsWith(from) && String(target).endsWith("spool")) throw new Error("EBUSY");
+        if (String(target) === path.join(to, "prefs.json")) throw fsError("EPERM");
         nodeFs.rmSync(target, options);
       }) as MigrationFs["rmSync"],
     });
-    const logs: string[] = [];
-    const results = migrateWindowsSupportData({ from, to, fs: locked, log: (m) => logs.push(m) });
+    expect(migrationFailed(run({ fs: crashing }))).toBe(true);
+    expect(nodeFs.existsSync(path.join(to, "prefs.json"))).toBe(true);
+    expect(hasMarker()).toBe(false);
+
+    // The failed launch ran on the old folder, and the user changed the paired printer there.
+    nodeFs.writeFileSync(path.join(from, "prefs.json"), '{"pairedUsbSerial":"D9J200100002"}');
+
+    expect(migrationFailed(run())).toBe(false);
+    expect(nodeFs.readFileSync(path.join(to, "prefs.json"), "utf8")).toBe('{"pairedUsbSerial":"D9J200100002"}');
+    expect(hasMarker()).toBe(true);
+  });
+
+  it("removes uncommitted items left in the new folder, including stale files inside a half-placed spool", () => {
+    seedOld();
+    write(path.join(to, "spool", "stale-from-an-uncommitted-attempt.json"), "must not survive");
+    write(path.join(to, "prefs.json"), '{"pairedUsbSerial":"UNCOMMITTED"}');
+    expect(hasMarker()).toBe(false);
+    expect(migrationFailed(run())).toBe(false);
+    expect(tree(path.join(to, "spool"))).toEqual(SPOOL_FILES);
+    expect(nodeFs.readFileSync(path.join(to, "prefs.json"), "utf8")).toBe('{"pairedUsbSerial":"D9J200100001"}');
+  });
+
+  it("does not commit when the marker cannot be written, puts nothing in place, and keeps the old copies", () => {
+    seedOld();
+    const noMarker = fsWith({
+      writeFileSync: ((file: string, data: string | Uint8Array) => {
+        if (String(file).endsWith(MIGRATION_MARKER)) throw fsError("EPERM");
+        nodeFs.writeFileSync(file, data);
+      }) as MigrationFs["writeFileSync"],
+    });
+    expect(migrationFailed(run({ fs: noMarker }))).toBe(true);
+    expect(newItems()).toEqual([]);
+    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(true);
+    expect(migrationFailed(run())).toBe(false);
+  });
+
+  it("retries a rename Windows reports as briefly busy, but not a failure that will not pass", () => {
+    seedOld();
+    let busy = 2;
+    const slept: number[] = [];
+    const flaky = fsWith({
+      renameSync: ((a: string, b: string) => {
+        if (busy > 0) {
+          busy -= 1;
+          throw fsError("EBUSY");
+        }
+        nodeFs.renameSync(a, b);
+      }) as MigrationFs["renameSync"],
+    });
+    const results = migrateWindowsSupportData({ from, to, fs: flaky, sleep: (ms) => void slept.push(ms) });
     expect(migrationFailed(results)).toBe(false);
-    expect(outcomes(results)).toEqual({ "prefs.json": "moved", "relay-token.bin": "moved", spool: "moved" });
-    expect(tree(path.join(to, "spool"))).toEqual(["job-1.json", "job-1.send", path.join("nested", "job-2.json")]);
-    expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
-    expect(logs.join("\n")).toContain("old copy could not be removed");
-    // The next start sees the complete new copy and leaves it alone.
-    expect(outcomes(migrateWindowsSupportData({ from, to }))).toMatchObject({ spool: "kept-existing" });
-    expect(tree(path.join(to, "spool"))).toHaveLength(3);
+    expect(slept).toEqual([100, 200]);
+
+    nodeFs.rmSync(root, { recursive: true, force: true });
+    from = path.join(root, "Roaming", "Favor Printer");
+    to = path.join(root, "Local", "Favor Printer");
+    seedOld();
+    let calls = 0;
+    const full = fsWith({
+      renameSync: (() => {
+        calls += 1;
+        throw fsError("ENOSPC");
+      }) as MigrationFs["renameSync"],
+    });
+    expect(migrationFailed(migrateWindowsSupportData({ from, to, fs: full, sleep: noSleep }))).toBe(true);
+    expect(calls).toBe(1);
   });
 
   it("does nothing when the old and new folders are the same", () => {
     seedOld();
-    expect(migrateWindowsSupportData({ from, to: from })).toEqual([]);
-    expect(migrateWindowsSupportData({ from, to: from.toUpperCase() })).toEqual([]);
+    expect(migrateWindowsSupportData({ from, to: from, sleep: noSleep })).toEqual([]);
+    expect(migrateWindowsSupportData({ from, to: from.toUpperCase(), sleep: noSleep })).toEqual([]);
     expect(nodeFs.existsSync(path.join(from, "prefs.json"))).toBe(true);
+  });
+});
+
+describe("chooseSupportDir", () => {
+  it("is the local folder once the move succeeded, and stays there on every later start", () => {
+    seedOld();
+    expect(chooseSupportDir({ userDataDir: from, from, to, sleep: noSleep })).toBe(to);
+    expect(chooseSupportDir({ userDataDir: from, from, to, sleep: noSleep })).toBe(to);
+  });
+
+  it("is the old folder for the launch where the move failed, with all the data still there", () => {
+    seedOld();
+    const failing = fsWith({
+      writeFileSync: (() => {
+        throw fsError("EIO");
+      }) as MigrationFs["writeFileSync"],
+    });
+    expect(chooseSupportDir({ userDataDir: from, from, to, fs: failing, sleep: noSleep })).toBe(from);
+    expect(nodeFs.readFileSync(path.join(from, "relay-token.bin")).equals(token)).toBe(true);
+    expect(chooseSupportDir({ userDataDir: from, from, to, sleep: noSleep })).toBe(to);
+    expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
   });
 });

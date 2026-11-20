@@ -28,8 +28,7 @@ import { autoUpdater } from "electron-updater";
 import { PRODUCT_NAME, printerSetupFailureCopy, type StatusColor } from "../shared";
 import {
   appSupportDir,
-  migrateWindowsSupportData,
-  migrationFailed,
+  chooseSupportDir,
   windowsStateDir,
   createCommandRunner,
   createLegacyRelay,
@@ -137,12 +136,15 @@ async function runApp(): Promise<void> {
   // Windows keeps the token, preferences and spool per PC, in %LOCALAPPDATA%. Earlier builds kept them in userData, so move
   // them before anything reads them. If the move fails, this launch runs on the old folder, so it never starts from an
   // empty state while the real one sits next to it.
-  let supportDir = userDataDir;
-  if (process.platform === "win32") {
-    const stateDir = windowsStateDir(os.homedir(), process.env.LOCALAPPDATA);
-    const moved = migrateWindowsSupportData({ from: userDataDir, to: stateDir, log: (message) => log("info", "migrate", message) });
-    if (!migrationFailed(moved)) supportDir = stateDir;
-  }
+  const supportDir =
+    process.platform === "win32"
+      ? chooseSupportDir({
+          userDataDir,
+          from: userDataDir,
+          to: windowsStateDir(os.homedir(), process.env.LOCALAPPDATA),
+          log: (message) => log("info", "migrate", message),
+        })
+      : userDataDir;
   process.on("uncaughtException", (error) => log("error", "main", `uncaught: ${describeError(error)}`));
   process.on("unhandledRejection", (reason) => log("error", "main", `unhandled rejection: ${describeError(reason)}`));
 

@@ -8,15 +8,18 @@
  * Chromium keeps in `<userData>\Local State`; a token that has moved away from
  * that key can no longer be decrypted and the PC would silently lose its pairing.
  *
- * The move is all or nothing and staged, so a crash or a failure at any point
- * leaves a complete old copy and never a partial new one:
+ * `<to>\.migrated` is the commit point. Until it exists nothing in the new folder
+ * is trusted, and the old copies are never touched:
  *   1. every item that has to move is copied to `<item>.migrating` and read back;
- *   2. only if all of them match, each is renamed into place;
- *   3. only then are the old copies removed. A failed removal is logged and
- *      changes nothing, because the new copy is complete and wins from then on.
- * Any failure in 1 or 2 discards every new copy, keeps every old one, and reports
- * `failed` so the caller keeps running on the old folder for this launch.
- * An item that already exists at the new path is never overwritten.
+ *   2. each verified copy is renamed into place;
+ *   3. the marker is written. This is the moment the new folder becomes the truth;
+ *   4. the old copies are removed. A failed removal is retried on every later start
+ *      and is never allowed to bring the old data back.
+ * A failure or a crash before 3 leaves complete old copies. The next start treats
+ * whatever is in the new folder as uncommitted debris, removes it and starts over,
+ * so a half-placed set can never win, and the caller runs on the old folder for the
+ * launch that failed. Once the marker exists nothing is ever imported again, so an
+ * old token that survived a failed delete cannot come back after the PC is revoked.
  */
 
 import * as nodeFs from "node:fs";
@@ -25,7 +28,10 @@ import path from "node:path";
 /** What gets moved. Logs, caches and `Local State` stay with `userData`. */
 export const MIGRATED_ITEMS = ["prefs.json", "relay-token.bin", "spool"] as const;
 
-export type MigrationOutcome = "moved" | "absent" | "kept-existing" | "failed";
+/** Written last. Its presence means the new folder is the truth and the old one is only leftovers. */
+export const MIGRATION_MARKER = ".migrated";
+
+export type MigrationOutcome = "moved" | "absent" | "failed";
 export type MigrationResult = { item: string; outcome: MigrationOutcome };
 
 /** The slice of `node:fs` used here. Tests replace it. */
@@ -34,14 +40,38 @@ export type MigrationFs = Pick<
   "existsSync" | "mkdirSync" | "readdirSync" | "readFileSync" | "renameSync" | "rmSync" | "statSync" | "writeFileSync"
 >;
 
-type Deps = { from: string; to: string; fs?: MigrationFs; log?: (message: string) => void };
+type Deps = {
+  from: string;
+  to: string;
+  fs?: MigrationFs;
+  log?: (message: string) => void;
+  /** Blocks for `ms`. Antivirus and indexers hold freshly written files for a moment. Tests pass a no-op. */
+  sleep?: (ms: number) => void;
+};
 
 const STAGING_SUFFIX = ".migrating";
+const RETRY_CODES = new Set(["EBUSY", "EPERM", "EACCES", "ENOTEMPTY"]);
+const ATTEMPTS = 5;
+const RETRY_DELAY_MS = 100;
 
-/** True when any item could not be moved: the caller must keep using the old folder this launch. */
+/** True when the new folder could not be made the truth: the caller must keep using the old folder this launch. */
 export function migrationFailed(results: MigrationResult[]): boolean {
   return results.some((result) => result.outcome === "failed");
 }
+
+/** The error's code (EPERM, EBUSY, ENOSPC...) for the log. Never a message, which can carry a path or file content. */
+function reason(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.message === "read-back mismatch") return error.message;
+    const code = (error as NodeJS.ErrnoException).code;
+    return typeof code === "string" && /^[A-Z0-9_]{3,20}$/.test(code) ? code : error.name;
+  }
+  return "error";
+}
+
+const defaultSleep = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
 
 /** Relative file paths under `root`, sorted. A plain file is `[""]`. */
 function listFiles(fs: MigrationFs, root: string, rel = ""): string[] {
@@ -74,50 +104,91 @@ function sameTree(fs: MigrationFs, a: string, b: string): boolean {
   });
 }
 
-/** Never includes a message that could carry a path or file content. */
-function reason(error: unknown): string {
-  if (error instanceof Error) return error.message === "read-back mismatch" ? error.message : error.name;
-  return "error";
+/** Retries the transient errors Windows raises for a file something else is briefly holding. */
+function withRetries<T>(sleep: (ms: number) => void, action: () => T): T {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return action();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (attempt >= ATTEMPTS || typeof code !== "string" || !RETRY_CODES.has(code)) throw error;
+      sleep(RETRY_DELAY_MS * attempt);
+    }
+  }
 }
 
-function removeQuietly(fs: MigrationFs, target: string): void {
+function removeTree(fs: MigrationFs, sleep: (ms: number) => void, target: string): void {
+  withRetries(sleep, () => fs.rmSync(target, { recursive: true, force: true }));
+}
+
+function removeQuietly(fs: MigrationFs, sleep: (ms: number) => void, target: string): boolean {
   try {
-    fs.rmSync(target, { recursive: true, force: true });
+    removeTree(fs, sleep, target);
+    return true;
   } catch {
-    // Nothing more can be done; callers only use this on copies they own.
+    return false;
   }
 }
 
 export function migrateWindowsSupportData(deps: Deps): MigrationResult[] {
   const fs = deps.fs ?? nodeFs;
   const log = deps.log ?? (() => undefined);
+  const sleep = deps.sleep ?? defaultSleep;
   const { from, to } = deps;
   if (path.win32.resolve(from).toLowerCase() === path.win32.resolve(to).toLowerCase()) return [];
 
-  const results = new Map<string, MigrationOutcome>();
-  const plan: string[] = [];
-  try {
-    for (const item of MIGRATED_ITEMS) {
-      // A staging copy left by a crashed run is never trusted.
-      removeQuietly(fs, path.join(to, item + STAGING_SUFFIX));
-      if (!fs.existsSync(path.join(from, item))) results.set(item, "absent");
-      else if (fs.existsSync(path.join(to, item))) {
-        results.set(item, "kept-existing");
-        log(`migrate ${item}: already present at the new path, old copy kept`);
-      } else plan.push(item);
-    }
-  } catch (error) {
-    log(`migrate: could not inspect the folders, nothing moved (${reason(error)})`);
-    return MIGRATED_ITEMS.map((item) => ({ item, outcome: "failed" as const }));
-  }
-  const finish = (outcome: MigrationOutcome): MigrationResult[] => {
-    for (const item of plan) results.set(item, outcome);
-    return MIGRATED_ITEMS.map((item) => ({ item, outcome: results.get(item) ?? "absent" }));
-  };
-  if (plan.length === 0) return finish("moved");
-
+  const marker = path.join(to, MIGRATION_MARKER);
   const staging = (item: string) => path.join(to, item + STAGING_SUFFIX);
-  const discardStaging = () => plan.forEach((item) => removeQuietly(fs, staging(item)));
+  const absent = MIGRATED_ITEMS.map((item) => ({ item, outcome: "absent" as const }));
+  const failedAll = MIGRATED_ITEMS.map((item) => ({ item, outcome: "failed" as const }));
+
+  // The new folder is already the truth. Old leftovers are only cleaned up, never imported.
+  if (fs.existsSync(marker)) {
+    for (const item of MIGRATED_ITEMS) {
+      if (!fs.existsSync(path.join(from, item))) continue;
+      const removed = removeQuietly(fs, sleep, path.join(from, item));
+      log(removed ? `migrate ${item}: removed the old copy left in the roaming profile` : `migrate ${item}: old copy still could not be removed`);
+    }
+    return absent;
+  }
+
+  // Before the marker nothing in the new folder is trusted. Whatever a failed or crashed earlier attempt left there
+  // (staging copies, items already renamed into place) is removed, and the old copies, which are intact, win.
+  const plan: string[] = [];
+  for (const item of MIGRATED_ITEMS) {
+    const hasOld = fs.existsSync(path.join(from, item));
+    if (!removeQuietly(fs, sleep, staging(item))) {
+      log(`migrate: could not clear an earlier attempt, nothing moved`);
+      return failedAll;
+    }
+    if (!hasOld) continue;
+    if (fs.existsSync(path.join(to, item)) && !removeQuietly(fs, sleep, path.join(to, item))) {
+      log(`migrate ${item}: could not clear an earlier attempt, nothing moved`);
+      return failedAll;
+    }
+    plan.push(item);
+  }
+  const results = (outcome: MigrationOutcome): MigrationResult[] =>
+    MIGRATED_ITEMS.map((item) => ({ item, outcome: plan.includes(item) ? outcome : "absent" }));
+  const discard = (placed: string[]) => {
+    for (const item of placed) removeQuietly(fs, sleep, path.join(to, item));
+    for (const item of plan) removeQuietly(fs, sleep, staging(item));
+  };
+  const commit = (): void => {
+    fs.mkdirSync(to, { recursive: true });
+    fs.writeFileSync(marker, "1\n");
+  };
+
+  // Nothing to move (a fresh install, or nothing was ever paired): the new folder is the truth from now on.
+  if (plan.length === 0) {
+    try {
+      commit();
+      return absent;
+    } catch (error) {
+      log(`migrate: could not create the local folder, using the old one (${reason(error)})`);
+      return failedAll;
+    }
+  }
 
   // 1. Stage and verify everything before anything is put in place.
   try {
@@ -126,33 +197,37 @@ export function migrateWindowsSupportData(deps: Deps): MigrationResult[] {
       if (!sameTree(fs, path.join(from, item), staging(item))) throw new Error("read-back mismatch");
     }
   } catch (error) {
-    discardStaging();
+    discard([]);
     log(`migrate: staging failed, nothing moved, old copies kept (${reason(error)})`);
-    return finish("failed");
+    return results("failed");
   }
 
-  // 2. Put each verified copy in place. The old copies are all still there until this is done.
+  // 2. Put each verified copy in place, then 3. commit. The old copies are all still there until the marker exists.
   const placed: string[] = [];
   try {
     for (const item of plan) {
-      fs.renameSync(staging(item), path.join(to, item));
+      withRetries(sleep, () => fs.renameSync(staging(item), path.join(to, item)));
       placed.push(item);
     }
+    commit();
   } catch (error) {
-    placed.forEach((item) => removeQuietly(fs, path.join(to, item)));
-    discardStaging();
+    discard(placed);
     log(`migrate: could not put the copies in place, nothing moved, old copies kept (${reason(error)})`);
-    return finish("failed");
+    return results("failed");
   }
 
-  // 3. The new copies are complete. Failing to remove an old one only leaves it behind.
+  // 4. Committed. A failed removal only leaves an old copy that later starts keep trying to remove.
   for (const item of plan) {
-    try {
-      fs.rmSync(path.join(from, item), { recursive: true, force: true });
-      log(`migrate ${item}: moved to the local profile`);
-    } catch (error) {
-      log(`migrate ${item}: moved, but the old copy could not be removed (${reason(error)})`);
-    }
+    const removed = removeQuietly(fs, sleep, path.join(from, item));
+    log(removed ? `migrate ${item}: moved to the local profile` : `migrate ${item}: moved, but the old copy could not be removed yet`);
   }
-  return finish("moved");
+  return results("moved");
+}
+
+/**
+ * The folder the relay's token, preferences and spool live in for this launch: the local folder once the migration
+ * has made it the truth, otherwise the old folder. Every consumer must use the one value this returns.
+ */
+export function chooseSupportDir(deps: Deps & { userDataDir: string }): string {
+  return migrationFailed(migrateWindowsSupportData(deps)) ? deps.userDataDir : deps.to;
 }
