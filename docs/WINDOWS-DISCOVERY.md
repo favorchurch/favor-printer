@@ -101,12 +101,13 @@ Checked in this order, first match wins:
    PrinterState bit OFFLINE (0x80), NOT_AVAILABLE (0x1000), SERVER_UNKNOWN
    (0x800000) or SERVER_OFFLINE (0x2000000).
 2. `attention`: PrinterStatus 6, DetectedErrorState 3–11 (for example 4 No
-   Paper, 6 Door Open, 7 Offline), or a PrinterState bit PAUSED (0x1), ERROR
+   Paper, 7 Door Open, 8 Jammed), or a PrinterState bit PAUSED (0x1), ERROR
    (0x2), PENDING_DELETION (0x4), PAPER_JAM (0x8), PAPER_OUT (0x10), MANUAL_FEED
    (0x20), PAPER_PROBLEM (0x40), OUTPUT_BIN_FULL (0x800), NO_TONER (0x40000),
    PAGE_PUNT (0x80000), USER_INTERVENTION (0x100000), OUT_OF_MEMORY (0x200000),
    DOOR_OPEN (0x400000) or DRIVER_UPDATE_NEEDED (0x4000000).
-3. `attention`: any ExtendedDetectedErrorState other than 0.
+3. `attention`: any ExtendedDetectedErrorState other than 0 (Unknown), 2 (No
+   Error), 3 (Low Paper) or 5 (Low Toner). Low paper and low toner still print.
 4. `unknown`: a PrinterState bit this code does not name (0xF8000000).
 5. `available`: PrinterStatus 3 (Idle), 4 (Printing) or 5 (Warmup) and
    DetectedErrorState 2 (No Error) or 0 (the driver reports no status). PrinterState
@@ -116,7 +117,10 @@ Checked in this order, first match wins:
 
 None of these prove the printer is attached. The real ZD421's PrinterState and
 ExtendedDetectedErrorState values for paper out, head open, a paused queue and
-an unplugged printer are **not yet captured on hardware**. Only the idle values
+an unplugged printer are **not yet captured on hardware**, and neither is
+PrinterState while a label is printing (expect the bitmask 0x400 PRINTING, not the
+documented enumeration value 11). Microsoft documents PrinterState as an
+enumeration, but the provider returns the PRINTER_STATUS_* bitmask in practice. Only the idle values
 above (PrinterState 0, ExtendedDetectedErrorState 0) are real. The mapping
 follows the documented PRINTER_STATUS_* bit names until those captures exist.
 

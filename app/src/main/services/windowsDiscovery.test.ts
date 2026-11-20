@@ -369,8 +369,14 @@ describe("real ZD421 on the ZDesigner driver (empty PNPDeviceID, DetectedErrorSt
     expect(stateOf({ printerState: 0xffffffff })).toBe("offline");
   });
 
-  it("needs attention for any non-zero ExtendedDetectedErrorState", () => {
-    for (const extendedDetectedErrorState of [1, 2, 3, 7, 65535]) {
+  it("stays available for ExtendedDetectedErrorState 0 Unknown, 2 No Error, 3 Low Paper and 5 Low Toner", () => {
+    for (const extendedDetectedErrorState of [0, 2, 3, 5]) {
+      expect([extendedDetectedErrorState, stateOf({ extendedDetectedErrorState })]).toEqual([extendedDetectedErrorState, "available"]);
+    }
+  });
+
+  it("needs attention for any other ExtendedDetectedErrorState", () => {
+    for (const extendedDetectedErrorState of [1, 4, 6, 7, 8, 9, 65535]) {
       expect([extendedDetectedErrorState, stateOf({ extendedDetectedErrorState })]).toEqual([extendedDetectedErrorState, "attention"]);
     }
     expect(stateOf({ extendedDetectedErrorState: 3, workOffline: true })).toBe("offline");
