@@ -146,7 +146,13 @@ volunteer's Mac needs the old relay again.
    The enrollment token, the paired printer and the spool are kept per PC in `%LOCALAPPDATA%\Favor Printer`.
    Logs, caches and the key that decrypts the token stay in `%APPDATA%\Favor Printer` (logs are in
    `logs\main.log`). Earlier Windows builds kept the token, settings and spool in the `%APPDATA%` folder too; the
-   app moves them to the local folder the first time the newer build starts. Remove both folders.
+   app moves them to the local folder the first time the newer build starts, and removes the old copies the next
+   time it starts. Remove both folders.
+
+   Going back to an older Windows build after this move is not supported: it reads `%APPDATA%`, finds no token,
+   settings or spool there and shows as not set up. If you pair again on the older build and then update again,
+   the newer build keeps the data it already moved and deletes what the older build wrote in `%APPDATA%`, so pair
+   once more after updating.
 
 4. Leave the Zebra driver and its queue alone unless IT asks; Favor Printer never created them.
 5. Ask a Favor RSVP admin to remove this PC from the printer list so the cloud stops assigning labels
