@@ -32,6 +32,56 @@ USB instance formats. These remain visible, blocked candidates. Capture the
 actual observations and design a verified identity lookup before expanding the
 allowlist; do not manufacture a serial from `USB001` or a queue label.
 
+## Real ZD421 observations (Windows 11, ZDesigner driver, 2026-11-20)
+
+| Field | Zebra queue | Other local queues (OneNote, Print to PDF) |
+| --- | --- | --- |
+| Name / DriverName | `ZDesigner ZD421-203dpi ZPL` | — |
+| PortName | `USB001` ("Virtual printer port for USB") | `nul:`, `PORTPROMPT:` |
+| PNPDeviceID | empty | empty |
+| PrinterStatus / DetectedErrorState | 3 (Idle) / 0 (Unknown) | 3 / 0 |
+| ExtendedPrinterStatus / ExtendedDetectedErrorState | 2 / 0 | — |
+| WorkOffline / Local / Network | False / True / False | — |
+
+PnP had exactly one present USBPRINT device,
+`USBPRINT\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\6&…&0&USB001` (its instance ID
+ends in `&` plus the queue's port). Its `DEVPKEY_Device_Parent` is
+`USB\VID_0A5F&PID_0185\<serial>` with `DEVPKEY_Device_Capabilities` 148
+(bit 16, CM_DEVCAP_UNIQUEID, set).
+
+### How the probe ties a queue to its serial
+
+Only local, non-network queues on a `USB<nnn>` port are looked up:
+
+- **PNPDeviceID empty** (the ZDesigner case): take the present (Status OK)
+  PnP devices whose instance ID starts with `USBPRINT\` and ends with `&` +
+  PortName, case-insensitively. Exactly one is required; zero or two gives no
+  serial. The probe reports it as `usbPrintInstanceId` and the serial with
+  `serialEvidence: "usbprint-port"`.
+- **PNPDeviceID present**: it must itself be a USBPRINT device ending in `&` +
+  PortName (review F1). A PNPDeviceID on another port gives no serial. Evidence is
+  `"unique-usb-parent"`.
+- Both paths then walk the parent chain to a present `USB\VID_0A5F` device with
+  CM_DEVCAP_UNIQUEID. Without that, there is no serial.
+
+The `&` delimiter keeps a queue on `USB002` from matching `…&USB001`.
+Windows can give a port name to a different printer after a replug: the suffix
+then finds whichever device holds the port now, and the unique serial plus the
+app's paired-serial check stop a print to the wrong Zebra. `windowsDiscovery.ts`
+re-checks the port suffix and the evidence/PNPDeviceID pairing before it accepts
+a serial, and uses `usbPrintInstanceId` as the selection key only when
+PNPDeviceID is empty.
+
+### Queue status
+
+A queue is `available` when WorkOffline is false, PrinterStatus is 3 (Idle),
+4 (Printing) or 5 (Warmup), and DetectedErrorState is 2 (No Error) or 0
+(Unknown, what the ZDesigner driver reports when idle and ready). PrinterStatus 7,
+WorkOffline true or DetectedErrorState 9 is `offline`; PrinterStatus 6 or
+DetectedErrorState 3–11 (for example 4 No Paper, 6 Door Open, 7 Offline) is
+`attention`; null or other values stay `unknown`. None of these prove the
+printer is attached.
+
 ## Windows verification harness
 
 On an authorized Windows test PC with the intended Zebra driver and ZD421, run
@@ -45,8 +95,8 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -File .\scripts\windows\probe-
 Keep the output local: queue names and device instance identifiers can reveal
 machine details. Before attaching a diagnostic fixture to GitHub, replace names
 and instance suffixes with synthetic values while retaining structural fields.
-The unit fixtures in the test file are synthetic; they are not captures from a
-verified Windows/Zebra pairing.
+Most unit fixtures in the test file are synthetic. The "real ZD421" fixtures are
+built from the 2026-11-20 capture above.
 
 Record the Windows release, Zebra model, installed driver/version, USB connection,
 and whether the process used ordinary-user permissions. Check each state:
@@ -54,7 +104,7 @@ and whether the process used ordinary-user permissions. Check each state:
 | Case | Expected safety result |
 | --- | --- |
 | No configured printers | Successful JSON with `printers: []` |
-| One ZD421 on USB | Inspect its exact PnP and port fields; a recognized, unique local USB instance gets a local selection key |
+| One ZD421 on USB | One USBPRINT device on the queue's port with a unique Zebra USB parent serial gets a local selection key (see above) |
 | Printer unplugged / queue offline | Do not infer physical readiness from a stale spooler queue; compare observations before/after |
 | Queue renamed / same device replugged | Compare actual instance IDs; never change the cloud UUID merely because a label or port changed |
 | Two queues for one device | Both candidates blocked for duplicate hardware identity |

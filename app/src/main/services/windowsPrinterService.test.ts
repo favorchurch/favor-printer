@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createWindowsPrinterService, POWERSHELL_BLOCKED_WARNING, WINDOWS_SCAN_FAILED_WARNING, windowsUnusableZebraNotice } from "./windowsPrinterService";
+import { createWindowsPrinterService, eligibleWindowsZebras, POWERSHELL_BLOCKED_WARNING, WINDOWS_SCAN_FAILED_WARNING, windowsUnusableZebraNotice } from "./windowsPrinterService";
 import { parseWindowsPrinterProbe } from "./windowsDiscovery";
 import type { CommandRunner } from "./command";
 
@@ -9,6 +9,8 @@ const row = (change: Record<string, unknown> = {}) => ({
   queueName: "Zebra ZD421", driverName: "ZDesigner ZD421-203dpi ZPL", portName: "USB001",
   pnpDeviceId: DEVICE, verifiedUsbSerial: "ZD421A01", serialEvidence: "unique-usb-parent",
   isLocal: true, isNetwork: false, workOffline: false, printerStatus: 3, detectedErrorState: 2,
+  // As the probe reports a PNPDeviceID on the queue's own port: the same ID is the port-bound USBPRINT device.
+  usbPrintInstanceId: "pnpDeviceId" in change ? change.pnpDeviceId : DEVICE,
   ...change,
 });
 const response = (...printers: unknown[]) => JSON.stringify({ schemaVersion: 1, source: "Win32_Printer", printers });
@@ -133,5 +135,22 @@ describe("Windows printer host binding", () => {
       .toEqual({ scan: { kind: "none" }, queue: null, listFailed: true, failureWarning: POWERSHELL_BLOCKED_WARNING });
     const service = createWindowsPrinterService({ ...input(vi.fn()), platform: "darwin" });
     expect((await service.scan(null)).listFailed).toBe(true);
+  });
+});
+
+describe("real ZD421 on the ZDesigner driver (2026-11-20)", () => {
+  it("is eligible and offered with its USB serial and a ready queue", async () => {
+    const zebra = row({
+      queueName: "ZDesigner ZD421-203dpi ZPL", pnpDeviceId: null,
+      usbPrintInstanceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB001",
+      verifiedUsbSerial: "D8J253115309", serialEvidence: "usbprint-port", detectedErrorState: 0,
+    });
+    const pdf = row({ queueName: "Microsoft Print to PDF", driverName: "Microsoft Print To PDF", portName: "PORTPROMPT:", pnpDeviceId: null, usbPrintInstanceId: null, verifiedUsbSerial: null, serialEvidence: null, detectedErrorState: 0 });
+    expect(eligibleWindowsZebras(parseWindowsPrinterProbe(response(pdf, zebra))).map((candidate) => candidate.verifiedUsbSerial)).toEqual(["D8J253115309"]);
+    const key = "windows-pnp:USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB001";
+    expect(await createWindowsPrinterService(input(vi.fn().mockResolvedValue(ok(response(pdf, zebra))))).scan(null)).toEqual({
+      scan: { kind: "found", devices: [{ id: key, deviceUri: key, usbSerial: "D8J253115309", model: "ZDesigner ZD421-203dpi ZPL" }], selectedId: key, queue: "ready" },
+      queue: "ZDesigner ZD421-203dpi ZPL", listFailed: false,
+    });
   });
 });
