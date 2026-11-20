@@ -33,6 +33,10 @@ function seedOld(): void {
 }
 
 const realFs: MigrationFs = {
+  closeSync: nodeFs.closeSync,
+  fsyncSync: nodeFs.fsyncSync,
+  openSync: nodeFs.openSync,
+  realpathSync: nodeFs.realpathSync,
   mkdirSync: nodeFs.mkdirSync,
   readdirSync: nodeFs.readdirSync,
   readFileSync: nodeFs.readFileSync,
@@ -393,6 +397,166 @@ describe("migrateWindowsSupportData", () => {
     });
     expect(migrationFailed(migrateWindowsSupportData({ from, to, fs: full, sleep: noSleep }))).toBe(true);
     expect(calls).toBe(1);
+  });
+
+  it("stays on the local folder once committed even when an old leftover cannot be inspected, and still cleans the others", () => {
+    seedOld();
+    expect(migrationFailed(run())).toBe(false);
+    const oldPrefs = path.join(from, "prefs.json");
+    const pending = fsWith({
+      statSync: ((target: string, options?: unknown) => {
+        if (String(target) === oldPrefs) throw fsError("EPERM");
+        return (nodeFs.statSync as (t: string, o?: unknown) => nodeFs.Stats)(target, options);
+      }) as MigrationFs["statSync"],
+    });
+    const logs: string[] = [];
+    expect(chooseSupportDir({ userDataDir: from, from, to, fs: pending, sleep: noSleep, log: (m) => logs.push(m) })).toBe(to);
+    expect(nodeFs.existsSync(oldPrefs)).toBe(true);
+    expect(nodeFs.existsSync(path.join(from, "relay-token.bin"))).toBe(false);
+    expect(nodeFs.existsSync(path.join(from, "spool"))).toBe(false);
+    expect(logs.join("\n")).toContain("EPERM");
+    expect(logs.join("\n")).not.toContain("secret");
+    expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
+  });
+
+  it("retries the marker check Windows reports as briefly busy instead of falling back to the old folder", () => {
+    seedOld();
+    expect(migrationFailed(run())).toBe(false);
+    const marker = path.join(to, MIGRATION_MARKER);
+    let busy = 2;
+    const held = fsWith({
+      statSync: ((target: string, options?: unknown) => {
+        if (String(target) === marker && busy > 0) {
+          busy -= 1;
+          throw fsError(busy === 1 ? "EBUSY" : "EPERM");
+        }
+        return (nodeFs.statSync as (t: string, o?: unknown) => nodeFs.Stats)(target, options);
+      }) as MigrationFs["statSync"],
+    });
+    expect(chooseSupportDir({ userDataDir: from, from, to, fs: held, sleep: noSleep })).toBe(to);
+    expect(busy).toBe(0);
+  });
+
+  it("treats a marker that exists after its write reported an error as committed, and loses no data on the next start", () => {
+    seedOld();
+    const marker = path.join(to, MIGRATION_MARKER);
+    const halfWritten = fsWith({
+      writeFileSync: ((file: string, data: string | Uint8Array) => {
+        if (String(file) === marker) {
+          nodeFs.writeFileSync(file, "");
+          throw fsError("EIO");
+        }
+        nodeFs.writeFileSync(file, data);
+      }) as MigrationFs["writeFileSync"],
+    });
+    expect(outcomes(run({ fs: halfWritten }))).toEqual({ "prefs.json": "moved", "relay-token.bin": "moved", spool: "moved" });
+    expect(hasMarker()).toBe(true);
+    expect(chooseSupportDir({ userDataDir: from, from, to, sleep: noSleep })).toBe(to);
+    expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
+    expect(tree(path.join(to, "spool"))).toEqual([...SPOOL_FILES].sort());
+    expect(MIGRATED_ITEMS.some((item) => nodeFs.existsSync(path.join(from, item)))).toBe(false);
+  });
+
+  it("removes a marker left by a failed write before discarding the copies, so the next start re-imports instead of deleting", () => {
+    seedOld();
+    const marker = path.join(to, MIGRATION_MARKER);
+    let markerStats = 0;
+    const flaky = fsWith({
+      writeFileSync: ((file: string, data: string | Uint8Array) => {
+        if (String(file) === marker) {
+          nodeFs.writeFileSync(file, "");
+          throw fsError("EIO");
+        }
+        nodeFs.writeFileSync(file, data);
+      }) as MigrationFs["writeFileSync"],
+      statSync: ((target: string, options?: unknown) => {
+        // The marker cannot be inspected after the failed write, only removed.
+        if (String(target) === marker && nodeFs.existsSync(marker)) {
+          markerStats += 1;
+          throw fsError("EACCES");
+        }
+        return (nodeFs.statSync as (t: string, o?: unknown) => nodeFs.Stats)(target, options);
+      }) as MigrationFs["statSync"],
+    });
+    expect(migrationFailed(run({ fs: flaky }))).toBe(true);
+    expect(markerStats).toBeGreaterThan(0);
+    expect(hasMarker()).toBe(false);
+    expect(newItems()).toEqual([]);
+    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(true);
+    expect(migrationFailed(run())).toBe(false);
+    expect(nodeFs.readFileSync(path.join(to, "relay-token.bin")).equals(token)).toBe(true);
+  });
+
+  it("flushes every staged file before it is put in place, and the marker before the move counts as done", () => {
+    seedOld();
+    const open = new Map<number, string>();
+    const flushed = new Set<string>();
+    const order: string[] = [];
+    const watched = fsWith({
+      openSync: ((file: string, flags: string) => {
+        const fd = nodeFs.openSync(file, flags);
+        open.set(fd, String(file));
+        return fd;
+      }) as MigrationFs["openSync"],
+      fsyncSync: ((fd: number) => {
+        nodeFs.fsyncSync(fd);
+        flushed.add(open.get(fd) ?? "");
+        order.push(`fsync ${open.get(fd)}`);
+      }) as MigrationFs["fsyncSync"],
+      renameSync: ((a: string, b: string) => {
+        const staged = nodeFs.statSync(a).isDirectory() ? tree(String(a)).map((rel) => path.join(String(a), rel)) : [String(a)];
+        expect(staged.length).toBeGreaterThan(0);
+        for (const file of staged) expect(flushed.has(file)).toBe(true);
+        order.push(`rename ${a}`);
+        nodeFs.renameSync(a, b);
+      }) as MigrationFs["renameSync"],
+    });
+    expect(migrationFailed(run({ fs: watched }))).toBe(false);
+    expect(flushed.has(path.join(to, MIGRATION_MARKER))).toBe(true);
+    expect(order.at(-1)).toBe(`fsync ${path.join(to, MIGRATION_MARKER)}`);
+    expect(order.filter((step) => step.startsWith("rename"))).toHaveLength(MIGRATED_ITEMS.length);
+  });
+
+  it("does nothing, and deletes nothing, when the new folder is a junction or symlink to the old one", () => {
+    seedOld();
+    nodeFs.mkdirSync(path.dirname(to), { recursive: true });
+    nodeFs.symlinkSync(from, to, "junction");
+    expect(migrateWindowsSupportData({ from, to, sleep: noSleep })).toEqual([]);
+    expect(chooseSupportDir({ userDataDir: from, from, to, sleep: noSleep })).toBe(to);
+    expect(tree(from)).toEqual(["prefs.json", "relay-token.bin", ...SPOOL_FILES.map((f) => path.join("spool", f))].sort());
+    expect(nodeFs.existsSync(path.join(from, MIGRATION_MARKER))).toBe(false);
+  });
+
+  it("also sees through a linked parent folder", () => {
+    // Local -> Roaming, so the new name reaches the old folder through its parent.
+    seedOld();
+    const local = path.join(root, "Local");
+    nodeFs.symlinkSync(path.join(root, "Roaming"), local, "junction");
+    expect(migrateWindowsSupportData({ from, to, sleep: noSleep })).toEqual([]);
+    expect(nodeFs.readFileSync(path.join(from, "relay-token.bin")).equals(token)).toBe(true);
+    expect(tree(path.join(from, "spool"))).toEqual([...SPOOL_FILES].sort());
+  });
+
+  it("deletes nothing when it cannot tell whether the two folders are the same", () => {
+    seedOld();
+    expect(migrationFailed(run())).toBe(false);
+    seedOld();
+    const unresolvable = fsWith({
+      realpathSync: Object.assign(() => {
+        throw fsError("EACCES");
+      }, { native: () => {
+        throw fsError("EACCES");
+      } }) as unknown as MigrationFs["realpathSync"],
+    });
+    const logs: string[] = [];
+    expect(chooseSupportDir({ userDataDir: from, from, to, fs: unresolvable, sleep: noSleep, log: (m) => logs.push(m) })).toBe(to);
+    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(true);
+    expect(logs.join("\n")).toContain("EACCES");
+
+    nodeFs.rmSync(to, { recursive: true, force: true });
+    expect(migrationFailed(run({ fs: unresolvable }))).toBe(true);
+    expect(nodeFs.existsSync(to)).toBe(false);
+    for (const item of MIGRATED_ITEMS) expect(nodeFs.existsSync(path.join(from, item))).toBe(true);
   });
 
   it("does nothing when the old and new folders are the same", () => {

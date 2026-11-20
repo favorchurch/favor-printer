@@ -10,9 +10,10 @@
  *
  * `<to>\.migrated` is the commit point. Until it exists nothing in the new folder
  * is trusted, and the old copies are never touched:
- *   1. every item that has to move is copied to `<item>.migrating` and read back;
+ *   1. every item that has to move is copied to `<item>.migrating`, flushed to the disk and read back;
  *   2. each verified copy is renamed into place;
- *   3. the marker is written. This is the moment the new folder becomes the truth;
+ *   3. the marker is written and flushed. This is the moment the new folder becomes the truth. A marker that exists
+ *      after its write reported an error still commits: the copies are already in place and the next start trusts it;
  *   4. the old copies are removed on the NEXT start, not in this one. Windows does not
  *      flush file contents before a power cut, so deleting the old copy in the same
  *      launch could leave neither copy intact. A failed removal is retried on every
@@ -21,7 +22,11 @@
  * whatever is in the new folder as uncommitted debris, removes it and starts over,
  * so a half-placed set can never win, and the caller runs on the old folder for the
  * launch that failed. Once the marker exists nothing is ever imported again, so an
- * old token that survived a failed delete cannot come back after the PC is revoked.
+ * old token that survived a failed delete cannot come back after the PC is revoked. Once the marker exists the new
+ * folder is used even when a leftover cannot be inspected or removed.
+ *
+ * The two folders are compared by their real paths. If one is a junction or symlink to the other there is nothing to
+ * move, and if that cannot be ruled out nothing is deleted.
  *
  * Known limit: the marker lives in %LOCALAPPDATA%, which does not roam, while leftovers in
  * %APPDATA% do. If a leftover could not be deleted AND the local folder is later wiped, or a
@@ -44,7 +49,17 @@ export type MigrationResult = { item: string; outcome: MigrationOutcome };
 /** The slice of `node:fs` used here. Tests replace it. */
 export type MigrationFs = Pick<
   typeof nodeFs,
-  "mkdirSync" | "readdirSync" | "readFileSync" | "renameSync" | "rmSync" | "statSync" | "writeFileSync"
+  | "closeSync"
+  | "fsyncSync"
+  | "mkdirSync"
+  | "openSync"
+  | "readdirSync"
+  | "readFileSync"
+  | "realpathSync"
+  | "renameSync"
+  | "rmSync"
+  | "statSync"
+  | "writeFileSync"
 >;
 
 type Deps = {
@@ -102,10 +117,25 @@ function listFiles(fs: MigrationFs, root: string, rel = ""): string[] {
     .flatMap((name) => listFiles(fs, root, rel ? path.join(rel, name) : name));
 }
 
+/**
+ * Writes `data` and flushes it to the disk before returning. NTFS journals metadata, not contents: without the flush a
+ * power cut can keep a renamed file or the marker while losing what was written into it.
+ */
+function writeDurably(fs: MigrationFs, file: string, data: Uint8Array | string): void {
+  fs.writeFileSync(file, data);
+  // "r+" because Windows only flushes a handle opened for writing.
+  const fd = fs.openSync(file, "r+");
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function copyTree(fs: MigrationFs, from: string, to: string): void {
   if (!fs.statSync(from).isDirectory()) {
     fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.writeFileSync(to, fs.readFileSync(from));
+    writeDurably(fs, to, fs.readFileSync(from));
     return;
   }
   fs.mkdirSync(to, { recursive: true });
@@ -145,13 +175,60 @@ function removeQuietly(fs: MigrationFs, sleep: (ms: number) => void, target: str
   }
 }
 
+const sameName = (a: string, b: string): boolean => path.win32.resolve(a).toLowerCase() === path.win32.resolve(b).toLowerCase();
+
+/**
+ * The real location of `target`, following junctions and symlinks. A name that does not exist is kept as it is: when
+ * one of the two folders is missing they cannot be the same folder.
+ */
+function canonical(fs: MigrationFs, target: string): string {
+  return exists(fs, target) ? fs.realpathSync.native(target) : path.resolve(target);
+}
+
+/** True when both names reach the same folder, e.g. `%LOCALAPPDATA%\Favor Printer` is a junction to the roaming one. */
+function sameFolder(fs: MigrationFs, from: string, to: string): boolean {
+  return sameName(canonical(fs, from), canonical(fs, to));
+}
+
 export function migrateWindowsSupportData(deps: Deps): MigrationResult[] {
   const fs = deps.fs ?? nodeFs;
   const log = deps.log ?? (() => undefined);
   const sleep = deps.sleep ?? defaultSleep;
   const { from, to } = deps;
-  if (path.win32.resolve(from).toLowerCase() === path.win32.resolve(to).toLowerCase()) return [];
+  if (sameName(from, to)) return [];
+  const absent = MIGRATED_ITEMS.map((item) => ({ item, outcome: "absent" as const }));
   const failedAll = MIGRATED_ITEMS.map((item) => ({ item, outcome: "failed" as const }));
+
+  // A junction or symlink between the two names would make the old copies the new ones: deleting "leftovers" or
+  // clearing "debris" would delete the real data. When that cannot be ruled out nothing is deleted.
+  let same: boolean | undefined;
+  try {
+    same = sameFolder(fs, from, to);
+  } catch (error) {
+    log(`migrate: could not tell whether the old and new folders are the same, deleting nothing (${reason(error)})`);
+  }
+  if (same === true) {
+    log("migrate: the old and new folders are the same folder, nothing to move");
+    return [];
+  }
+
+  // The marker decides which folder is the truth. Antivirus can briefly hold it, so its check is retried.
+  let committed: boolean;
+  try {
+    committed = withRetries(sleep, () => exists(fs, path.join(to, MIGRATION_MARKER)));
+  } catch (error) {
+    log(`migrate: could not check the commit marker, nothing moved, using the old one (${reason(error)})`);
+    return failedAll;
+  }
+
+  // Committed: the new folder is the truth whatever happens to the leftovers. Going back to the old folder now would
+  // run on a snapshot older than the spool the new folder has been processing.
+  if (committed) {
+    if (same === false) removeLeftovers(fs, log, sleep, from);
+    return absent;
+  }
+  if (same === undefined) return failedAll;
+
   try {
     return migrate(fs, log, sleep, from, to);
   } catch (error) {
@@ -162,22 +239,25 @@ export function migrateWindowsSupportData(deps: Deps): MigrationResult[] {
   }
 }
 
+/** Old leftovers are only cleaned up, never imported. Each item stands alone: one that cannot be inspected or removed is logged and left for a later start. */
+function removeLeftovers(fs: MigrationFs, log: (message: string) => void, sleep: (ms: number) => void, from: string): void {
+  for (const item of MIGRATED_ITEMS) {
+    try {
+      if (!exists(fs, path.join(from, item))) continue;
+      // Two attempts: a leftover that can never be deleted must not slow every start.
+      const removed = removeQuietly(fs, sleep, path.join(from, item), 2);
+      log(removed ? `migrate ${item}: removed the old copy left in the roaming profile` : `migrate ${item}: old copy still could not be removed`);
+    } catch (error) {
+      log(`migrate ${item}: could not inspect the old copy, left for a later start (${reason(error)})`);
+    }
+  }
+}
+
 function migrate(fs: MigrationFs, log: (message: string) => void, sleep: (ms: number) => void, from: string, to: string): MigrationResult[] {
   const marker = path.join(to, MIGRATION_MARKER);
   const staging = (item: string) => path.join(to, item + STAGING_SUFFIX);
   const absent = MIGRATED_ITEMS.map((item) => ({ item, outcome: "absent" as const }));
   const failedAll = MIGRATED_ITEMS.map((item) => ({ item, outcome: "failed" as const }));
-
-  // The new folder is already the truth. Old leftovers are only cleaned up, never imported.
-  if (exists(fs, marker)) {
-    for (const item of MIGRATED_ITEMS) {
-      if (!exists(fs, path.join(from, item))) continue;
-      // Two attempts: a leftover that can never be deleted must not slow every start.
-      const removed = removeQuietly(fs, sleep, path.join(from, item), 2);
-      log(removed ? `migrate ${item}: removed the old copy left in the roaming profile` : `migrate ${item}: old copy still could not be removed`);
-    }
-    return absent;
-  }
 
   // Before the marker nothing in the new folder is trusted, whether or not an old copy of that item still exists:
   // a failed or crashed earlier attempt may have left an item or a staging copy there, and the old folder may have
@@ -199,7 +279,23 @@ function migrate(fs: MigrationFs, log: (message: string) => void, sleep: (ms: nu
   };
   const commit = (): void => {
     fs.mkdirSync(to, { recursive: true });
-    withRetries(sleep, () => fs.writeFileSync(marker, "1\n"));
+    withRetries(sleep, () => writeDurably(fs, marker, "1\n"));
+  };
+  // After a failed commit: a marker that exists, even an empty one, commits the move on the next start, so nothing the
+  // next start would trust may be discarded. Only a marker known to be gone lets the placed copies be thrown away.
+  const committedAnyway = (): boolean => {
+    try {
+      if (withRetries(sleep, () => exists(fs, marker))) return true;
+      return false;
+    } catch {
+      // Unknown. Removing it settles the question; a marker that cannot be removed is assumed to be there.
+    }
+    if (!removeQuietly(fs, sleep, marker)) return true;
+    try {
+      return exists(fs, marker);
+    } catch {
+      return true;
+    }
   };
 
   // Nothing to move (a fresh install, or nothing was ever paired): the new folder is the truth from now on.
@@ -208,6 +304,10 @@ function migrate(fs: MigrationFs, log: (message: string) => void, sleep: (ms: nu
       commit();
       return absent;
     } catch (error) {
+      if (committedAnyway()) {
+        log(`migrate: the commit marker reported an error but exists, the local folder is in use (${reason(error)})`);
+        return absent;
+      }
       log(`migrate: could not create the local folder, using the old one (${reason(error)})`);
       return failedAll;
     }
@@ -234,6 +334,11 @@ function migrate(fs: MigrationFs, log: (message: string) => void, sleep: (ms: nu
     }
     commit();
   } catch (error) {
+    if (placed.length === plan.length && committedAnyway()) {
+      log(`migrate: the commit marker reported an error but exists, the move is committed (${reason(error)})`);
+      for (const item of plan) log(`migrate ${item}: moved to the local profile`);
+      return results("moved");
+    }
     discard(placed);
     log(`migrate: could not put the copies in place, nothing moved, old copies kept (${reason(error)})`);
     return results("failed");
