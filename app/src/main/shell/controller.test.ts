@@ -900,6 +900,18 @@ describe("enroll", () => {
       expect(h.forks.children).toHaveLength(2);
     });
 
+    it("a failed save after a revoked laptop pairs again says printing stops after a restart", async () => {
+      const h = await started({ ...ENROLLED, prefs: { openAtLogin: true, setupComplete: true, revoked: true } });
+      expect(h.controller.snapshot().enrolled).toBe(false);
+      h.prefsFs.fs.write = async () => {
+        throw new Error("disk full");
+      };
+      await expect(h.controller.enroll("654321")).resolves.toEqual({ ok: true });
+      const logged = h.logLines.join("\n");
+      expect(logged).toContain("could not save the new pairing; printing works until Favor Printer restarts, then stays off until this laptop is paired again");
+      expect(logged).not.toContain("printing is not affected");
+    });
+
     it("a new code replaces the pairing and restarts the relay", async () => {
       const h = await started({ ...ENROLLED });
       h.controller.beginReenroll();

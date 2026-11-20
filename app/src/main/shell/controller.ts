@@ -658,11 +658,15 @@ export function createAppController(deps: ControllerDeps): AppController {
         }
         const { label, printer } = outcome.credentials;
         const previousSerial = prefs.get().pairedUsbSerial;
+        // A revoked laptop that pairs again starts with `revoked: true` on disk: if that is not overwritten, the next start is not paired.
+        const wasRevoked = prefs.get().revoked === true;
         await prefs.update({ label, printerName: printer?.name ?? null, campusId: printer?.campusId ?? null, revoked: false, ...(isWindows ? { pairedUsbSerial: usbSerial } : {}) }).catch(() => {
           // The new values are kept in memory, so printing goes on now; only what loads after a restart is wrong.
           log("warn", "enroll", isWindows && previousSerial !== usbSerial
             ? "could not save the paired printer serial; printing works until Favor Printer restarts, then stays off until this laptop is paired again"
-            : "could not save the pairing details (label, printer name); printing is not affected");
+            : wasRevoked
+              ? "could not save the new pairing; printing works until Favor Printer restarts, then stays off until this laptop is paired again"
+              : "could not save the pairing details (label, printer name); printing is not affected");
         });
         log("info", "enroll", "enrolled this laptop");
         enrolled = true;
