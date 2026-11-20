@@ -28,6 +28,31 @@ describe("Windows discovery identity and queue observations", () => {
     }]);
   });
 
+  it("ignores an unrelated queue with an unusable field instead of failing the whole inventory", () => {
+    const other = { ...printer, queueName: "Office Laser", driverName: "Generic", pnpDeviceId: null };
+    for (const patch of [{ portName: "" }, { driverName: "" }, { isLocal: null }, { workOffline: null }]) {
+      const report = parseWindowsPrinterProbe(probe([{ ...other, ...patch }, printer]));
+      expect(report.inspectedQueues).toBe(2);
+      expect(report.candidates.map((candidate) => candidate.queueName)).toEqual([printer.queueName]);
+    }
+  });
+
+  it("still fails closed when the unreadable row could be a Zebra or does not name a queue", () => {
+    for (const row of [{ ...printer, portName: "" }, { ...printer, queueName: "Floor 2", driverName: "ZDesigner ZD421", portName: "" }, { queueName: "Floor 2", pnpDeviceId: "USB\\VID_0A5F&PID_0185\\X", portName: "" }, { portName: "USB001" }, "text", null]) {
+      expect(() => parseWindowsPrinterProbe(probe([row, printer]))).toThrow("invalid-probe");
+    }
+  });
+
+  it("flags a queue name that printing would refuse, so it is never offered for pairing", () => {
+    for (const queueName of ["Kids Zebra #1", "Zebra \u2013 Lobby", "-Zebra", "Zebra\"", "Zebra$"]) {
+      const [candidate] = parseWindowsPrinterProbe(probe([{ ...printer, queueName }])).candidates;
+      expect(candidate.problems).toContain("unsupported-queue-name");
+      expect(candidate.selectionKey).toBeNull();
+    }
+    const [ok] = parseWindowsPrinterProbe(probe([printer])).candidates;
+    expect(ok.problems).not.toContain("unsupported-queue-name");
+  });
+
   it("distinguishes a successful empty inventory from a malformed or partial response", () => {
     expect(parseWindowsPrinterProbe(probe([]))).toEqual({ inspectedQueues: 0, candidates: [] });
     for (const value of ["", "Access denied", "null", "[]", "{}", JSON.stringify({ schemaVersion: 1, source: "Win32_Printer", printers: printer }), probe([{}])]) {

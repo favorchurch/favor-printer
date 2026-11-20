@@ -341,7 +341,7 @@ Volunteers who are stuck on the bad build and cannot update can install the fix-
 | --- | --- | --- |
 | `ci.yml` | pull requests, pushes to `main` (macOS) | install, lint, typecheck, test, unsigned `pnpm dist`. No secrets. |
 | `vendor-check.yml` | pull requests, pushes to `main` | `pnpm verify:vendor` always. When `vendor/relay/**` changed, it also fetches `favorchurch/rsvp.favor.church` at the commit in `MANIFEST.json` (`source.commit`) with `RSVP_READ_TOKEN`. See the guarantee below. |
-| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-beta.N` on a commit that is on `main` (`release` environment) | `prepare` (Linux, no secrets) is the only job that creates the **draft**; then `release` (macOS: signed build, notarization, stapling, verification) and `windows` (Windows x64 NSIS, see below) upload to it. |
+| `release.yml` | tags `vX.Y.Z` and `vX.Y.Z-beta.N` on a commit that is on `main` (`release` environment) | `prepare` (Linux, no secrets) is the only job that creates the **draft**; then `release` (macOS: signed build, notarization, stapling, verification) and `windows` (Windows x64 NSIS, see below; runs only for `-beta.N` tags unless the repository variable `WINDOWS_STABLE_RELEASE` is `true`) upload to it. |
 | `secret-scan.yml` | every push and pull request | gitleaks over the working tree. |
 
 ### What `vendor-check` guarantees

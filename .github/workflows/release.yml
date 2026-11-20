@@ -453,6 +453,11 @@ jobs:
   # is a pilot artifact only; Windows 11 Smart App Control blocks it outright.
   windows:
     needs: prepare
+    # Windows ships only as a Preview (-beta.N) until physical Zebra acceptance passes (docs/RELEASING.md).
+    # Without this, every stable Mac release would run this job, fail for lack of a certificate, and end red;
+    # with a certificate it would attach a Windows update manifest to a stable release. The repository variable
+    # WINDOWS_STABLE_RELEASE=true opens stable tags to Windows once acceptance has passed.
+    if: needs.prepare.outputs.channel == 'beta' || vars.WINDOWS_STABLE_RELEASE == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
     environment: release
