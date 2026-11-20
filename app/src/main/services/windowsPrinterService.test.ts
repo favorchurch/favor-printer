@@ -50,7 +50,7 @@ describe("Windows printer host binding", () => {
       expect(outcome).toMatchObject({ queue: null, listFailed: false });
       expect(outcome.scan).toEqual({
         kind: "none",
-        notice: 'Favor Printer cannot print to a queue named "Kids Zebra #1". In Printers & scanners, rename it so it starts with a letter or number and uses only letters, numbers, spaces and _ ( ) . - (up to 127 characters).',
+        notice: 'Favor Printer cannot print to a queue named "Kids Zebra #1". In Printers & scanners, rename it so it starts with a letter or number, does not end with a space, and uses only letters, numbers, spaces and _ ( ) . - (up to 127 characters).',
       });
     });
 

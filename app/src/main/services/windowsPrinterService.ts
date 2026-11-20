@@ -31,7 +31,7 @@ const PROBLEM_NOTICES: [WindowsDiscoveryProblem, (queue: string) => string][] = 
   ["duplicate-hardware-id", (queue) => `More than one Windows printer queue points at the Zebra on "${queue}". Remove the extra queue in Printers & scanners.`],
   ["duplicate-usb-serial", (queue) => `More than one Windows printer queue reports the serial number of the Zebra on "${queue}". Remove the extra queue in Printers & scanners.`],
   ["duplicate-queue-name", (queue) => `Two Windows printers are named "${queue}". Rename one in Printers & scanners.`],
-  ["unsupported-queue-name", (queue) => `Favor Printer cannot print to a queue named "${queue}". In Printers & scanners, rename it so it starts with a letter or number and uses only letters, numbers, spaces and _ ( ) . - (up to 127 characters).`],
+  ["unsupported-queue-name", (queue) => `Favor Printer cannot print to a queue named "${queue}". In Printers & scanners, rename it so it starts with a letter or number, does not end with a space, and uses only letters, numbers, spaces and _ ( ) . - (up to 127 characters).`],
 ];
 
 /** Why no Zebra can be offered although Windows has one, from the candidate with the fewest problems. Null when there is no candidate. */
