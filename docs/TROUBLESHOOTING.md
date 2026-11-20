@@ -127,3 +127,20 @@ volunteer's Mac needs the old relay again.
 6. Remove the legacy relay if it is still there (see above).
 7. Ask a Favor RSVP admin to remove this laptop from the printer list so the cloud stops assigning
    labels to it.
+
+### Windows (Preview)
+
+1. Notification-area icon > **Quit**.
+2. **Settings > Apps > Installed apps** > **Favor Printer** > **Uninstall**. This removes the app, its
+   Start menu shortcut and its open-at-login entry. If the installer set your PowerShell policy, it puts
+   back the earlier value.
+3. Remove its data (enrollment, settings and any unsent spool). Unsent labels are lost. The enrollment
+   token is encrypted for this Windows account, but delete it when the PC leaves the check-in team:
+
+   ```powershell
+   Remove-Item -Recurse -Force "$env:APPDATA\Favor Printer"
+   ```
+
+4. Leave the Zebra driver and its queue alone unless IT asks; Favor Printer never created them.
+5. Ask a Favor RSVP admin to remove this PC from the printer list so the cloud stops assigning labels
+   to it.
