@@ -61,8 +61,6 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    - target: zip
-      arch: [x64]
   icon: build/icon.ico
   # Packaged resource lives outside ASAR for PowerShell -File. Windows-only.
   extraResources:

@@ -109,9 +109,18 @@ describe("loginItemSettings", () => {
     expect(loginItemSettings(true, "win32", false).enabled).toBe(false);
   });
 
-  it("the uninstaller deletes the same Run value name the app writes", () => {
+  it("turning it off names the same value, so Electron deletes both the Run value and its StartupApproved record", () => {
+    // Electron 44 (browser_win.cc SetLoginItemSettings) deletes Run and StartupApproved\Run under `name` when
+    // openAtLogin is false; without the name it would look for its default AppUserModelID and leave ours behind.
+    expect(loginItemSettings(false, "win32")).toEqual({ openAtLogin: false, args: [WINDOWS_LOGIN_ARG], name: WINDOWS_LOGIN_ITEM_NAME, enabled: true });
+  });
+
+  it("the uninstaller deletes the same Run value name the app writes, and its StartupApproved record", () => {
     const nsis = readFileSync(new URL("../../../../build/installer.nsh", import.meta.url), "utf8");
     expect(nsis).toContain(`DeleteRegValue HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Run" "${WINDOWS_LOGIN_ITEM_NAME}"`);
+    expect(nsis).toContain(
+      `DeleteRegValue HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run" "${WINDOWS_LOGIN_ITEM_NAME}"`,
+    );
   });
 });
 

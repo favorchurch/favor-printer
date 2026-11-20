@@ -10,7 +10,7 @@
 ;   - never with -ExecutionPolicy Bypass.
 ; Uninstall restores the previous CurrentUser value, but only if the installer
 ; made the change and the value is still the one it set. Updates leave it alone.
-; Uninstall also removes the open-at-login Run entry. App data (enrollment,
+; Uninstall also removes the open-at-login Run entry and its StartupApproved record. App data (enrollment,
 ; settings, spool) stays, as on macOS; docs/TROUBLESHOOTING.md says how to remove it.
 
 !define FAVOR_POLICY_KEY "Software\Favor Printer"
@@ -65,6 +65,8 @@
     DeleteRegValue HKCU "${FAVOR_POLICY_KEY}" "${FAVOR_POLICY_VALUE}"
     DeleteRegKey /ifempty HKCU "${FAVOR_POLICY_KEY}"
     ; The app's open-at-login entry (app.setLoginItemSettings) would otherwise point at the removed exe.
+    ; Its Startup apps on/off record goes too, so Task Manager keeps no row for an app that is gone.
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "electron.app.Favor Printer"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "electron.app.Favor Printer"
   ${EndIf}
 !macroend
