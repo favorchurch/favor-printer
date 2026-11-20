@@ -43,6 +43,33 @@ describe("Windows discovery identity and queue observations", () => {
     }
   });
 
+  it("fails closed on an unreadable row that carries serial evidence, so duplicate checks still see it", () => {
+    const verified = { ...printer, verifiedUsbSerial: "D2J190800123", serialEvidence: "unique-usb-parent" };
+    const plain = { queueName: "Floor 2", driverName: "Generic", pnpDeviceId: null, portName: "" };
+    for (const evidence of [{ verifiedUsbSerial: "D2J190800123" }, { serialEvidence: "unique-usb-parent" }, { serialEvidence: "source-unknown" }]) {
+      expect(() => parseWindowsPrinterProbe(probe([{ ...printer, ...plain, ...evidence }, verified]))).toThrow("invalid-probe");
+    }
+    // No evidence at all: the unrelated row is still skipped.
+    expect(parseWindowsPrinterProbe(probe([{ ...printer, ...plain, verifiedUsbSerial: null, serialEvidence: null }, verified])).candidates).toHaveLength(1);
+  });
+
+  it("fails closed on an unreadable row whose only Zebra evidence is a USBPRINT ZTC or ZEBRA PnP ID", () => {
+    for (const pnpDeviceId of ["USBPRINT\\ZTCZD421\\7&1234&0&USB002", "USBPRINT\\ZEBRA_ZD421\\7&1234&0&USB002"]) {
+      const row = { ...printer, queueName: "Floor 2", driverName: "Generic", portName: "", pnpDeviceId };
+      expect(() => parseWindowsPrinterProbe(probe([row, printer]))).toThrow("invalid-probe");
+    }
+  });
+
+  it("allows queue names up to the spooler helper's 127 characters and flags longer ones the probe still reads", () => {
+    const named = (length: number) => `Zebra${"x".repeat(length - 5)}`;
+    expect(parseWindowsPrinterProbe(probe([{ ...printer, queueName: named(127) }])).candidates[0].problems).not.toContain("unsupported-queue-name");
+    for (const length of [128, 256]) {
+      expect(parseWindowsPrinterProbe(probe([{ ...printer, queueName: named(length) }])).candidates[0].problems).toContain("unsupported-queue-name");
+    }
+    // Past the probe's own 256-character field limit the row is unreadable, and a Zebra-like row fails closed.
+    expect(() => parseWindowsPrinterProbe(probe([{ ...printer, queueName: named(257) }]))).toThrow("invalid-probe");
+  });
+
   it("flags a queue name that printing would refuse, so it is never offered for pairing", () => {
     for (const queueName of ["Kids Zebra #1", "Zebra \u2013 Lobby", "-Zebra", "Zebra\"", "Zebra$"]) {
       const [candidate] = parseWindowsPrinterProbe(probe([{ ...printer, queueName }])).candidates;
