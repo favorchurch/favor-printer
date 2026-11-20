@@ -188,6 +188,12 @@ const PRINTER_STATE_BENIGN = 0x100 | 0x200 | 0x400 | 0x2000 | 0x4000 | 0x8000 | 
 const PRINTER_STATE_KNOWN = PRINTER_STATE_OFFLINE | PRINTER_STATE_ATTENTION | PRINTER_STATE_BENIGN;
 // CIM ExtendedDetectedErrorState values that do not block printing: 0 Unknown, 2 No Error, 3 Low Paper, 5 Low Toner.
 const EXTENDED_ERROR_NOT_BLOCKING: readonly number[] = [0, 2, 3, 5];
+// CIM DetectedErrorState values that need a look: 4 No Paper, 6 No Toner, 7 Door Open, 8 Jammed, 10 Service
+// Requested, 11 Output Bin Full. 3 Low Paper and 5 Low Toner still print, as for ExtendedDetectedErrorState.
+const DETECTED_ERROR_ATTENTION: readonly number[] = [4, 6, 7, 8, 10, 11];
+// DetectedErrorState values that allow "available": 0 Unknown (the driver reports no status), 2 No Error, 3 Low
+// Paper, 5 Low Toner.
+const DETECTED_ERROR_READY: readonly number[] = [0, 2, 3, 5];
 
 /** Bitwise AND on a full uint32 (JavaScript's & works on signed 32-bit values). */
 function hasBits(value: number, mask: number): boolean {
@@ -198,20 +204,21 @@ function queueState(row: ProbePrinter): WindowsQueueState {
   const state = row.printerState;
   if (row.workOffline || row.printerStatus === 7 || row.detectedErrorState === 9) return "offline";
   if (state !== null && hasBits(state, PRINTER_STATE_OFFLINE)) return "offline";
-  if (row.printerStatus === 6 || (row.detectedErrorState !== null && row.detectedErrorState >= 3 && row.detectedErrorState <= 11)) return "attention";
+  if (row.printerStatus === 6 || (row.detectedErrorState !== null && DETECTED_ERROR_ATTENTION.includes(row.detectedErrorState))) return "attention";
   if (state !== null && hasBits(state, PRINTER_STATE_ATTENTION)) return "attention";
   // Fail safe: ExtendedDetectedErrorState 0 (Unknown, the idle ZD421's value) and 2 (No Error) are clear, and
   // 3 (Low Paper) and 5 (Low Toner) are warnings that still print. Any other value needs a look.
   if (row.extendedDetectedErrorState !== null && !EXTENDED_ERROR_NOT_BLOCKING.includes(row.extendedDetectedErrorState)) return "attention";
   // A bit this code does not name (0xF8000000) is not evidence of a ready queue.
   if (state !== null && hasBits(state, ~PRINTER_STATE_KNOWN)) return "unknown";
-  // Win32_Printer: Idle/Printing/Warmup with DetectedErrorState No Error (2) or Unknown (0). A real ZD421 on the
+  // Win32_Printer: Idle/Printing/Warmup with DetectedErrorState No Error (2), Unknown (0), Low Paper (3) or Low
+  // Toner (5). A real ZD421 on the
   // ZDesigner driver, idle and ready, reports PrinterStatus 3, DetectedErrorState 0, WorkOffline false (2026-11-20);
   // so do the PC's other local queues. With this driver 0 means the driver reports no status, so it holds whenever
   // the printer is attached; the PrinterState and ExtendedDetectedErrorState checks above are what can still turn a
   // paused or offline queue away. Any other error state (4 No Paper, 7 Door Open, 8 Jammed, 9 Offline, ...) was
   // handled above or stays unknown, and so do missing (null) or new values. Not proof the hardware is attached.
-  if ([3, 4, 5].includes(row.printerStatus ?? -1) && (row.detectedErrorState === 2 || row.detectedErrorState === 0)) return "available";
+  if ([3, 4, 5].includes(row.printerStatus ?? -1) && row.detectedErrorState !== null && DETECTED_ERROR_READY.includes(row.detectedErrorState)) return "available";
   return "unknown";
 }
 

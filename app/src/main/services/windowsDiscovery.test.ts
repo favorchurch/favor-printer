@@ -328,6 +328,24 @@ describe("real ZD421 on the ZDesigner driver (empty PNPDeviceID, DetectedErrorSt
     }
   });
 
+  it("lets DetectedErrorState 3 Low Paper and 5 Low Toner print, like ExtendedDetectedErrorState 3 and 5", () => {
+    const stateWith = (patch: Record<string, unknown>) => parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates[0].queueState;
+    for (const detectedErrorState of [3, 5]) {
+      for (const printerStatus of [3, 4, 5]) {
+        expect([detectedErrorState, printerStatus, stateWith({ detectedErrorState, printerStatus })]).toEqual([detectedErrorState, printerStatus, "available"]);
+      }
+      // A warning alone does not make the queue available: the rest of the rules still apply.
+      expect(stateWith({ detectedErrorState, printerStatus: 1 })).toBe("unknown");
+      expect(stateWith({ detectedErrorState, printerStatus: 6 })).toBe("attention");
+      expect(stateWith({ detectedErrorState, printerStatus: 7 })).toBe("offline");
+      expect(stateWith({ detectedErrorState, printerState: 0x10 })).toBe("attention");
+      expect(stateWith({ detectedErrorState, extendedDetectedErrorState: 4 })).toBe("attention");
+    }
+    for (const detectedErrorState of [4, 6, 7, 8, 10, 11]) {
+      expect([detectedErrorState, stateWith({ detectedErrorState })]).toEqual([detectedErrorState, "attention"]);
+    }
+  });
+
   // DetectedErrorState 0 is "the driver reports no status", so PrinterState (PRINTER_STATUS_* bits) and
   // ExtendedDetectedErrorState must still turn the queue away. Not yet captured on hardware: synthetic values.
   const stateOf = (patch: Record<string, unknown>) => parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates[0].queueState;
@@ -376,7 +394,7 @@ describe("real ZD421 on the ZDesigner driver (empty PNPDeviceID, DetectedErrorSt
   });
 
   it("needs attention for any other ExtendedDetectedErrorState", () => {
-    for (const extendedDetectedErrorState of [1, 4, 6, 7, 8, 9, 65535]) {
+    for (const extendedDetectedErrorState of [1, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 65535]) {
       expect([extendedDetectedErrorState, stateOf({ extendedDetectedErrorState })]).toEqual([extendedDetectedErrorState, "attention"]);
     }
     expect(stateOf({ extendedDetectedErrorState: 3, workOffline: true })).toBe("offline");

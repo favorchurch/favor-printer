@@ -100,8 +100,9 @@ Checked in this order, first match wins:
 1. `offline`: WorkOffline true, PrinterStatus 7, DetectedErrorState 9, or a
    PrinterState bit OFFLINE (0x80), NOT_AVAILABLE (0x1000), SERVER_UNKNOWN
    (0x800000) or SERVER_OFFLINE (0x2000000).
-2. `attention`: PrinterStatus 6, DetectedErrorState 3–11 (for example 4 No
-   Paper, 7 Door Open, 8 Jammed), or a PrinterState bit PAUSED (0x1), ERROR
+2. `attention`: PrinterStatus 6, DetectedErrorState 4 (No Paper), 6 (No
+   Toner), 7 (Door Open), 8 (Jammed), 10 (Service Requested) or 11 (Output Bin
+   Full), or a PrinterState bit PAUSED (0x1), ERROR
    (0x2), PENDING_DELETION (0x4), PAPER_JAM (0x8), PAPER_OUT (0x10), MANUAL_FEED
    (0x20), PAPER_PROBLEM (0x40), OUTPUT_BIN_FULL (0x800), NO_TONER (0x40000),
    PAGE_PUNT (0x80000), USER_INTERVENTION (0x100000), OUT_OF_MEMORY (0x200000),
@@ -110,7 +111,9 @@ Checked in this order, first match wins:
    Error), 3 (Low Paper) or 5 (Low Toner). Low paper and low toner still print.
 4. `unknown`: a PrinterState bit this code does not name (0xF8000000).
 5. `available`: PrinterStatus 3 (Idle), 4 (Printing) or 5 (Warmup) and
-   DetectedErrorState 2 (No Error) or 0 (the driver reports no status). PrinterState
+   DetectedErrorState 2 (No Error), 0 (the driver reports no status), 3 (Low
+   Paper) or 5 (Low Toner). Low paper and low toner still print, as with
+   ExtendedDetectedErrorState 3 and 5. PrinterState
    bits IO_ACTIVE, BUSY, PRINTING, WAITING, PROCESSING, INITIALIZING, WARMING_UP,
    TONER_LOW and POWER_SAVE do not block this.
 6. Anything else, including null, is `unknown`.
@@ -120,7 +123,10 @@ ExtendedDetectedErrorState values for paper out, head open, a paused queue and
 an unplugged printer are **not yet captured on hardware**, and neither is
 PrinterState while a label is printing (expect the bitmask 0x400 PRINTING, not the
 documented enumeration value 11). Microsoft documents PrinterState as an
-enumeration, but the provider returns the PRINTER_STATUS_* bitmask in practice. Only the idle values
+enumeration, but the provider is reported to return the PRINTER_STATUS_* bitmask
+in practice. If it returned the enumeration instead, printing (11 = 0xB) would
+set PAUSED, ERROR and PAPER_JAM, so a printing ZD421 would read as `attention`.
+Only the idle values
 above (PrinterState 0, ExtendedDetectedErrorState 0) are real. The mapping
 follows the documented PRINTER_STATUS_* bit names until those captures exist.
 
