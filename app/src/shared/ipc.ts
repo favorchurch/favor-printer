@@ -18,6 +18,7 @@ export const IPC_CHANNELS = {
   enroll: "favor-printer:enroll",
   requestTestPrint: "favor-printer:request-test-print",
   confirmTestPrint: "favor-printer:confirm-test-print",
+  configurePrinter: "favor-printer:configure-printer",
   setPaused: "favor-printer:set-paused",
   setOpenAtLogin: "favor-printer:set-open-at-login",
   setChannel: "favor-printer:set-channel",
@@ -25,6 +26,8 @@ export const IPC_CHANNELS = {
   renameLaptop: "favor-printer:rename-laptop",
   renamePrinter: "favor-printer:rename-printer",
   advance: "favor-printer:advance",
+  beginReenroll: "favor-printer:begin-reenroll",
+  cancelReenroll: "favor-printer:cancel-reenroll",
   quit: "favor-printer:quit",
 } as const;
 
@@ -36,6 +39,36 @@ export type SetUpPrinterResult =
   | { ok: true }
   /** `permission`: macOS refused lpadmin, so the app guides the volunteer through System Settings. */
   | { ok: false; reason: "permission" | "failed" };
+
+export type PrinterSetupStep = "mode" | "calibrate" | "save";
+
+/** The "Set up printer" action: mode, calibration and save sent to the printer itself. */
+export type PrinterSetupResult =
+  | { ok: true }
+  /** `no-queue`: no ready queue to send to. `busy`: a setup or a label is running. `rejected`: the window's call was refused or failed, so no step is known (renderer only). */
+  | { ok: false; reason: "no-queue" | "busy" | "rejected" }
+  /** `step` is the one that did not go through. Later steps were not sent. */
+  | { ok: false; reason: "failed"; step: PrinterSetupStep };
+
+const PRINTER_SETUP_STEP_COPY: Record<PrinterSetupStep, string> = {
+  mode: "setting the print mode",
+  calibrate: "calibrating",
+  save: "saving the settings",
+};
+
+/** What a volunteer reads when "Set up printer" did not finish. Names the step that failed. */
+export function printerSetupFailureCopy(result: Exclude<PrinterSetupResult, { ok: true }>): string {
+  switch (result.reason) {
+    case "no-queue":
+      return "No printer is ready. Plug in the Zebra and check the menu bar icon.";
+    case "busy":
+      return "The printer is busy with a label or another setup. Wait a moment, then try again.";
+    case "rejected":
+      return "Setup could not be started. Check the printer, then try again.";
+    case "failed":
+      return `Setup stopped while ${PRINTER_SETUP_STEP_COPY[result.step]}. Check the printer, then try again.`;
+  }
+}
 
 export type TestPrintResult =
   /** The relay handed the label to CUPS. This is not proof a label printed. */
@@ -70,6 +103,8 @@ export type FavorPrinterApi = {
   requestTestPrint(): Promise<TestPrintResult>;
   /** The volunteer's answer to "Did a label come out?". */
   confirmTestPrint(labelCameOut: boolean): Promise<void>;
+  /** Sends the printer its mode, calibration and save commands. Needs a ready queue. */
+  configurePrinter(): Promise<PrinterSetupResult>;
   setPaused(paused: boolean): Promise<void>;
   setOpenAtLogin(enabled: boolean): Promise<void>;
   setChannel(channel: UpdateChannel): Promise<void>;
@@ -80,6 +115,10 @@ export type FavorPrinterApi = {
   renamePrinter(name: string): Promise<RenameResult>;
   /** Moves the setup window to its next step. Main decides whether the step is reachable. */
   advance(): Promise<AppSnapshot>;
+  /** The tray's "Enter a new code...": opens the code step. The saved pairing keeps printing until a new code is accepted. */
+  beginReenroll(): Promise<AppSnapshot>;
+  /** Leaves the code step of a re-pair. The saved pairing was never touched. */
+  cancelReenroll(): Promise<AppSnapshot>;
   quit(): Promise<void>;
 };
 

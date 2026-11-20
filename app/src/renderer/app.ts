@@ -46,7 +46,7 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
   const applySnapshot = (next: AppSnapshot) => {
     // A new step starts clean: an old error does not follow the volunteer forward.
     if (next.setupStep !== current.setupStep) {
-      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, confirmingMigration: false, migrateError: false, renameError: null };
+      local = { ...local, codeError: null, codeConflict: null, setUpRefused: false, testPrint: { kind: "idle" }, printerSetup: { kind: "idle" }, confirmingMigration: false, confirmingReenroll: false, migrateError: false, renameError: null };
     }
     current = next;
     render();
@@ -69,6 +69,24 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
         if (!result.ok && result.reason === "permission") local = { ...local, setUpRefused: true };
         applySnapshot(await api.getSnapshot());
       }),
+    askConfigurePrinter: () => patch({ printerSetup: { kind: "confirm" } }),
+    cancelConfigurePrinter: () => patch({ printerSetup: { kind: "idle" } }),
+    configurePrinter: () =>
+      void (async () => {
+        // Only reachable from the confirm step. A second click while it runs finds no button.
+        if (local.printerSetup.kind !== "confirm") return;
+        const step = current.setupStep;
+        patch({ printerSetup: { kind: "running" } });
+        // A result that arrives after the window moved to another step belongs to a screen that is gone.
+        const stale = () => current.setupStep !== step;
+        try {
+          const result = await api.configurePrinter();
+          if (!stale()) patch({ printerSetup: result.ok ? { kind: "done" } : { kind: "failed", result } });
+        } catch {
+          // A rejected call says nothing about which step ran, so it names none.
+          if (!stale()) patch({ printerSetup: { kind: "failed", result: { ok: false, reason: "rejected" } } });
+        }
+      })(),
     openPrinterSettings: () => void api.openPrinterSettings().catch(() => undefined),
     submitCode: (code) =>
       void busy(async () => {
@@ -105,12 +123,23 @@ export function startApp(root: HTMLElement, api: FavorPrinterApi, snapshot: AppS
         local = { ...local, confirmingMigration: false, migrateError: !result.ok };
         applySnapshot(await api.getSnapshot());
       }),
+    askReenroll: () => patch({ confirmingReenroll: true }),
+    cancelReenroll: () => patch({ confirmingReenroll: false }),
+    reenroll: () =>
+      void busy(async () => {
+        // Only reachable from the confirmation screen. Main moves the window to the code step.
+        local = { ...local, confirmingReenroll: false };
+        applySnapshot(await api.beginReenroll());
+      }),
+    leaveReenroll: () => void busy(async () => applySnapshot(await api.cancelReenroll())),
     renameLaptop: (name) => void busy(() => rename("laptop", name, () => api.renameLaptop(name))),
     renamePrinter: (name) => void busy(() => rename("printer", name, () => api.renamePrinter(name))),
     closeWindow: options.closeWindow ?? (() => window.close()),
   };
 
   const unsubscribe = api.onSnapshot(applySnapshot);
+  // Closing the window (close button, Cmd+W) abandons a re-pair: the saved pairing was never touched.
+  if (typeof window !== "undefined") window.addEventListener("pagehide", () => void api.cancelReenroll().catch(() => undefined));
   render();
   return () => {
     disposed = true;

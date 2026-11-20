@@ -3,7 +3,7 @@
 Favor Printer is the macOS menu-bar app that turns a USB Zebra printer on a volunteer's Mac into a
 cloud-assigned check-in printer for [Favor RSVP](https://rsvp.favor.church).
 
-Download and setup steps for volunteers: https://rsvp.favor.church/printer
+Download and setup steps for volunteers: [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md), or https://rsvp.favor.church/printer
 
 ## Repository layout
 

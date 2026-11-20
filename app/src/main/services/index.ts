@@ -4,6 +4,7 @@ export * from "./command";
 export * from "./legacyRelay";
 export * from "./lpinfo";
 export * from "./power";
+export * from "./printerSetup";
 export * from "./printerService";
 export * from "./queue";
 export * from "./rename";

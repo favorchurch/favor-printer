@@ -58,6 +58,7 @@ describe("initialStep", () => {
     [{ enrolled: false, revoked: false, setupComplete: true }, "welcome"],
     [{ enrolled: true, revoked: false, setupComplete: false }, "connected"],
     [{ enrolled: true, revoked: false, setupComplete: true }, null],
+    [{ enrolled: false, revoked: true, setupComplete: false }, null],
     [{ enrolled: false, revoked: true, setupComplete: true }, null],
     [{ enrolled: true, revoked: true, setupComplete: false }, null],
   ] as const)("%j -> %s", (state, expected) => {

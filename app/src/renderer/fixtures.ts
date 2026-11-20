@@ -4,7 +4,15 @@
  * screen can be opened and clicked through. Nothing here is real data.
  */
 
-import type { AppSnapshot, FavorPrinterApi, PrinterDevice, SetupStep } from "../shared";
+import {
+  NO_ENABLED_PRINTERS_DETAIL,
+  NO_ENABLED_PRINTERS_HEADLINE,
+  NO_ENABLED_PRINTERS_RECOVERY,
+  type AppSnapshot,
+  type FavorPrinterApi,
+  type PrinterDevice,
+  type SetupStep,
+} from "../shared";
 import type { LocalState } from "./model";
 
 const ZD421: PrinterDevice = {
@@ -54,6 +62,7 @@ export const FIXTURE_NAMES = [
   "several-printers",
   "queue-fallback",
   "enter-code",
+  "repair-code",
   "invalid-code",
   "connected",
   "test-print-confirm",
@@ -63,9 +72,15 @@ export const FIXTURE_NAMES = [
   "legacy-confirm",
   "legacy-failed",
   "status",
+  "setup-printer-confirm",
+  "setup-printer-running",
+  "setup-printer-done",
+  "setup-printer-failed",
   "unplugged",
   "waiting",
   "in-use-elsewhere",
+  "no-enabled-printers",
+  "reenroll-confirm",
   "backlog-warning",
   "update-ready",
   "update-error",
@@ -122,6 +137,8 @@ export function fixtureFor(requested: string | null): Fixture {
         snapshot: withStep("printer", { printer: { kind: "found", devices: [ZD421], selectedId: ZD421.id, queue: "missing" } }),
         local: { setUpRefused: true },
       };
+    case "repair-code":
+      return { snapshot: withStep("code", { ...enrolled }) };
     case "enter-code":
       return { snapshot: withStep("code", { printer: oneReady }) };
     case "invalid-code":
@@ -161,6 +178,17 @@ export function fixtureFor(requested: string | null): Fixture {
           update: { kind: "idle" },
         }),
       };
+    case "setup-printer-confirm":
+      return { snapshot: withStep(null, enrolled), local: { printerSetup: { kind: "confirm" } } };
+    case "setup-printer-running":
+      return { snapshot: withStep(null, enrolled), local: { printerSetup: { kind: "running" } } };
+    case "setup-printer-done":
+      return { snapshot: withStep(null, enrolled), local: { printerSetup: { kind: "done" } } };
+    case "setup-printer-failed":
+      return {
+        snapshot: withStep(null, enrolled),
+        local: { printerSetup: { kind: "failed", result: { ok: false, reason: "failed", step: "calibrate" } } },
+      };
     case "unplugged":
       return {
         snapshot: withStep(null, {
@@ -189,6 +217,17 @@ export function fixtureFor(requested: string | null): Fixture {
           recoveryAction: "Ask an admin to disconnect this printer from the other laptop.",
         }),
       };
+    case "no-enabled-printers":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          status: { color: "amber", headline: NO_ENABLED_PRINTERS_HEADLINE, detail: NO_ENABLED_PRINTERS_DETAIL },
+          fiveState: "Waiting",
+          recoveryAction: NO_ENABLED_PRINTERS_RECOVERY,
+        }),
+      };
+    case "reenroll-confirm":
+      return { snapshot: withStep(null, { ...enrolled, fiveState: "Connected" }), local: { confirmingReenroll: true } };
     case "backlog-warning":
       return {
         snapshot: withStep(null, {
@@ -252,6 +291,7 @@ export function createMockApi(start: AppSnapshot, options: { failMigration?: boo
     },
     requestTestPrint: async () => ({ ok: true }),
     confirmTestPrint: async () => undefined,
+    configurePrinter: async () => ({ ok: true }),
     setPaused: async () => undefined,
     setOpenAtLogin: async () => undefined,
     setChannel: async () => undefined,
@@ -273,6 +313,8 @@ export function createMockApi(start: AppSnapshot, options: { failMigration?: boo
       if (step === null) return set({ setupStep: "code" });
       return set({ setupStep: next[step] ?? null });
     },
+    beginReenroll: async () => set({ setupStep: "code" }),
+    cancelReenroll: async () => set({ setupStep: null }),
     quit: async () => undefined,
   };
 }

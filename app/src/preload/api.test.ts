@@ -24,6 +24,9 @@ describe("preload API", () => {
     expect(Object.keys(api).sort()).toEqual(
       [
         "advance",
+        "beginReenroll",
+        "cancelReenroll",
+        "configurePrinter",
         "confirmTestPrint",
         "enroll",
         "getSnapshot",
@@ -54,6 +57,7 @@ describe("preload API", () => {
     ["enroll", IPC_CHANNELS.enroll, ["123456"]],
     ["requestTestPrint", IPC_CHANNELS.requestTestPrint, []],
     ["confirmTestPrint", IPC_CHANNELS.confirmTestPrint, [true]],
+    ["configurePrinter", IPC_CHANNELS.configurePrinter, []],
     ["setPaused", IPC_CHANNELS.setPaused, [true]],
     ["setOpenAtLogin", IPC_CHANNELS.setOpenAtLogin, [false]],
     ["setChannel", IPC_CHANNELS.setChannel, ["preview"]],
@@ -61,6 +65,8 @@ describe("preload API", () => {
     ["renameLaptop", IPC_CHANNELS.renameLaptop, ["Lobby desk"]],
     ["renamePrinter", IPC_CHANNELS.renamePrinter, ["Front Zebra"]],
     ["advance", IPC_CHANNELS.advance, []],
+    ["beginReenroll", IPC_CHANNELS.beginReenroll, []],
+    ["cancelReenroll", IPC_CHANNELS.cancelReenroll, []],
     ["quit", IPC_CHANNELS.quit, []],
   ] as const)("%s invokes its own channel with its own arguments", async (method, channel, args) => {
     const { ipc } = fakeIpc();

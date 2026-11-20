@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { IPC_CHANNELS } from "../../shared";
-import { createSetupWindowManager, setupWindowOptions, type WindowLike, type WindowOptions } from "./windows";
+import { createSetupWindowManager, DOCK_HIDE_COOLDOWN_MS, setupWindowOptions, type WindowLike, type WindowOptions } from "./windows";
 import { snapshotFor } from "./testing/snapshot";
 
 function fakeWindow(id = 11) {
@@ -41,6 +41,7 @@ function setup() {
   const created: ReturnType<typeof fakeWindow>[] = [];
   const optionsSeen: WindowOptions[] = [];
   const activate = vi.fn();
+  const dock = { show: vi.fn(), hide: vi.fn() };
   const manager = createSetupWindowManager({
     create: (options) => {
       optionsSeen.push(options);
@@ -51,8 +52,9 @@ function setup() {
     preloadPath: "/app/dist/preload.js",
     pagePath: "/app/dist/renderer/index.html",
     activate,
+    dock,
   });
-  return { manager, created, optionsSeen, activate };
+  return { manager, created, optionsSeen, activate, dock };
 }
 
 describe("setupWindowOptions", () => {
@@ -153,5 +155,250 @@ describe("createSetupWindowManager", () => {
     manager.close();
     expect(created[0].window.close).toHaveBeenCalled();
     expect(manager.webContentsId()).toBeNull();
+  });
+
+  it("shows the Dock icon when the window becomes visible and hides it when it closes", () => {
+    const { manager, created, dock } = setup();
+    manager.show();
+    expect(dock.show).not.toHaveBeenCalled();
+    expect(dock.hide).not.toHaveBeenCalled();
+
+    created[0].handlers["ready-to-show"]();
+    expect(dock.show).toHaveBeenCalledTimes(1);
+    expect(dock.hide).not.toHaveBeenCalled();
+
+    // Re-focusing an open window does not hide or re-spam dock.show.
+    manager.show();
+    expect(dock.show).toHaveBeenCalledTimes(1);
+
+    manager.close();
+    expect(dock.hide).toHaveBeenCalledTimes(1);
+
+    // Reopening shows the Dock icon again.
+    manager.show();
+    created[1].handlers["ready-to-show"]();
+    expect(dock.show).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hide the Dock icon if the window closes before ready-to-show", () => {
+    const { manager, created, dock } = setup();
+    manager.show();
+    manager.close();
+    created[0].handlers["ready-to-show"]();
+    expect(dock.show).not.toHaveBeenCalled();
+    expect(created[0].window.show).not.toHaveBeenCalled();
+    expect(dock.hide).not.toHaveBeenCalled();
+  });
+
+  it("handles omitted dock and a rejected dock.show() promise", () => {
+    const manager = createSetupWindowManager({
+      create: () => fakeWindow(20).window as unknown as WindowLike,
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+    });
+    expect(() => {
+      manager.show();
+      manager.close();
+    }).not.toThrow();
+
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const rejectingDock = { show: vi.fn(() => Promise.reject(new Error("dock unavailable"))), hide: vi.fn() };
+    const withReject = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(21);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      dock: rejectingDock,
+    });
+    withReject.show();
+    created[0].handlers["ready-to-show"]();
+    expect(created[0].window.show).toHaveBeenCalled();
+    withReject.close();
+    expect(rejectingDock.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("still shows the window when dock.show() throws synchronously", () => {
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const throwingDock = {
+      show: vi.fn(() => {
+        throw new Error("dock sync error");
+      }),
+      hide: vi.fn(),
+    };
+    const manager = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(22);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      dock: throwingDock,
+    });
+    manager.show();
+    expect(() => created[0].handlers["ready-to-show"]()).not.toThrow();
+    expect(created[0].window.show).toHaveBeenCalledTimes(1);
+  });
+
+  it("defers dock.hide() when closing soon after a startup hide", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const created: ReturnType<typeof fakeWindow>[] = [];
+      const dock = { show: vi.fn(), hide: vi.fn() };
+      const manager = createSetupWindowManager({
+        create: () => {
+          const fake = fakeWindow(30 + created.length);
+          created.push(fake);
+          return fake.window as unknown as WindowLike;
+        },
+        preloadPath: "/p.js",
+        pagePath: "/p.html",
+        dock,
+        dockHiddenAt: 0,
+      });
+
+      vi.setSystemTime(200);
+      manager.show();
+      created[0].handlers["ready-to-show"]();
+      expect(dock.show).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(400);
+      manager.close();
+      // Within Electron's 1s suppression window: must defer instead of calling hide() immediately.
+      expect(dock.hide).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(DOCK_HIDE_COOLDOWN_MS - 400 - 1);
+      expect(dock.hide).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("defers dock.hide() across rapid close/reopen/close and cancels pending hide when reopened", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(5000);
+      const { manager, created, dock } = setup();
+
+      manager.show();
+      created[0].handlers["ready-to-show"]();
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+
+      // Reopen and close within the cooldown window: second hide must be deferred.
+      vi.setSystemTime(5100);
+      manager.show();
+      created[1].handlers["ready-to-show"]();
+      vi.setSystemTime(5300);
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+
+      // Reopen before the deferred hide fires: pending hide must be cancelled.
+      vi.setSystemTime(5500);
+      manager.show();
+      created[2].handlers["ready-to-show"]();
+      vi.advanceTimersByTime(DOCK_HIDE_COOLDOWN_MS);
+      expect(dock.hide).toHaveBeenCalledTimes(1);
+
+      // Closing after the cooldown has elapsed hides immediately again.
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(2);
+
+      // Closing again within the new cooldown defers until the cooldown expires.
+      vi.advanceTimersByTime(200);
+      manager.show();
+      created[3].handlers["ready-to-show"]();
+      vi.advanceTimersByTime(100);
+      manager.close();
+      expect(dock.hide).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(DOCK_HIDE_COOLDOWN_MS - 300);
+      expect(dock.hide).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("calls onClosed once when the current window closes, and ignores stale windows", () => {
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const onClosed = vi.fn();
+    const manager = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(40 + created.length);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      onClosed,
+    });
+
+    manager.show();
+    created[0].destroy();
+    // Opening a replacement window makes created[0] stale.
+    manager.show();
+    created[0].handlers.closed();
+    expect(onClosed).not.toHaveBeenCalled();
+
+    manager.close();
+    expect(onClosed).toHaveBeenCalledTimes(1);
+    // Repeated closed event on the already-closed window is ignored.
+    created[1].handlers.closed();
+    expect(onClosed).toHaveBeenCalledTimes(1);
+  });
+
+  it("still hides the Dock icon if a shown window is destroyed without closed and its replacement closes early", () => {
+    const { manager, created, dock } = setup();
+    manager.show();
+    created[0].handlers["ready-to-show"]();
+    expect(dock.show).toHaveBeenCalledTimes(1);
+
+    created[0].destroy();
+    manager.show();
+    manager.close();
+    expect(dock.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-activates the app once an async dock.show() settles", async () => {
+    let resolveDockShow!: () => void;
+    const dock = {
+      show: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveDockShow = resolve;
+          }),
+      ),
+      hide: vi.fn(),
+    };
+    const activate = vi.fn();
+    const created: ReturnType<typeof fakeWindow>[] = [];
+    const manager = createSetupWindowManager({
+      create: () => {
+        const fake = fakeWindow(50 + created.length);
+        created.push(fake);
+        return fake.window as unknown as WindowLike;
+      },
+      preloadPath: "/p.js",
+      pagePath: "/p.html",
+      activate,
+      dock,
+    });
+
+    manager.show();
+    expect(activate).toHaveBeenCalledTimes(1);
+    created[0].handlers["ready-to-show"]();
+    expect(activate).toHaveBeenCalledTimes(2);
+
+    resolveDockShow();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(activate).toHaveBeenCalledTimes(3);
   });
 });

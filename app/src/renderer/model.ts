@@ -12,6 +12,7 @@ import {
   type AppSnapshot,
   type EnrollConflictReason,
   type EnrollPlainFailure,
+  type PrinterSetupResult,
   type RenameResult,
   type SetupStep,
   type TestPrintResult,
@@ -33,6 +34,8 @@ export type ScreenId =
   | "test-print"
   | "done"
   | "revoked"
+  /** Asks the volunteer to confirm before pairing with a new code. The saved pairing keeps printing until the new code is accepted. */
+  | "reenroll-confirm"
   | "status";
 
 export type EnrollFailureReason = EnrollPlainFailure;
@@ -45,6 +48,14 @@ export type TestPrintProgress =
   | { kind: "failed"; reason: Extract<TestPrintResult, { ok: false }>["reason"] }
   | { kind: "no-label" };
 
+/** The "Set up printer" control: asks first, then runs mode, calibrate and save on the printer. */
+export type PrinterSetupProgress =
+  | { kind: "idle" }
+  | { kind: "confirm" }
+  | { kind: "running" }
+  | { kind: "done" }
+  | { kind: "failed"; result: Exclude<PrinterSetupResult, { ok: true }> };
+
 export type LocalState = {
   /** "Set up printer" was refused by macOS: show the System Settings guide. */
   setUpRefused: boolean;
@@ -52,10 +63,13 @@ export type LocalState = {
   /** The cloud refused to bind the printer: why. Set instead of `codeError`, never with it. */
   codeConflict: EnrollConflictReason | null;
   testPrint: TestPrintProgress;
+  printerSetup: PrinterSetupProgress;
   /** An action is running: its button is disabled. */
   busy: boolean;
   /** The volunteer chose "Move to Favor Printer" and is being asked to confirm. */
   confirmingMigration: boolean;
+  /** The volunteer chose "Pair with a new code" on the status screen and is being asked to confirm. */
+  confirmingReenroll: boolean;
   /** The last move failed. Printing stays off. */
   migrateError: boolean;
   /** A rename RSVP refused or could not take. `name` is what was typed, so it is not lost on re-render. */
@@ -67,8 +81,10 @@ export const INITIAL_LOCAL: LocalState = {
   codeError: null,
   codeConflict: null,
   testPrint: { kind: "idle" },
+  printerSetup: { kind: "idle" },
   busy: false,
   confirmingMigration: false,
+  confirmingReenroll: false,
   migrateError: false,
   renameError: null,
 };
@@ -94,7 +110,10 @@ export function pickScreen(snapshot: AppSnapshot, local: LocalState): ScreenId {
   if (snapshot.legacyRelayLoaded && (step === null || step === "welcome")) {
     return local.confirmingMigration ? "legacy-confirm" : "legacy";
   }
-  if (step === null) return snapshot.status.color === "red" ? "revoked" : "status";
+  if (step === null) {
+    if (snapshot.status.color === "red") return "revoked";
+    return local.confirmingReenroll && snapshot.enrolled ? "reenroll-confirm" : "status";
+  }
   switch (step) {
     case "welcome":
       return "welcome";
@@ -150,6 +169,23 @@ export const TEST_PRINT_ERROR_COPY: Record<Extract<TestPrintResult, { ok: false 
   busy: "The printer is busy with a label. Wait a moment, then try again.",
   failed: "The test label could not be sent. Try again.",
 };
+
+export const PRINTER_SETUP_COPY = {
+  title: "Set up the printer",
+  lead: "For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates.",
+  start: "Set up printer",
+  confirm: "Set up printer?",
+  confirmYes: "Yes, set up printer",
+  running: "Setting up the printer...",
+  done: "The printer is set up: mode set, calibrated and saved.",
+  retry: "Try again",
+} as const;
+
+/** True when a ready CUPS queue is bound to the selected printer: the only time setup can send anything. */
+export function printerQueueReady(snapshot: Pick<AppSnapshot, "printer">): boolean {
+  const { printer } = snapshot;
+  return printer.kind === "found" && printer.selectedId !== null && printer.queue === "ready";
+}
 
 /** "Lobby Zebra · Campus ID 7", or null when the cloud did not say which printer this laptop is bound to. */
 export function boundPrinterText(snapshot: Pick<AppSnapshot, "printerName" | "campusId">): string | null {

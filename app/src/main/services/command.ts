@@ -17,7 +17,11 @@ export type CommandResult = {
   timedOut: boolean;
 };
 
-export type CommandOptions = { timeoutMs?: number };
+export type CommandOptions = {
+  timeoutMs?: number;
+  /** Written to the process's stdin, then closed. Without it stdin is left alone. */
+  input?: string;
+};
 
 export type CommandRunner = (
   file: string,
@@ -32,6 +36,7 @@ export const BINARIES = {
   lpstat: "/usr/bin/lpstat",
   lpadmin: "/usr/sbin/lpadmin",
   launchctl: "/bin/launchctl",
+  lp: "/usr/bin/lp",
 } as const;
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -51,7 +56,7 @@ export function createCommandRunner(execFileImpl: ExecFile = execFile as unknown
   return (file, args, options = {}) =>
     new Promise<CommandResult>((resolve) => {
       try {
-        execFileImpl(
+        const child = execFileImpl(
           file,
           [...args],
           {
@@ -72,7 +77,12 @@ export function createCommandRunner(execFileImpl: ExecFile = execFile as unknown
               timedOut: error.killed === true,
             });
           },
-        );
+        ) as { stdin?: { on?(event: "error", listener: () => void): unknown; end(data: string): unknown } | null } | undefined;
+        if (options.input !== undefined && child?.stdin) {
+          // A process that exits before reading stdin reports through its exit code, not an EPIPE.
+          child.stdin.on?.("error", () => undefined);
+          child.stdin.end(options.input);
+        }
       } catch (error) {
         resolve({
           code: null,

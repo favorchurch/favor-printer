@@ -6,8 +6,11 @@
 
 import type { AppSnapshot } from "../../shared";
 import { IPC_CHANNELS } from "../../shared";
+import { systemTimers, type Timers } from "../services";
 
 export const SETUP_WINDOW = { width: 520, height: 640 } as const;
+/** Electron 44 ignores `dock.hide()` calls made within 1s of an earlier hide. */
+export const DOCK_HIDE_COOLDOWN_MS = 1100;
 
 export function setupWindowOptions(preloadPath: string) {
   return {
@@ -63,14 +66,60 @@ export type SetupWindowManager = {
   webContentsId(): number | null;
 };
 
+export type DockLike = {
+  show(): unknown;
+  hide(): unknown;
+};
+
 export function createSetupWindowManager(deps: {
   create(options: WindowOptions): WindowLike;
   preloadPath: string;
   pagePath: string;
   /** Brings the app forward: a menu-bar app has no Dock icon to click. */
   activate?: () => void;
+  /** Shown while the setup/status window is visible, hidden again when it closes. */
+  dock?: DockLike;
+  /** Timestamp (ms) of an earlier `dock.hide()` call (e.g. at startup). */
+  dockHiddenAt?: number;
+  /** Called when the current window closes. */
+  onClosed?: () => void;
+  timers?: Pick<Timers, "setTimeout" | "clearTimeout">;
+  now?: () => number;
 }): SetupWindowManager {
+  const timers = deps.timers ?? systemTimers;
+  const now = deps.now ?? Date.now;
   let window: WindowLike | null = null;
+  let dockShown = false;
+  let lastDockHideAt: number | null = deps.dockHiddenAt ?? null;
+  let pendingDockHide: unknown = null;
+
+  const cancelPendingDockHide = () => {
+    if (pendingDockHide === null) return;
+    timers.clearTimeout(pendingDockHide);
+    pendingDockHide = null;
+  };
+
+  const hideDockNow = () => {
+    pendingDockHide = null;
+    if (dockShown) return;
+    lastDockHideAt = now();
+    deps.dock?.hide();
+  };
+
+  const scheduleDockHide = () => {
+    if (!deps.dock) return;
+    cancelPendingDockHide();
+    if (lastDockHideAt === null) {
+      hideDockNow();
+      return;
+    }
+    const elapsed = Math.max(0, now() - lastDockHideAt);
+    if (elapsed >= DOCK_HIDE_COOLDOWN_MS) {
+      hideDockNow();
+      return;
+    }
+    pendingDockHide = timers.setTimeout(hideDockNow, DOCK_HIDE_COOLDOWN_MS - elapsed);
+  };
 
   const open = (): WindowLike => {
     if (window && !window.isDestroyed()) return window;
@@ -83,9 +132,35 @@ export function createSetupWindowManager(deps: {
       const callback = args[2];
       if (typeof callback === "function") (callback as (granted: boolean) => void)(false);
     });
-    created.once("ready-to-show", () => created.show());
+    created.once("ready-to-show", () => {
+      if (window !== created || created.isDestroyed()) return;
+      dockShown = true;
+      cancelPendingDockHide();
+      let dockShowResult: unknown;
+      try {
+        dockShowResult = deps.dock?.show();
+      } catch {
+        // Ignore synchronous dock.show() failures so the window still appears.
+      }
+      created.show();
+      deps.activate?.();
+      if (dockShowResult && typeof (dockShowResult as PromiseLike<unknown>).then === "function") {
+        void Promise.resolve(dockShowResult)
+          .catch(() => undefined)
+          .finally(() => {
+            if (window === created && !created.isDestroyed()) deps.activate?.();
+          });
+      }
+    });
     created.on("closed", () => {
-      if (window === created) window = null;
+      if (window === created) {
+        window = null;
+        if (dockShown) {
+          dockShown = false;
+          scheduleDockHide();
+        }
+        deps.onClosed?.();
+      }
     });
     void created.loadFile(deps.pagePath);
     return created;

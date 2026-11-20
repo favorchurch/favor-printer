@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppSnapshot } from "../../shared";
-import { buildMenuTemplate, CLOUD_TEST_HINT, createTrayView, LOCAL_TEST_MENU_LABEL, jobCountsLabel, trayTooltip, type MenuItemTemplate, type TrayActions } from "./tray";
+import { buildMenuTemplate, CLOUD_TEST_HINT, createTrayView, LOCAL_TEST_MENU_LABEL, SETUP_PRINTER_MENU_LABEL, jobCountsLabel, trayTooltip, type MenuItemTemplate, type TrayActions } from "./tray";
 import { snapshotFor } from "./testing/snapshot";
 import { deriveStatus, type StatusInputs } from "../services/statusSummary";
 import type { RelayStatus } from "../../../../vendor/relay/status";
@@ -11,6 +11,7 @@ const actions = (): { [K in keyof TrayActions]: ReturnType<typeof vi.fn> } & Tra
     pause: vi.fn(),
     resume: vi.fn(),
     testPrint: vi.fn(),
+    setupPrinter: vi.fn(),
     openSetup: vi.fn(),
     reenroll: vi.fn(),
     migrateLegacy: vi.fn(),
@@ -37,6 +38,7 @@ describe("buildMenuTemplate", () => {
       "Pause printing",
       "Local hardware test print...",
       "Check-in test: RSVP, Set up printing",
+      "Set up printer...",
       "Keep printing",
       "Open at login",
       "Check for updates",
@@ -143,6 +145,32 @@ describe("buildMenuTemplate", () => {
     ]);
     channel?.submenu?.[0].click?.();
     expect(a.setChannel).toHaveBeenCalledWith("stable");
+  });
+
+  describe("set up printer", () => {
+    const READY: AppSnapshot["printer"] = {
+      kind: "found",
+      devices: [{ id: "usb://z", deviceUri: "usb://z", usbSerial: "S1", model: "ZD421" }],
+      selectedId: "usb://z",
+      queue: "ready",
+    };
+
+    it("is enabled with a ready queue and calls the action", () => {
+      const a = actions();
+      const item = find(buildMenuTemplate(snapshotFor({ printer: READY }), a), SETUP_PRINTER_MENU_LABEL);
+      expect(item?.enabled).toBe(true);
+      item?.click?.();
+      expect(a.setupPrinter).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["no printer", { printer: { kind: "none" } as AppSnapshot["printer"] }],
+      ["no ready queue", { printer: { ...READY, queue: "missing" } as AppSnapshot["printer"] }],
+      ["not enrolled", { printer: READY, enrolled: false }],
+    ])("is disabled with %s", (_name, patch) => {
+      const item = find(buildMenuTemplate(snapshotFor(patch), actions()), SETUP_PRINTER_MENU_LABEL);
+      expect(item?.enabled).toBe(false);
+    });
   });
 
   describe("setup entries", () => {

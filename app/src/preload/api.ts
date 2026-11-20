@@ -28,6 +28,7 @@ export function createApi(ipc: IpcRendererLike): FavorPrinterApi {
     enroll: (code) => call(IPC_CHANNELS.enroll, code),
     requestTestPrint: () => call(IPC_CHANNELS.requestTestPrint),
     confirmTestPrint: (labelCameOut) => call(IPC_CHANNELS.confirmTestPrint, labelCameOut),
+    configurePrinter: () => call(IPC_CHANNELS.configurePrinter),
     setPaused: (paused) => call(IPC_CHANNELS.setPaused, paused),
     setOpenAtLogin: (enabled) => call(IPC_CHANNELS.setOpenAtLogin, enabled),
     setChannel: (channel) => call(IPC_CHANNELS.setChannel, channel),
@@ -35,6 +36,8 @@ export function createApi(ipc: IpcRendererLike): FavorPrinterApi {
     renameLaptop: (label) => call(IPC_CHANNELS.renameLaptop, label),
     renamePrinter: (name) => call(IPC_CHANNELS.renamePrinter, name),
     advance: () => call(IPC_CHANNELS.advance),
+    beginReenroll: () => call(IPC_CHANNELS.beginReenroll),
+    cancelReenroll: () => call(IPC_CHANNELS.cancelReenroll),
     quit: () => call(IPC_CHANNELS.quit),
   };
 }

@@ -2,7 +2,7 @@
 
 import { vi } from "vitest";
 
-import type { PrinterDevice, QueueState } from "../../../shared";
+import type { PrinterDevice, PrinterSetupResult, QueueState } from "../../../shared";
 import type { RelayRenameRequest } from "../../../../../vendor/relay/protocol";
 import {
   createPowerController,
@@ -123,6 +123,8 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     setUp: vi.fn(options.setUp ?? (async () => ({ ok: true, queue: "Favor_S1" }) as SetUpOutcome)),
   };
 
+  const printerSetup = { run: vi.fn(async (_queue: string | null): Promise<PrinterSetupResult> => ({ ok: true })) };
+
   const enroll = vi.fn(
     options.enroll ?? (async () => ({ ok: true, credentials: { ...CREDENTIALS, label: "Front desk", printer: { name: "Lobby Zebra", campusId: 7 } } }) as EnrollOutcome),
   );
@@ -158,6 +160,8 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     showSetupWindow: vi.fn(),
     closeSetupWindow: vi.fn(),
     askLabelCameOut: vi.fn(async () => true),
+    confirmPrinterSetup: vi.fn(async () => true),
+    showPrinterSetupResult: vi.fn(),
     openPrinterSettings: vi.fn(async () => undefined),
   };
   const applyOpenAtLogin = vi.fn();
@@ -172,6 +176,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     prefs,
     secrets,
     printers,
+    printerSetup,
     legacy,
     enroll,
     rename,
@@ -210,7 +215,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     migrateMode,
     setLegacyLoaded,
     events,
-    supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, state, enroll, rename, forks, timers, power: spyPower, updates, ui, applyOpenAtLogin, logLines };
+    supervisorPhase: () => supervisorPhase, controller, prefsFs, prefs, secrets, legacy, printers, printerSetup, state, enroll, rename, forks, timers, power: spyPower, updates, ui, applyOpenAtLogin, logLines };
 }
 
 export type ControllerHarness = ReturnType<typeof createControllerHarness>;

@@ -47,6 +47,7 @@ export const VALIDATORS: Record<InvokeChannels, Validator<never[]> | Validator<[
   [IPC_CHANNELS.enroll]: one(isCodeInput),
   [IPC_CHANNELS.requestTestPrint]: none,
   [IPC_CHANNELS.confirmTestPrint]: one(isBoolean),
+  [IPC_CHANNELS.configurePrinter]: none,
   [IPC_CHANNELS.setPaused]: one(isBoolean),
   [IPC_CHANNELS.setOpenAtLogin]: one(isBoolean),
   [IPC_CHANNELS.setChannel]: one((value): value is string => isUpdateChannel(value)),
@@ -54,6 +55,8 @@ export const VALIDATORS: Record<InvokeChannels, Validator<never[]> | Validator<[
   [IPC_CHANNELS.renameLaptop]: one(isRenameInput),
   [IPC_CHANNELS.renamePrinter]: one(isRenameInput),
   [IPC_CHANNELS.advance]: none,
+  [IPC_CHANNELS.beginReenroll]: none,
+  [IPC_CHANNELS.cancelReenroll]: none,
   [IPC_CHANNELS.quit]: none,
 };
 
@@ -73,6 +76,7 @@ export function handlersFor(api: Omit<FavorPrinterApi, "onSnapshot">): IpcHandle
     [IPC_CHANNELS.enroll]: (code: string) => api.enroll(code),
     [IPC_CHANNELS.requestTestPrint]: () => api.requestTestPrint(),
     [IPC_CHANNELS.confirmTestPrint]: (came: boolean) => api.confirmTestPrint(came),
+    [IPC_CHANNELS.configurePrinter]: () => api.configurePrinter(),
     [IPC_CHANNELS.setPaused]: (paused: boolean) => api.setPaused(paused),
     [IPC_CHANNELS.setOpenAtLogin]: (enabled: boolean) => api.setOpenAtLogin(enabled),
     [IPC_CHANNELS.setChannel]: (channel: string) => api.setChannel(channel as Parameters<FavorPrinterApi["setChannel"]>[0]),
@@ -80,6 +84,8 @@ export function handlersFor(api: Omit<FavorPrinterApi, "onSnapshot">): IpcHandle
     [IPC_CHANNELS.renameLaptop]: (label: string) => api.renameLaptop(label),
     [IPC_CHANNELS.renamePrinter]: (name: string) => api.renamePrinter(name),
     [IPC_CHANNELS.advance]: () => api.advance(),
+    [IPC_CHANNELS.beginReenroll]: () => api.beginReenroll(),
+    [IPC_CHANNELS.cancelReenroll]: () => api.cancelReenroll(),
     [IPC_CHANNELS.quit]: () => api.quit(),
   };
 }
@@ -95,6 +101,7 @@ export function apiFromController(controller: AppController, quit: () => Promise
     enroll: (code) => controller.enroll(code),
     requestTestPrint: () => controller.requestTestPrint(),
     confirmTestPrint: (came) => controller.confirmTestPrint(came),
+    configurePrinter: () => controller.configurePrinter(),
     setPaused: (paused) => controller.setPaused(paused),
     setOpenAtLogin: (enabled) => controller.setOpenAtLogin(enabled),
     setChannel: (channel) => controller.setChannel(channel),
@@ -102,6 +109,11 @@ export function apiFromController(controller: AppController, quit: () => Promise
     renameLaptop: (label) => controller.renameLaptop(label),
     renamePrinter: (name) => controller.renamePrinter(name),
     advance: () => controller.advance(),
+    cancelReenroll: async () => controller.cancelReenroll(),
+    beginReenroll: async () => {
+      controller.beginReenroll();
+      return controller.snapshot();
+    },
     quit,
   };
 }

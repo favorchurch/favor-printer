@@ -25,14 +25,16 @@ import {
 } from "electron";
 import { autoUpdater } from "electron-updater";
 
-import { PRODUCT_NAME, type StatusColor } from "../shared";
+import { PRODUCT_NAME, printerSetupFailureCopy, type StatusColor } from "../shared";
 import {
   appSupportDir,
   createCommandRunner,
   createLegacyRelay,
   createPowerController,
   createPrinterService,
+  createPrinterSetup,
   createWindowsPrinterService,
+  createWindowsPrinterSetup,
   windowsResourcePaths,
   noLegacyMacAgent,
   createSecretStore,
@@ -44,7 +46,8 @@ import {
 } from "./services";
 import { createAppController } from "./shell/controller";
 import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
-import { acquireSingleInstance } from "./shell/lifecycle";
+import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch } from "./shell/launch";
+import { acquireSingleInstance, wireActivate } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
 import { wirePowerMonitor, type PowerMonitorLike } from "./shell/powerWiring";
@@ -104,12 +107,14 @@ async function runApp(): Promise<void> {
     // Without a Dock icon the window would open behind other apps.
     setupWindowRef.current?.show();
   };
+  const deferredOpen = createDeferredOpen();
 
-  if (!acquireSingleInstance(app, showSetup)) {
+  if (!acquireSingleInstance(app, () => deferredOpen.request())) {
     app.quit();
     return;
   }
   app.dock?.hide();
+  const dockHiddenAt = app.dock ? Date.now() : undefined;
 
   const log = createLogger(
     createRotatingFileSink(path.join(app.getPath("logs"), "main.log"), {
@@ -143,6 +148,10 @@ async function runApp(): Promise<void> {
     preloadPath: path.join(__dirname, "preload.js"),
     pagePath,
     activate: () => app.focus({ steal: true }),
+    dock: app.dock,
+    dockHiddenAt,
+    // Closing the window (button or Cmd+W) abandons a re-pair: the old pairing carries on and the tray returns to normal.
+    onClosed: () => void controller.cancelReenroll(),
   });
   setupWindowRef.current = windows;
 
@@ -171,6 +180,9 @@ async function runApp(): Promise<void> {
     printers: isWindows
       ? createWindowsPrinterService({ run, powershellPath: windowsPaths.powershellPath, probePath: windowsPaths.probePath })
       : createPrinterService({ run }),
+    printerSetup: isWindows
+      ? createWindowsPrinterSetup({ run, powershellPath: windowsPaths.powershellPath, printPath: windowsPaths.printPath })
+      : createPrinterSetup({ run }),
     legacy: isWindows ? noLegacyMacAgent() : createLegacyRelay({
       run,
       homeDir: os.homedir(),
@@ -204,11 +216,30 @@ async function runApp(): Promise<void> {
         });
         return response === 0;
       },
+      confirmPrinterSetup: async () => {
+        const { response } = await dialog.showMessageBox({
+          type: "question",
+          message: "Set up printer?",
+          detail: "For Zebra printers with a cutter. The printer feeds a few blank labels while it calibrates.",
+          buttons: ["Set up printer", "Cancel"],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        return response === 0;
+      },
+      showPrinterSetupResult: (result) => {
+        void dialog.showMessageBox({
+          type: result.ok ? "info" : "warning",
+          message: result.ok ? "Printer set up" : "Printer setup did not finish",
+          detail: result.ok ? "The mode is set, the printer is calibrated and the settings are saved." : printerSetupFailureCopy(result),
+        });
+      },
       openPrinterSettings: () => shell.openExternal(PRINTER_SETTINGS_URL),
     },
     applyOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     log,
   });
+  wireActivate(app, () => controller.showSetup());
 
   // Quit: stop the relay (waiting for a send that is writing, and staying open while one still is),
   // then let an update install if the policy allows it, then exit.
@@ -245,6 +276,7 @@ async function runApp(): Promise<void> {
       pause: () => void controller.setPaused(true),
       resume: () => void controller.setPaused(false),
       testPrint: () => void controller.testPrintFromMenu(),
+      setupPrinter: () => void controller.setupPrinterFromMenu(),
       openSetup: () => controller.openSetup(),
       reenroll: () => controller.beginReenroll(),
       // The window asks for confirmation before anything is turned off.
@@ -273,7 +305,19 @@ async function runApp(): Promise<void> {
   await controller.initialize();
   updates.start();
   const first = controller.snapshot();
-  if (first.setupStep !== null || first.legacyRelayLoaded) showSetup();
+  // A second launch during startup wins over the quiet login path.
+  const honoredEarlyRequest = deferredOpen.ready(() => controller.openSetup());
+  if (
+    !honoredEarlyRequest &&
+    shouldShowWindowAtLaunch({
+      wasOpenedAtLogin: detectLoginLaunch(app),
+      setupStep: first.setupStep,
+      legacyRelayLoaded: first.legacyRelayLoaded,
+      revoked: first.status.color === "red",
+    })
+  ) {
+    showSetup();
+  }
   log("info", "main", `${PRODUCT_NAME} ${app.getVersion()} started`);
 }
 
