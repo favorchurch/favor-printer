@@ -2,7 +2,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseParentMessage } from "../../../../vendor/relay/embeddedProtocol";
-import { appSupportDir, buildRelayStartOptions, DEFAULT_API_URL, type RelayConfigInput } from "./relayConfig";
+import { appSupportDir, buildRelayStartOptions, DEFAULT_API_URL, type RelayConfigInput, windowsStateDir } from "./relayConfig";
 
 const input = (overrides: Partial<RelayConfigInput> = {}): RelayConfigInput => ({
   credentials: { relayId: "relay-1", token: "tok-super-secret-123" },
@@ -26,9 +26,16 @@ describe("appSupportDir", () => {
 
 describe("Windows relay path", () => {
   it("uses an existing Windows RAW queue, fixed local packaged helper, and standard app data", () => {
+    // userData stays in the roaming folder on Windows: the token's key lives in <userData>\\Local State.
     expect(appSupportDir("C:\\Users\\volunteer", "win32", "C:\\Users\\volunteer\\AppData\\Roaming")).toBe("C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer");
+    expect(appSupportDir("C:\\Users\\volunteer", "win32")).toBe("C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer");
+    expect(appSupportDir("C:\\Users\\volunteer", "win32", "")).toBe("C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer");
+    // The per-PC state (token, preferences, spool) lives in the local folder.
+    expect(windowsStateDir("C:\\Users\\volunteer", "C:\\Users\\volunteer\\AppData\\Local")).toBe("C:\\Users\\volunteer\\AppData\\Local\\Favor Printer");
+    expect(windowsStateDir("C:\\Users\\volunteer")).toBe("C:\\Users\\volunteer\\AppData\\Local\\Favor Printer");
+    expect(windowsStateDir("C:\\Users\\volunteer", "")).toBe("C:\\Users\\volunteer\\AppData\\Local\\Favor Printer");
     const options = buildRelayStartOptions(input({
-      platform: "win32", appSupportDir: "C:\\Users\\volunteer\\AppData\\Roaming\\Favor Printer",
+      platform: "win32", appSupportDir: "C:\\Users\\volunteer\\AppData\\Local\\Favor Printer",
       queue: "Zebra ZD421", windowsScriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1",
     }));
     expect(options.transport).toEqual({ kind: "windows", queue: "Zebra ZD421", scriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1" });

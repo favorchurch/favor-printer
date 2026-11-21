@@ -28,6 +28,8 @@ import { autoUpdater } from "electron-updater";
 import { PRODUCT_NAME, printerSetupFailureCopy, type StatusColor } from "../shared";
 import {
   appSupportDir,
+  chooseSupportDir,
+  windowsStateDir,
   createCommandRunner,
   createLegacyRelay,
   createPowerController,
@@ -99,8 +101,9 @@ async function runSelfTestMode(apiUrl: string): Promise<void> {
 }
 
 async function runApp(): Promise<void> {
-  const supportDir = appSupportDir(os.homedir(), process.platform, process.env.APPDATA);
-  app.setPath("userData", supportDir);
+  // Electron's own folder (logs, caches, and the key that decrypts the token). On Windows it stays in %APPDATA%.
+  const userDataDir = appSupportDir(os.homedir(), process.platform, process.env.APPDATA);
+  app.setPath("userData", userDataDir);
 
   const setupWindowRef: { current: ReturnType<typeof createSetupWindowManager> | null } = { current: null };
   const showSetup = () => {
@@ -130,6 +133,18 @@ async function runApp(): Promise<void> {
       mkdir: (dir) => void mkdirSync(dir, { recursive: true }),
     }),
   );
+  // Windows keeps the token, preferences and spool per PC, in %LOCALAPPDATA%. Earlier builds kept them in userData, so move
+  // them before anything reads them. If the move fails, this launch runs on the old folder, so it never starts from an
+  // empty state while the real one sits next to it.
+  const supportDir =
+    process.platform === "win32"
+      ? chooseSupportDir({
+          userDataDir,
+          from: userDataDir,
+          to: windowsStateDir(os.homedir(), process.env.LOCALAPPDATA),
+          log: (message) => log("info", "migrate", message),
+        })
+      : userDataDir;
   process.on("uncaughtException", (error) => log("error", "main", `uncaught: ${describeError(error)}`));
   process.on("unhandledRejection", (reason) => log("error", "main", `unhandled rejection: ${describeError(reason)}`));
 
