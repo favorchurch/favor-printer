@@ -134,8 +134,12 @@ function namesAQueue(value: unknown): value is Record<string, unknown> {
   return typeof name === "string" && name.length > 0;
 }
 
-/** Loose on purpose: used only to decide that an unreadable row must not be ignored. */
+/**
+ * Loose on purpose: used only to decide that an unreadable row must not be ignored. Any serial evidence counts
+ * too: a skipped row is left out of the duplicate counts, so a second queue for the same printer must not vanish.
+ */
 function couldBeZebra(row: Record<string, unknown>): boolean {
+  if ([row.verifiedUsbSerial, row.serialEvidence].some((value) => value !== undefined && value !== null && value !== "")) return true;
   return [row.queueName, row.driverName, row.pnpDeviceId].some(
     (value) => typeof value === "string" && /zebra|zdesigner|ztc|VID_0A5F/i.test(value),
   );

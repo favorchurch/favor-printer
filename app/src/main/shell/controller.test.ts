@@ -885,6 +885,33 @@ describe("enroll", () => {
       expect(restarted.forks.last().messages[0]).toMatchObject({ type: "start" });
     });
 
+    it("a failed save after a new code says printing goes on, not that it stays off", async () => {
+      const h = await started({ ...ENROLLED });
+      h.prefsFs.fs.write = async () => {
+        throw new Error("disk full");
+      };
+      h.controller.beginReenroll();
+      const enrolling = h.controller.enroll("654321");
+      await finishStop(h);
+      await expect(enrolling).resolves.toEqual({ ok: true });
+      const logged = h.logLines.join("\n");
+      expect(logged).toContain("could not save the pairing details (label, printer name); printing is not affected");
+      expect(logged).not.toContain("stays off");
+      expect(h.forks.children).toHaveLength(2);
+    });
+
+    it("a failed save after a revoked laptop pairs again says printing stops after a restart", async () => {
+      const h = await started({ ...ENROLLED, prefs: { openAtLogin: true, setupComplete: true, revoked: true } });
+      expect(h.controller.snapshot().enrolled).toBe(false);
+      h.prefsFs.fs.write = async () => {
+        throw new Error("disk full");
+      };
+      await expect(h.controller.enroll("654321")).resolves.toEqual({ ok: true });
+      const logged = h.logLines.join("\n");
+      expect(logged).toContain("could not save the new pairing; printing works until Favor Printer restarts, then stays off until this laptop is paired again");
+      expect(logged).not.toContain("printing is not affected");
+    });
+
     it("a new code replaces the pairing and restarts the relay", async () => {
       const h = await started({ ...ENROLLED });
       h.controller.beginReenroll();
@@ -1766,6 +1793,37 @@ describe("Windows relay launch and device binding", () => {
     await h.controller.scanPrinters();
     expect(h.forks.children).toHaveLength(1);
     expect(h.controller.snapshot().warnings).not.toContain("Windows is blocking the helpers");
+  });
+
+  it("passes on why a Zebra queue cannot be used, and drops it once a printer is found", async () => {
+    const notice = 'Favor Printer cannot print to a queue named "Kids Zebra #1".';
+    const h = await started({ ...current, scan: { ...NO_PRINTER, scan: { kind: "none", notice } } });
+    expect(h.forks.children).toHaveLength(0);
+    expect(h.controller.snapshot().printer).toEqual({ kind: "none", notice });
+    expect(h.controller.snapshot().warnings).toContain(notice);
+    h.state.scan = foundPrinter();
+    await h.controller.scanPrinters();
+    expect(h.controller.snapshot().warnings).not.toContain(notice);
+  });
+
+  it("a failed save of a re-pair on Windows says when printing stops, by whether the serial changed", async () => {
+    for (const [serial, expected] of [
+      [DEVICE.usbSerial, "could not save the pairing details (label, printer name); printing is not affected"],
+      ["OLD-SERIAL", "could not save the paired printer serial; printing works until Favor Printer restarts, then stays off until this laptop is paired again"],
+    ] as const) {
+      const h = await started({ ...current, prefs: { ...current.prefs, pairedUsbSerial: serial } });
+      h.prefsFs.fs.write = async () => {
+        throw new Error("disk full");
+      };
+      const running = h.forks.children.length;
+      h.controller.beginReenroll();
+      const enrolling = h.controller.enroll("654321");
+      if (running > 0) await finishStop(h);
+      await expect(enrolling).resolves.toEqual({ ok: true });
+      expect(h.logLines.join("\n")).toContain(expected);
+      // Printing goes on now: the new serial is held in memory, so the relay starts for this printer.
+      expect(h.forks.children).toHaveLength(running + 1);
+    }
   });
 
   it("refuses to launch against an invalid helper path without forwarding a token", async () => {

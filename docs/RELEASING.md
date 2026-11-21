@@ -394,6 +394,14 @@ until a release with Mac assets is newer. Prefer attaching both platforms to one
 **stable** draft that lacks `latest-mac.yml` (for example when the macOS job failed but `windows` succeeded):
 Mac stable clients would get update-check errors.
 
+The reverse case happens on every stable release while Windows is Preview-only. The `windows` job runs only for
+`-beta.N` tags unless the repository variable `WINDOWS_STABLE_RELEASE` is `true`, so a stable `vX.Y.Z` has no
+Windows assets. Windows Preview clients are offered stable releases too, so once that stable release is the newest,
+each update check on a Windows Preview PC logs `ERR_UPDATER_CHANNEL_FILE_NOT_FOUND` (nothing installs, and the
+installed version keeps working) until a newer `-beta.N` with Windows assets ships. To clear it, ship a
+`X.Y.(Z+1)-beta.1` soon after the stable release (bump `package.json` first: the tag must match it). Do not set `WINDOWS_STABLE_RELEASE` for
+this: it is for after Windows hardware acceptance passes.
+
 **Signing secrets** (`release` environment only): `WINDOWS_CERTIFICATE_PFX_BASE64` and
 `WINDOWS_CERTIFICATE_PASSWORD` (an OV/EV code-signing certificate, or replace this step with Azure Trusted
 Signing). Without them the job fails, unless the tag is `-beta.N` **and** the repository variable

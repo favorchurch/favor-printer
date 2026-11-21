@@ -77,6 +77,22 @@ describe("the Set up printer control", () => {
   });
 });
 
+describe("the plug-in screen when Windows has a Zebra queue it cannot use", () => {
+  const windows = (printer: AppSnapshot["printer"]) => ({ ...fixtureFor("status").snapshot, platform: "win32" as const, setupStep: "printer" as const, printer });
+
+  it("shows what to change instead of asking for a printer", () => {
+    const notice = 'Favor Printer cannot print to a queue named "Kids Zebra #1".';
+    const shown = text(render(windows({ kind: "none", notice }), "printer-none")).join(" ");
+    expect(shown).toContain(notice);
+    expect(shown).toContain("Look again");
+    expect(shown).not.toContain("Plug in your Zebra printer");
+  });
+
+  it("still asks for a printer when no Zebra queue was seen", () => {
+    expect(text(render(windows({ kind: "none" }), "printer-none")).join(" ")).toContain("Plug in your Zebra printer");
+  });
+});
+
 describe("the confirm copy", () => {
   it("says it is for Zebra printers with a cutter and that blank labels feed", () => {
     const rendered = renderScreen("status", {
