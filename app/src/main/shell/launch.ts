@@ -3,7 +3,8 @@
  * on startup, and detects whether macOS launched the app as a login item.
  */
 
-import type { SetupStep } from "../../shared";
+import { PRODUCT_NAME, type SetupStep } from "../../shared";
+import type { CommandRunner } from "../services/command";
 
 export type LoginItemSettingsApp = {
   getLoginItemSettings?: () => { wasOpenedAtLogin?: unknown };
@@ -18,10 +19,91 @@ export type LaunchWindowInput = {
 };
 
 /**
- * Uses Electron's `app.getLoginItemSettings().wasOpenedAtLogin` (supported in
- * Electron 44 on macOS). Returns `null` when detection is unavailable.
+ * Windows has no `wasOpenedAtLogin`, so the login item is registered with this
+ * argument (`loginItemSettings`) and a login launch is read from `argv`.
  */
-export function detectLoginLaunch(app: LoginItemSettingsApp): boolean | null {
+export const WINDOWS_LOGIN_ARG = "--login-launch";
+
+/** The HKCU Run value name. `build/installer.nsh` deletes this exact name on uninstall. */
+export const WINDOWS_LOGIN_ITEM_NAME = `electron.app.${PRODUCT_NAME}`;
+
+export type LoginItemSettings = { openAtLogin: boolean; args?: string[]; name?: string; enabled?: boolean };
+
+/**
+ * What `app.setLoginItemSettings` takes on this platform. On Windows `approved` is the Startup apps on/off state
+ * to write: a launch-time re-register passes what Task Manager or Settings currently has
+ * (`readWindowsStartupApproval`), so the volunteer's or IT's choice stands; an in-app toggle leaves it out and approves.
+ */
+export function loginItemSettings(openAtLogin: boolean, platform: NodeJS.Platform, approved = true): LoginItemSettings {
+  if (platform !== "win32") return { openAtLogin };
+  return { openAtLogin, args: [WINDOWS_LOGIN_ARG], name: WINDOWS_LOGIN_ITEM_NAME, enabled: approved };
+}
+
+const REG_EXE = "C:\\Windows\\System32\\reg.exe";
+const EXPLORER_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+const STARTUP_APPROVED_KEY = `${EXPLORER_KEY}\\StartupApproved\\Run`;
+
+/**
+ * Reads whether Windows' Startup apps list has this app on. Electron's own `getLoginItemSettings().launchItems`
+ * is empty when the exe path has spaces (`...\Favor Printer\Favor Printer.exe`), so this asks `reg.exe` directly.
+ * No value means Windows has no record yet, which is "on". Returns null when it cannot tell, so the caller can
+ * leave the entry alone instead of guessing.
+ */
+export async function readWindowsStartupApproval(run: CommandRunner): Promise<boolean | null> {
+  const result = await run(REG_EXE, ["query", STARTUP_APPROVED_KEY, "/v", WINDOWS_LOGIN_ITEM_NAME], { timeoutMs: 5_000 });
+  if (result.code !== 0) {
+    // reg.exe exits 1 for a missing value and for other failures alike (its message is localized). Only a key
+    // that reads cleanly makes a failed value query mean "no record".
+    if (result.code !== 1 || result.timedOut) return null;
+    // Windows creates the StartupApproved keys only once it records a startup choice, so a readable Explorer key
+    // without them is also "no record".
+    for (const key of [STARTUP_APPROVED_KEY, EXPLORER_KEY]) {
+      if ((await run(REG_EXE, ["query", key], { timeoutMs: 5_000 })).code === 0) return true;
+    }
+    return null;
+  }
+  const match = /REG_BINARY\s+([0-9A-Fa-f]{2})/.exec(result.stdout);
+  if (!match) return null;
+  // Windows writes 02 (or 06) for on and 03 (or 07) for off: the low bit means disabled.
+  return (Number.parseInt(match[1], 16) & 1) === 0;
+}
+
+type LoginItemApp = { setLoginItemSettings(settings: LoginItemSettings): void };
+
+/**
+ * `applyOpenAtLogin` for the controller. A launch-time re-register on Windows (`keepApproval`) first reads the
+ * Startup apps state, so it writes later than it was asked; any call made meanwhile (the in-app toggle) wins.
+ */
+export function createLoginItemApplier(deps: {
+  app: LoginItemApp;
+  platform: NodeJS.Platform;
+  readApproval: () => Promise<boolean | null>;
+  onError: (error: unknown) => void;
+}): (enabled: boolean, options?: { keepApproval: boolean }) => Promise<void> {
+  let generation = 0;
+  return async (enabled, options) => {
+    const mine = ++generation;
+    if (!options?.keepApproval || deps.platform !== "win32") {
+      deps.app.setLoginItemSettings(loginItemSettings(enabled, deps.platform));
+      return;
+    }
+    try {
+      const approved = await deps.readApproval();
+      // Unknown approval: leave the entry as it is rather than override a choice made in Windows.
+      if (approved !== null && mine === generation) deps.app.setLoginItemSettings(loginItemSettings(enabled, deps.platform, approved));
+    } catch (error) {
+      deps.onError(error);
+    }
+  };
+}
+
+/**
+ * Uses Electron's `app.getLoginItemSettings().wasOpenedAtLogin` (supported in
+ * Electron 44 on macOS) and `WINDOWS_LOGIN_ARG` on Windows. Returns `null`
+ * when detection is unavailable.
+ */
+export function detectLoginLaunch(app: LoginItemSettingsApp, platform: NodeJS.Platform = "darwin", argv: readonly string[] = []): boolean | null {
+  if (platform === "win32") return argv.includes(WINDOWS_LOGIN_ARG);
   if (typeof app.getLoginItemSettings !== "function") return null;
   try {
     const settings = app.getLoginItemSettings();

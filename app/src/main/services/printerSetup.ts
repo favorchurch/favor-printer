@@ -1,7 +1,8 @@
 /**
  * Sets up the Zebra itself: print mode, media calibration, then saving both to
- * the printer's memory. Each step is one `lp -o raw` job to the queue the
- * printer service resolved, run through the command runner (no shell).
+ * the printer's memory. Each step is one raw job (`lp -o raw` on macOS, a RAW
+ * spool job on Windows) to the queue the printer service resolved, run through
+ * the command runner (no shell).
  */
 
 import type { PrinterSetupResult, PrinterSetupStep } from "../../shared";
@@ -31,7 +32,10 @@ export type PrinterSetup = {
   run(queue: string | null): Promise<PrinterSetupResult>;
 };
 
-export function createPrinterSetup(deps: { run: CommandRunner }): PrinterSetup {
+/** Sends one payload as one raw job. `true` only when the job was accepted. */
+type SendRaw = (queue: string, payload: string) => Promise<boolean>;
+
+function createSetupSequence(send: SendRaw): PrinterSetup {
   let running = false;
   return {
     async run(queue) {
@@ -40,8 +44,7 @@ export function createPrinterSetup(deps: { run: CommandRunner }): PrinterSetup {
       running = true;
       try {
         for (const { step, payload } of SETUP_STEPS) {
-          const result = await deps.run(BINARIES.lp, ["-d", queue, "-o", "raw"], { input: payload });
-          if (result.code !== 0) return { ok: false, reason: "failed", step };
+          if (!(await send(queue, payload))) return { ok: false, reason: "failed", step };
         }
         return { ok: true };
       } finally {
@@ -49,4 +52,24 @@ export function createPrinterSetup(deps: { run: CommandRunner }): PrinterSetup {
       }
     },
   };
+}
+
+export function createPrinterSetup(deps: { run: CommandRunner }): PrinterSetup {
+  return createSetupSequence(async (queue, payload) => (await deps.run(BINARIES.lp, ["-d", queue, "-o", "raw"], { input: payload })).code === 0);
+}
+
+/**
+ * Windows: each step is one RAW spool job through the bundled `print-raw.ps1`, the same helper and
+ * argument shape the relay prints labels with. Exit 0 (`FAVOR_SPOOL_ACCEPTED`) is the only success;
+ * an execution-policy refusal or any spooler error stops the sequence at that step.
+ */
+export function createWindowsPrinterSetup(deps: { run: CommandRunner; powershellPath: string; printPath: string }): PrinterSetup {
+  return createSetupSequence(async (queue, payload) => {
+    const result = await deps.run(
+      deps.powershellPath,
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", deps.printPath, "-Action", "Print", "-PrinterName", queue],
+      { input: payload, timeoutMs: 30_000 },
+    );
+    return result.code === 0 && result.stdout.includes("FAVOR_SPOOL_ACCEPTED");
+  });
 }

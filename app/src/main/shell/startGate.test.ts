@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createStartResolver, type StartGateDeps } from "./startGate";
@@ -25,7 +26,7 @@ describe("createStartResolver", () => {
         apiUrl: "https://rsvp.favor.church",
         relayId: "relay-1",
         token: "tok-secret",
-        spoolDir: "/Users/v/Library/Application Support/Favor Printer/spool",
+        spoolDir: path.join("/Users/v/Library/Application Support/Favor Printer", "spool"),
         transport: { kind: "cups", queue: "Favor_Zebra" },
         appVersion: "0.1.0",
         osVersion: "macOS 15",

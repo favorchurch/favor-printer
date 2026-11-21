@@ -1,0 +1,5 @@
+# vendor/relay is hash-checked against MANIFEST.json (pnpm verify:vendor), and
+# shell scripts must keep LF to run under bash. Without this, a Windows checkout
+# with core.autocrlf=true rewrites them to CRLF and verify:vendor fails.
+vendor/relay/** text eol=lf
+*.sh text eol=lf

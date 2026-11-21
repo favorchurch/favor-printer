@@ -49,6 +49,15 @@ describe("first run and login item", () => {
     expect(h.controller.snapshot().openAtLogin).toBe(false);
   });
 
+  it("on Windows re-applies the saved choice each launch without changing it", async () => {
+    for (const openAtLogin of [true, false]) {
+      const h = await started({ scan: NO_PRINTER, platform: "win32", prefs: { openAtLogin } });
+      // keepApproval: the re-register must not undo a Startup apps entry turned off in Windows.
+      expect(h.applyOpenAtLogin).toHaveBeenCalledExactlyOnceWith(openAtLogin, { keepApproval: true });
+      expect(h.controller.snapshot().openAtLogin).toBe(openAtLogin);
+    }
+  });
+
   it("persists the toggle and applies it", async () => {
     const h = await started();
     await h.controller.setOpenAtLogin(false);
@@ -876,6 +885,33 @@ describe("enroll", () => {
       expect(restarted.forks.last().messages[0]).toMatchObject({ type: "start" });
     });
 
+    it("a failed save after a new code says printing goes on, not that it stays off", async () => {
+      const h = await started({ ...ENROLLED });
+      h.prefsFs.fs.write = async () => {
+        throw new Error("disk full");
+      };
+      h.controller.beginReenroll();
+      const enrolling = h.controller.enroll("654321");
+      await finishStop(h);
+      await expect(enrolling).resolves.toEqual({ ok: true });
+      const logged = h.logLines.join("\n");
+      expect(logged).toContain("could not save the pairing details (label, printer name); printing is not affected");
+      expect(logged).not.toContain("stays off");
+      expect(h.forks.children).toHaveLength(2);
+    });
+
+    it("a failed save after a revoked laptop pairs again says printing stops after a restart", async () => {
+      const h = await started({ ...ENROLLED, prefs: { openAtLogin: true, setupComplete: true, revoked: true } });
+      expect(h.controller.snapshot().enrolled).toBe(false);
+      h.prefsFs.fs.write = async () => {
+        throw new Error("disk full");
+      };
+      await expect(h.controller.enroll("654321")).resolves.toEqual({ ok: true });
+      const logged = h.logLines.join("\n");
+      expect(logged).toContain("could not save the new pairing; printing works until Favor Printer restarts, then stays off until this laptop is paired again");
+      expect(logged).not.toContain("printing is not affected");
+    });
+
     it("a new code replaces the pairing and restarts the relay", async () => {
       const h = await started({ ...ENROLLED });
       h.controller.beginReenroll();
@@ -1697,5 +1733,111 @@ describe("cloud name synchronization", () => {
     await pending;
     expect(h.prefs.get().revoked).toBe(true);
     expect(h.secrets.clear).toHaveBeenCalled();
+  });
+});
+
+describe("Windows relay launch and device binding", () => {
+  const WINDOWS = { platform: "win32" as const, windowsScriptPath: "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1" };
+  const current = { ...ENROLLED, ...WINDOWS, prefs: { openAtLogin: true, setupComplete: true, pairedUsbSerial: DEVICE.usbSerial, queue: "Favor_S1" } };
+
+  it("starts the Windows RAW relay for an enrolled printer with a verified matching USB serial", async () => {
+    const h = await started(current);
+    expect(h.forks.children).toHaveLength(1);
+    expect(parseParentMessage(h.forks.last().messages[0])).toMatchObject({
+      type: "start", options: {
+        transport: { kind: "windows", queue: "Favor_S1", scriptPath: WINDOWS.windowsScriptPath },
+        printerAttached: true,
+      },
+    });
+  });
+
+  it("fails closed when a prior Windows enrollment lacks proof of the serial or the selected printer changed", async () => {
+    for (const pairedUsbSerial of [null, "S2"]) {
+      const h = await started({ ...current, prefs: { ...current.prefs, pairedUsbSerial } });
+      expect(h.forks.children).toHaveLength(0);
+      expect(h.supervisorPhase()).toBe("blocked");
+    }
+  });
+
+  it("sets up only the Zebra whose USB serial matches the pairing", async () => {
+    const h = await started(current);
+    const pending = h.controller.configurePrinter();
+    await finishStop(h);
+    expect(await pending).toEqual({ ok: true });
+    expect(h.printerSetup.run).toHaveBeenCalledExactlyOnceWith("Favor_S1");
+
+    for (const pairedUsbSerial of [null, "S2"]) {
+      const other = await started({ ...current, prefs: { ...current.prefs, pairedUsbSerial } });
+      other.printerSetup.run.mockResolvedValueOnce({ ok: false, reason: "no-queue" });
+      expect(await other.controller.configurePrinter()).toEqual({ ok: false, reason: "no-queue" });
+      expect(other.printerSetup.run).toHaveBeenCalledExactlyOnceWith(null);
+    }
+  });
+
+  it("does not trust cached Windows spooler queue names after an unplug or failed discovery", async () => {
+    for (const scan of [NO_PRINTER, LIST_FAILED]) {
+      const h = await started({ ...current, scan });
+      expect(h.forks.children).toHaveLength(0);
+      h.state.scan = foundPrinter();
+      await h.controller.scanPrinters();
+      expect(h.forks.children).toHaveLength(1);
+    }
+  });
+
+  it("keeps printing off and says why while PowerShell blocks the helpers, then recovers", async () => {
+    const blocked = { ...LIST_FAILED, failureWarning: "Windows is blocking the helpers" };
+    const h = await started({ ...current, scan: blocked });
+    expect(h.forks.children).toHaveLength(0);
+    expect(h.controller.snapshot().warnings).toContain("Windows is blocking the helpers");
+    h.state.scan = foundPrinter();
+    await h.controller.scanPrinters();
+    expect(h.forks.children).toHaveLength(1);
+    expect(h.controller.snapshot().warnings).not.toContain("Windows is blocking the helpers");
+  });
+
+  it("passes on why a Zebra queue cannot be used, and drops it once a printer is found", async () => {
+    const notice = 'Favor Printer cannot print to a queue named "Kids Zebra #1".';
+    const h = await started({ ...current, scan: { ...NO_PRINTER, scan: { kind: "none", notice } } });
+    expect(h.forks.children).toHaveLength(0);
+    expect(h.controller.snapshot().printer).toEqual({ kind: "none", notice });
+    expect(h.controller.snapshot().warnings).toContain(notice);
+    h.state.scan = foundPrinter();
+    await h.controller.scanPrinters();
+    expect(h.controller.snapshot().warnings).not.toContain(notice);
+  });
+
+  it("a failed save of a re-pair on Windows says when printing stops, by whether the serial changed", async () => {
+    for (const [serial, expected] of [
+      [DEVICE.usbSerial, "could not save the pairing details (label, printer name); printing is not affected"],
+      ["OLD-SERIAL", "could not save the paired printer serial; printing works until Favor Printer restarts, then stays off until this laptop is paired again"],
+    ] as const) {
+      const h = await started({ ...current, prefs: { ...current.prefs, pairedUsbSerial: serial } });
+      h.prefsFs.fs.write = async () => {
+        throw new Error("disk full");
+      };
+      const running = h.forks.children.length;
+      h.controller.beginReenroll();
+      const enrolling = h.controller.enroll("654321");
+      if (running > 0) await finishStop(h);
+      await expect(enrolling).resolves.toEqual({ ok: true });
+      expect(h.logLines.join("\n")).toContain(expected);
+      // Printing goes on now: the new serial is held in memory, so the relay starts for this printer.
+      expect(h.forks.children).toHaveLength(running + 1);
+    }
+  });
+
+  it("refuses to launch against an invalid helper path without forwarding a token", async () => {
+    const h = await started({ ...current, windowsScriptPath: "https://untrusted.example/print-raw.ps1" });
+    expect(h.forks.children).toHaveLength(0);
+    expect(h.supervisorPhase()).toBe("blocked");
+    expect(h.logLines.join(" ")).not.toContain(CREDENTIALS.token);
+  });
+
+  it("records the verified serial of a Windows OTP enrollment before launching a relay", async () => {
+    const h = await started({ ...WINDOWS, scan: foundPrinter(), prefs: { openAtLogin: true } });
+    await expect(h.controller.enroll("123456")).resolves.toEqual({ ok: true });
+    expect(h.prefsFs.saved()).toMatchObject({ pairedUsbSerial: "S1", campusId: 7 });
+    expect(h.forks.children).toHaveLength(1);
+    expect(h.forks.last().messages[0]).toMatchObject({ options: { transport: { kind: "windows" } } });
   });
 });

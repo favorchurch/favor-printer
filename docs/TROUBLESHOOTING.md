@@ -127,3 +127,33 @@ volunteer's Mac needs the old relay again.
 6. Remove the legacy relay if it is still there (see above).
 7. Ask a Favor RSVP admin to remove this laptop from the printer list so the cloud stops assigning
    labels to it.
+
+### Windows (Preview)
+
+1. Notification-area icon > **Quit**.
+2. **Settings > Apps > Installed apps** > **Favor Printer** > **Uninstall**. This removes the app, its
+   Start menu shortcut and its open-at-login entry. If the installer set your PowerShell policy, it puts
+   back the earlier value. Windows may keep its own Startup apps on/off record for the app; it is
+   harmless.
+3. Remove its data (enrollment, settings and any unsent spool). Unsent labels are lost. The enrollment
+   token is encrypted for this Windows account, but delete it when the PC leaves the check-in team:
+
+   ```powershell
+   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Favor Printer"
+   Remove-Item -Recurse -Force "$env:APPDATA\Favor Printer"
+   ```
+
+   The enrollment token, the paired printer and the spool are kept per PC in `%LOCALAPPDATA%\Favor Printer`.
+   Logs, caches and the key that decrypts the token stay in `%APPDATA%\Favor Printer` (logs are in
+   `logs\main.log`). Earlier Windows builds kept the token, settings and spool in the `%APPDATA%` folder too; the
+   app moves them to the local folder the first time the newer build starts, and removes the old copies the next
+   time it starts. Remove both folders.
+
+   Going back to an older Windows build after this move is not supported: it reads `%APPDATA%`, finds no token,
+   settings or spool there and shows as not set up. If you pair again on the older build and then update again,
+   the newer build keeps the data it already moved and deletes what the older build wrote in `%APPDATA%`, so pair
+   once more after updating.
+
+4. Leave the Zebra driver and its queue alone unless IT asks; Favor Printer never created them.
+5. Ask a Favor RSVP admin to remove this PC from the printer list so the cloud stops assigning labels
+   to it.

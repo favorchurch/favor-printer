@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CommandOptions, CommandResult, CommandRunner } from "./command";
 import { BINARIES } from "./command";
-import { CALIBRATE_PAYLOAD, createPrinterSetup, MODE_PAYLOAD, SAVE_PAYLOAD } from "./printerSetup";
+import { CALIBRATE_PAYLOAD, createPrinterSetup, createWindowsPrinterSetup, MODE_PAYLOAD, SAVE_PAYLOAD } from "./printerSetup";
 import { expectArgvOnly, fail, ok } from "./testing/fakes";
 
 type Call = { file: string; args: readonly string[]; input: string | undefined };
@@ -126,5 +126,42 @@ describe("printer setup", () => {
     await expect(setup.run("Q")).rejects.toThrow("boom");
     rejecting = false;
     expect(await setup.run("Q")).toEqual({ ok: true });
+  });
+});
+
+describe("Windows printer setup", () => {
+  const POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+  const PRINT = "C:\\Program Files\\Favor Printer\\resources\\windows\\print-raw.ps1";
+  const accepted = () => ok("FAVOR_SPOOL_ACCEPTED\r\n");
+  const windowsSetup = (run: CommandRunner) => createWindowsPrinterSetup({ run, powershellPath: POWERSHELL, printPath: PRINT });
+
+  it("sends mode, calibrate, then save as three RAW jobs through the bundled helper, never lp", async () => {
+    const { run, calls } = fakeRunner(accepted);
+    expect(await windowsSetup(run).run("ZDesigner ZD421-203dpi ZPL")).toEqual({ ok: true });
+
+    expect(calls.map((call) => call.input)).toEqual([MODE_PAYLOAD, CALIBRATE_PAYLOAD, SAVE_PAYLOAD]);
+    for (const call of calls) {
+      expect(call.file).toBe(POWERSHELL);
+      expect(call.args).toEqual(["-NoLogo", "-NoProfile", "-NonInteractive", "-File", PRINT, "-Action", "Print", "-PrinterName", "ZDesigner ZD421-203dpi ZPL"]);
+      expect(call.args).not.toContain("-ExecutionPolicy");
+    }
+  });
+
+  it.each([
+    ["an execution-policy refusal", fail(1, "UnauthorizedAccess")],
+    ["a pre-write helper exit", fail(4, "printer-queue-unavailable")],
+    ["an ambiguous spooler failure", fail(6, "spooler-submit-failed")],
+    ["a timeout", fail(null, "", true)],
+    ["exit 0 without the accepted marker", ok("")],
+  ])("stops at the step where %s happens", async (_name, bad) => {
+    const { run, calls } = fakeRunner((_call, index) => (index === 1 ? bad : accepted()));
+    expect(await windowsSetup(run).run("Q")).toEqual({ ok: false, reason: "failed", step: "calibrate" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("returns no-queue and spawns nothing without a queue", async () => {
+    const { run, calls } = fakeRunner(accepted);
+    expect(await windowsSetup(run).run(null)).toEqual({ ok: false, reason: "no-queue" });
+    expect(calls).toHaveLength(0);
   });
 });

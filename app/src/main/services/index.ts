@@ -13,3 +13,6 @@ export * from "./secretStore";
 export * from "./statusSummary";
 export * from "./timers";
 export * from "./updates";
+export * from "./windowsDataMigration";
+export * from "./windowsPrinterService";
+export * from "./windowsPlatform";

@@ -28,11 +28,17 @@ import { autoUpdater } from "electron-updater";
 import { PRODUCT_NAME, printerSetupFailureCopy, type StatusColor } from "../shared";
 import {
   appSupportDir,
+  chooseSupportDir,
+  windowsStateDir,
   createCommandRunner,
   createLegacyRelay,
   createPowerController,
   createPrinterService,
   createPrinterSetup,
+  createWindowsPrinterService,
+  createWindowsPrinterSetup,
+  windowsResourcePaths,
+  noLegacyMacAgent,
   createSecretStore,
   createUpdateController,
   enroll,
@@ -42,7 +48,7 @@ import {
 } from "./services";
 import { createAppController } from "./shell/controller";
 import { apiFromController, handlersFor, isTrustedSender, registerIpcHandlers, type IpcMainLike } from "./shell/ipc";
-import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch } from "./shell/launch";
+import { createDeferredOpen, createLoginItemApplier, detectLoginLaunch, readWindowsStartupApproval, shouldShowWindowAtLaunch } from "./shell/launch";
 import { acquireSingleInstance, wireActivate } from "./shell/lifecycle";
 import { createLogger, createRotatingFileSink, describeError, silentLogger } from "./shell/log";
 import { createQuitCoordinator } from "./shell/quit";
@@ -56,9 +62,9 @@ import { trayIconPng } from "./shell/trayIcons";
 import { createUpdaterAdapter, type AutoUpdaterLike } from "./shell/updaterAdapter";
 import { createSetupWindowManager, type WindowLike, type WindowOptions } from "./shell/windows";
 
-const PRINTER_SETTINGS_URL = "x-apple.systempreferences:com.apple.Print-Scan-Settings.extension";
+const PRINTER_SETTINGS_URL = process.platform === "win32" ? "ms-settings:printers" : "x-apple.systempreferences:com.apple.Print-Scan-Settings.extension";
 
-const osVersion = () => `macOS ${process.getSystemVersion()}`;
+const osVersion = () => `${process.platform === "win32" ? "Windows" : "macOS"} ${process.getSystemVersion()}`;
 
 const relayForker = () =>
   createUtilityRelayForker({
@@ -95,8 +101,9 @@ async function runSelfTestMode(apiUrl: string): Promise<void> {
 }
 
 async function runApp(): Promise<void> {
-  const supportDir = appSupportDir(os.homedir());
-  app.setPath("userData", supportDir);
+  // Electron's own folder (logs, caches, and the key that decrypts the token). On Windows it stays in %APPDATA%.
+  const userDataDir = appSupportDir(os.homedir(), process.platform, process.env.APPDATA);
+  app.setPath("userData", userDataDir);
 
   const setupWindowRef: { current: ReturnType<typeof createSetupWindowManager> | null } = { current: null };
   const showSetup = () => {
@@ -126,6 +133,18 @@ async function runApp(): Promise<void> {
       mkdir: (dir) => void mkdirSync(dir, { recursive: true }),
     }),
   );
+  // Windows keeps the token, preferences and spool per PC, in %LOCALAPPDATA%. Earlier builds kept them in userData, so move
+  // them before anything reads them. If the move fails, this launch runs on the old folder, so it never starts from an
+  // empty state while the real one sits next to it.
+  const supportDir =
+    process.platform === "win32"
+      ? chooseSupportDir({
+          userDataDir,
+          from: userDataDir,
+          to: windowsStateDir(os.homedir(), process.env.LOCALAPPDATA),
+          log: (message) => log("info", "migrate", message),
+        })
+      : userDataDir;
   process.on("uncaughtException", (error) => log("error", "main", `uncaught: ${describeError(error)}`));
   process.on("unhandledRejection", (reason) => log("error", "main", `unhandled rejection: ${describeError(reason)}`));
 
@@ -133,6 +152,9 @@ async function runApp(): Promise<void> {
   app.on("window-all-closed", () => undefined);
 
   await app.whenReady();
+  // Windows would draw Electron's default File/Edit/View/Window bar inside the setup window. macOS keeps it in the
+  // system menu bar, where its Edit roles provide Cmd+C/V for the pairing code.
+  if (process.platform === "win32") Menu.setApplicationMenu(null);
 
   const prefs = createPrefsStore({ file: path.join(supportDir, "prefs.json") });
   await prefs.load();
@@ -159,15 +181,33 @@ async function runApp(): Promise<void> {
   });
 
   const run = createCommandRunner();
+  const applyLoginItem = createLoginItemApplier({
+    app,
+    platform: process.platform,
+    readApproval: () => readWindowsStartupApproval(run),
+    onError: (error) => log("warn", "main", `login item: ${describeError(error)}`),
+  });
+  const isWindows = process.platform === "win32";
+  const windowsPaths = windowsResourcePaths({
+    packaged: app.isPackaged,
+    resourcesDir: process.resourcesPath,
+    projectDir: path.resolve(__dirname, ".."),
+  });
   const controller = createAppController({
     version: app.getVersion(),
     osVersion: osVersion(),
+    platform: process.platform,
+    windowsScriptPath: isWindows ? windowsPaths.printPath : undefined,
     appSupportDir: supportDir,
     prefs,
     secrets: createSecretStore({ file: path.join(supportDir, "relay-token.bin"), safeStorage }),
-    printers: createPrinterService({ run }),
-    printerSetup: createPrinterSetup({ run }),
-    legacy: createLegacyRelay({
+    printers: isWindows
+      ? createWindowsPrinterService({ run, powershellPath: windowsPaths.powershellPath, probePath: windowsPaths.probePath })
+      : createPrinterService({ run }),
+    printerSetup: isWindows
+      ? createWindowsPrinterSetup({ run, powershellPath: windowsPaths.powershellPath, printPath: windowsPaths.printPath })
+      : createPrinterSetup({ run }),
+    legacy: isWindows ? noLegacyMacAgent() : createLegacyRelay({
       run,
       homeDir: os.homedir(),
       uid: process.getuid?.() ?? 0,
@@ -220,7 +260,7 @@ async function runApp(): Promise<void> {
       },
       openPrinterSettings: () => shell.openExternal(PRINTER_SETTINGS_URL),
     },
-    applyOpenAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
+    applyOpenAtLogin: (enabled, options) => void applyLoginItem(enabled, options),
     log,
   });
   wireActivate(app, () => controller.showSetup());
@@ -294,7 +334,7 @@ async function runApp(): Promise<void> {
   if (
     !honoredEarlyRequest &&
     shouldShowWindowAtLaunch({
-      wasOpenedAtLogin: detectLoginLaunch(app),
+      wasOpenedAtLogin: detectLoginLaunch(app, process.platform, process.argv),
       setupStep: first.setupStep,
       legacyRelayLoaded: first.legacyRelayLoaded,
       revoked: first.status.color === "red",

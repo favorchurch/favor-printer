@@ -1,6 +1,18 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import { createDeferredOpen, detectLoginLaunch, shouldShowWindowAtLaunch, type LaunchWindowInput } from "./launch";
+import type { CommandResult, CommandRunner } from "../services/command";
+import {
+  createDeferredOpen,
+  createLoginItemApplier,
+  detectLoginLaunch,
+  loginItemSettings,
+  readWindowsStartupApproval,
+  shouldShowWindowAtLaunch,
+  WINDOWS_LOGIN_ARG,
+  WINDOWS_LOGIN_ITEM_NAME,
+  type LaunchWindowInput,
+} from "./launch";
 
 describe("shouldShowWindowAtLaunch", () => {
   it.each<[string, LaunchWindowInput, boolean]>([
@@ -70,6 +82,131 @@ describe("detectLoginLaunch", () => {
       }),
     ).toBeNull();
     expect(detectLoginLaunch({ getLoginItemSettings: () => ({}) })).toBeNull();
+  });
+
+  it("on Windows reads the login argument from argv, never wasOpenedAtLogin", () => {
+    const settings = { getLoginItemSettings: () => ({ wasOpenedAtLogin: undefined }) };
+    expect(detectLoginLaunch(settings, "win32", ["Favor Printer.exe", WINDOWS_LOGIN_ARG])).toBe(true);
+    expect(detectLoginLaunch(settings, "win32", ["Favor Printer.exe"])).toBe(false);
+    expect(detectLoginLaunch({ getLoginItemSettings: () => ({ wasOpenedAtLogin: true }) }, "win32", ["Favor Printer.exe"])).toBe(false);
+  });
+
+  it("keeps a paired Windows host in the tray at login and shows the window on a user launch", () => {
+    const paired = { setupStep: null, legacyRelayLoaded: false, revoked: false };
+    expect(shouldShowWindowAtLaunch({ ...paired, wasOpenedAtLogin: detectLoginLaunch({}, "win32", ["x", WINDOWS_LOGIN_ARG]) })).toBe(false);
+    expect(shouldShowWindowAtLaunch({ ...paired, wasOpenedAtLogin: detectLoginLaunch({}, "win32", ["x"]) })).toBe(true);
+  });
+});
+
+describe("loginItemSettings", () => {
+  it("registers the Windows login item with the login argument and leaves macOS unchanged", () => {
+    expect(loginItemSettings(true, "win32")).toEqual({ openAtLogin: true, args: [WINDOWS_LOGIN_ARG], name: WINDOWS_LOGIN_ITEM_NAME, enabled: true });
+    expect(loginItemSettings(false, "win32")).toMatchObject({ openAtLogin: false, args: [WINDOWS_LOGIN_ARG] });
+    expect(loginItemSettings(true, "darwin", false)).toEqual({ openAtLogin: true });
+  });
+
+  it("writes the Startup apps state it is given, so a re-register can keep 'off'", () => {
+    expect(loginItemSettings(true, "win32", false).enabled).toBe(false);
+  });
+
+  it("turning it off names the same value, so Electron deletes both the Run value and its StartupApproved record", () => {
+    // Electron 44 (browser_win.cc SetLoginItemSettings) deletes Run and StartupApproved\Run under `name` when
+    // openAtLogin is false; without the name it would look for its default AppUserModelID and leave ours behind.
+    expect(loginItemSettings(false, "win32")).toEqual({ openAtLogin: false, args: [WINDOWS_LOGIN_ARG], name: WINDOWS_LOGIN_ITEM_NAME, enabled: true });
+  });
+
+  it("the uninstaller deletes the same Run value name the app writes, and its StartupApproved record", () => {
+    const nsis = readFileSync(new URL("../../../../build/installer.nsh", import.meta.url), "utf8");
+    expect(nsis).toContain(`DeleteRegValue HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Run" "${WINDOWS_LOGIN_ITEM_NAME}"`);
+    expect(nsis).toContain(
+      `DeleteRegValue HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run" "${WINDOWS_LOGIN_ITEM_NAME}"`,
+    );
+  });
+});
+
+describe("readWindowsStartupApproval", () => {
+  // Shapes copied from reg.exe on Windows 11 26200.
+  const value = (hex: string) =>
+    `\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run\r\n    ${WINDOWS_LOGIN_ITEM_NAME}    REG_BINARY    ${hex}\r\n\r\n`;
+  const RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
+  /** `key` answers the follow-up query of the StartupApproved\Run key, `explorer` that of its Explorer parent. */
+  const runner = (result: Partial<CommandResult>, key: Partial<CommandResult> = { code: 0 }, explorer: Partial<CommandResult> = { code: 0 }) => {
+    const calls: { file: string; args: readonly string[] }[] = [];
+    const run: CommandRunner = async (file, args) => {
+      calls.push({ file, args });
+      const reply = args.includes("/v") ? result : args[1] === RUN_KEY ? key : explorer;
+      return { code: 0, stdout: "", stderr: "", timedOut: false, ...reply };
+    };
+    return { run, calls };
+  };
+  const missingValue = { code: 1, stderr: "ERROR: The system was unable to find the specified registry key or value.\r\n" };
+
+  it("reads Task Manager's off (03/07) and on (02/06) for this app's value only", async () => {
+    for (const [hex, on] of [["0300000079C7A3AF8678DD01", false], ["070000000000000000000000", false], ["020000000000000000000000", true], ["06000000", true]] as const) {
+      const { run, calls } = runner({ stdout: value(hex) });
+      expect(await readWindowsStartupApproval(run)).toBe(on);
+      expect(calls[0].file).toBe("C:\\Windows\\System32\\reg.exe");
+      expect(calls[0].args).toEqual(["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run", "/v", WINDOWS_LOGIN_ITEM_NAME]);
+    }
+  });
+
+  it("treats no record as on, but only when the registry itself reads cleanly", async () => {
+    expect(await readWindowsStartupApproval(runner(missingValue).run)).toBe(true);
+    // A profile where Windows has not created StartupApproved\Run yet: still no record.
+    expect(await readWindowsStartupApproval(runner(missingValue, { code: 1 }).run)).toBe(true);
+    // Nothing readable: same exit 1 for the value, but it cannot tell why.
+    expect(await readWindowsStartupApproval(runner(missingValue, { code: 1 }, { code: 1 }).run)).toBeNull();
+  });
+
+  it("returns null when it cannot tell, so the entry is left alone", async () => {
+    for (const result of [{ code: null, stderr: "spawn ENOENT" }, { code: null, timedOut: true }, { code: 0, stdout: "garbage" }, { code: 1, timedOut: true }, { code: 5 }]) {
+      expect(await readWindowsStartupApproval(runner(result).run)).toBeNull();
+    }
+  });
+});
+
+describe("createLoginItemApplier", () => {
+  const setup = (platform: NodeJS.Platform, readApproval: () => Promise<boolean | null>) => {
+    const app = { setLoginItemSettings: vi.fn() };
+    const onError = vi.fn();
+    return { app, onError, apply: createLoginItemApplier({ app, platform, readApproval, onError }) };
+  };
+
+  it("writes the read Startup apps state on a Windows re-register, and nothing when it is unknown", async () => {
+    const off = setup("win32", async () => false);
+    await off.apply(true, { keepApproval: true });
+    expect(off.app.setLoginItemSettings).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ openAtLogin: true, enabled: false }));
+
+    const unknown = setup("win32", async () => null);
+    await unknown.apply(true, { keepApproval: true });
+    expect(unknown.app.setLoginItemSettings).not.toHaveBeenCalled();
+  });
+
+  it("drops a re-register whose read returns after an in-app toggle", async () => {
+    let answer: (approved: boolean) => void = () => undefined;
+    const { app, apply } = setup("win32", () => new Promise((resolve) => (answer = resolve)));
+    const reRegister = apply(true, { keepApproval: true });
+    await apply(false);
+    answer(true);
+    await reRegister;
+    expect(app.setLoginItemSettings).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ openAtLogin: false }));
+  });
+
+  it("reports a failed write instead of rejecting", async () => {
+    const { app, onError, apply } = setup("win32", async () => true);
+    app.setLoginItemSettings.mockImplementation(() => {
+      throw new Error("denied");
+    });
+    await expect(apply(true, { keepApproval: true })).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("on macOS writes at once and never reads the Windows registry", async () => {
+    const read = vi.fn(async () => false);
+    const { app, apply } = setup("darwin", read);
+    await apply(true, { keepApproval: true });
+    expect(app.setLoginItemSettings).toHaveBeenCalledExactlyOnceWith({ openAtLogin: true });
+    expect(read).not.toHaveBeenCalled();
   });
 });
 
