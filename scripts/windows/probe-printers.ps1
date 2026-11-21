@@ -30,23 +30,86 @@ function Get-VerifiedZebraUsbSerial([string]$instanceId) {
     return $null
 }
 
+# Port binding (review F1, wrong-printer safety). The ZDesigner driver leaves
+# Win32_Printer.PNPDeviceID empty (seen on a real ZD421, 2026-11-20), and a
+# PNPDeviceID that is present names a device but not the port the queue sends
+# to. The USB print class names each printer USBPRINT\<model>\<n>&...&<port>,
+# for example USBPRINT\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\6&1DBA03D&0&USB001
+# for the queue on USB001. So the device behind a queue is the present USBPRINT
+# device whose ID ends in "&" + that queue's PortName, and nothing else:
+# - "&" is the delimiter, so USB002 never matches ...&USB001 (or ...&USB0021).
+# - Exactly one such device is required. Zero or two means no serial.
+# - Windows can hand a port name to a different printer after a replug. The
+#   suffix only finds whichever device holds the port now; the parent walk then
+#   still needs a present Zebra USB parent with a unique serial, and the app
+#   still refuses to print unless that serial is the one it paired with.
+# The app checks the same rule again on usbPrintInstanceId (windowsDiscovery.ts).
+function Test-UsbPrintInstanceOnPort([string]$instanceId, [string]$portName) {
+    if ([string]::IsNullOrWhiteSpace($instanceId) -or $portName -notmatch '^USB[0-9]{3,}$') { return $false }
+    return $instanceId.StartsWith('USBPRINT\', [System.StringComparison]::OrdinalIgnoreCase) -and
+        $instanceId.EndsWith('&' + $portName, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Select-UsbPrintInstanceForPort([string]$portName, [string[]]$instanceIds) {
+    $found = @($instanceIds | Where-Object { Test-UsbPrintInstanceOnPort $_ $portName })
+    if ($found.Count -ne 1) { return $null }
+    return [string]$found[0]
+}
+
+# One PnP enumeration per run, and only when a queue needs it. A failure here
+# leaves the list empty, which gives no serial (fail closed), not a failed probe.
+$script:presentUsbPrintIds = $null
+function Get-PresentUsbPrintInstanceIds {
+    if ($null -eq $script:presentUsbPrintIds) {
+        try {
+            $script:presentUsbPrintIds = @(Get-PnpDevice -PresentOnly -ErrorAction Stop |
+                Where-Object { $_.Status -eq 'OK' -and ([string]$_.InstanceId).StartsWith('USBPRINT\', [System.StringComparison]::OrdinalIgnoreCase) } |
+                ForEach-Object { [string]$_.InstanceId })
+        } catch { $script:presentUsbPrintIds = @() }
+    }
+    return ,$script:presentUsbPrintIds
+}
+
 try {
     $printers = @(Get-CimInstance -ClassName Win32_Printer | ForEach-Object {
-        $serial = if ($_.Local -eq $true -and $_.Network -eq $false -and $_.PortName -match '^USB[0-9]{3,}$') {
-            Get-VerifiedZebraUsbSerial ([string]$_.PNPDeviceID)
-        } else { $null }
+        $queue = $_
+        $usbPrint = $null
+        $serial = $null
+        $evidence = $null
+        if ($queue.Local -eq $true -and $queue.Network -eq $false -and $queue.PortName -match '^USB[0-9]{3,}$') {
+            $port = [string]$queue.PortName
+            $pnp = [string]$queue.PNPDeviceID
+            if ([string]::IsNullOrWhiteSpace($pnp)) {
+                $usbPrint = Select-UsbPrintInstanceForPort $port (Get-PresentUsbPrintInstanceIds)
+                if ($null -ne $usbPrint) {
+                    $serial = Get-VerifiedZebraUsbSerial $usbPrint
+                    if ($null -ne $serial) { $evidence = 'usbprint-port' }
+                }
+            } elseif (Test-UsbPrintInstanceOnPort $pnp $port) {
+                # A PNPDeviceID on another port is not this queue's printer: no serial.
+                $usbPrint = $pnp
+                $serial = Get-VerifiedZebraUsbSerial $pnp
+                if ($null -ne $serial) { $evidence = 'unique-usb-parent' }
+            }
+        }
         [ordered]@{
-            queueName = [string]$_.Name
-            driverName = [string]$_.DriverName
-            portName = [string]$_.PortName
-            pnpDeviceId = if ($null -eq $_.PNPDeviceID) { $null } else { [string]$_.PNPDeviceID }
+            queueName = [string]$queue.Name
+            driverName = [string]$queue.DriverName
+            portName = [string]$queue.PortName
+            pnpDeviceId = if ($null -eq $queue.PNPDeviceID) { $null } else { [string]$queue.PNPDeviceID }
+            usbPrintInstanceId = $usbPrint
             verifiedUsbSerial = $serial
-            serialEvidence = if ($null -eq $serial) { $null } else { 'unique-usb-parent' }
-            isLocal = if ($null -eq $_.Local) { $null } else { [bool]$_.Local }
-            isNetwork = if ($null -eq $_.Network) { $null } else { [bool]$_.Network }
-            workOffline = if ($null -eq $_.WorkOffline) { $null } else { [bool]$_.WorkOffline }
-            printerStatus = if ($null -eq $_.PrinterStatus) { $null } else { [int]$_.PrinterStatus }
-            detectedErrorState = if ($null -eq $_.DetectedErrorState) { $null } else { [int]$_.DetectedErrorState }
+            serialEvidence = $evidence
+            isLocal = if ($null -eq $queue.Local) { $null } else { [bool]$queue.Local }
+            isNetwork = if ($null -eq $queue.Network) { $null } else { [bool]$queue.Network }
+            workOffline = if ($null -eq $queue.WorkOffline) { $null } else { [bool]$queue.WorkOffline }
+            printerStatus = if ($null -eq $queue.PrinterStatus) { $null } else { [int]$queue.PrinterStatus }
+            detectedErrorState = if ($null -eq $queue.DetectedErrorState) { $null } else { [int]$queue.DetectedErrorState }
+            # Optional since schemaVersion 1 (older probes omit them). PrinterState is the uint32 PRINTER_STATUS_*
+            # bitmask; [int64] keeps a high bit from overflowing [int]. The ZDesigner driver leaves
+            # DetectedErrorState at 0, so these are the fields that can still show paused, paper out, or offline.
+            printerState = if ($null -eq $queue.PrinterState) { $null } else { [int64]$queue.PrinterState }
+            extendedDetectedErrorState = if ($null -eq $queue.ExtendedDetectedErrorState) { $null } else { [int]$queue.ExtendedDetectedErrorState }
         }
     })
     [ordered]@{

@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 
 import { propertyParams } from "../../shared/testing/property";
-import { discoverWindowsPrinters, parseWindowsPrinterProbe, windowsZebraInstanceId } from "./windowsDiscovery";
+import { discoverWindowsPrinters, parseWindowsPrinterProbe, usbPrintInstanceOnPort, windowsZebraInstanceId } from "./windowsDiscovery";
 
 const printer = {
   queueName: "Favor Zebra",
@@ -23,7 +25,7 @@ describe("Windows discovery identity and queue observations", () => {
     expect(report.inspectedQueues).toBe(1);
     expect(report.candidates).toEqual([{
       queueName: printer.queueName, driverName: printer.driverName, portName: "USB001",
-      pnpDeviceId: printer.pnpDeviceId, verifiedUsbSerial: null, selectionKey: null,
+      pnpDeviceId: printer.pnpDeviceId, verifiedUsbSerial: null, serialEvidence: null, selectionKey: null,
       queueState: "available", problems: ["serial-unverified"],
     }]);
   });
@@ -46,7 +48,7 @@ describe("Windows discovery identity and queue observations", () => {
   it("fails closed on an unreadable row that carries serial evidence, so duplicate checks still see it", () => {
     const verified = { ...printer, verifiedUsbSerial: "D2J190800123", serialEvidence: "unique-usb-parent" };
     const plain = { queueName: "Floor 2", driverName: "Generic", pnpDeviceId: null, portName: "" };
-    for (const evidence of [{ verifiedUsbSerial: "D2J190800123" }, { serialEvidence: "unique-usb-parent" }, { serialEvidence: "source-unknown" }]) {
+    for (const evidence of [{ verifiedUsbSerial: "D2J190800123" }, { serialEvidence: "unique-usb-parent" }, { serialEvidence: "source-unknown" }, { usbPrintInstanceId: "USBPRINT\\X\\1&0&USB009" }]) {
       expect(() => parseWindowsPrinterProbe(probe([{ ...printer, ...plain, ...evidence }, verified]))).toThrow("invalid-probe");
     }
     // No evidence at all: the unrelated row is still skipped.
@@ -139,7 +141,8 @@ describe("Windows discovery identity and queue observations", () => {
     for (const [patch, expected] of [
       [{ workOffline: true }, "offline"], [{ printerStatus: 7 }, "offline"], [{ detectedErrorState: 9 }, "offline"],
       [{ printerStatus: 6 }, "attention"], [{ detectedErrorState: 8 }, "attention"],
-      [{ printerStatus: null }, "unknown"], [{ detectedErrorState: null }, "unknown"],
+      [{ printerStatus: null }, "unknown"], [{ detectedErrorState: null }, "unknown"], [{ detectedErrorState: 1 }, "unknown"],
+      [{ printerStatus: 7, detectedErrorState: 0 }, "offline"], [{ workOffline: true, detectedErrorState: 0 }, "offline"],
       [{ printerStatus: 65535 }, "unknown"], [{ detectedErrorState: 65535 }, "unknown"],
     ] as const) {
       const candidate = parseWindowsPrinterProbe(probe([{ ...printer, ...patch }])).candidates[0];
@@ -149,9 +152,9 @@ describe("Windows discovery identity and queue observations", () => {
   });
 
   it("enables only proven unique USB parents, not spooler names or synthetic PnP instance tails", () => {
-    const verified = { ...printer, verifiedUsbSerial: "D2J190800123", serialEvidence: "unique-usb-parent" };
+    const verified = { ...printer, usbPrintInstanceId: printer.pnpDeviceId, verifiedUsbSerial: "D2J190800123", serialEvidence: "unique-usb-parent" };
     expect(parseWindowsPrinterProbe(probe([verified])).candidates[0]).toMatchObject({
-      verifiedUsbSerial: "D2J190800123", selectionKey: `windows-pnp:${printer.pnpDeviceId.toUpperCase()}`, problems: [],
+      verifiedUsbSerial: "D2J190800123", serialEvidence: "unique-usb-parent", selectionKey: `windows-pnp:${printer.pnpDeviceId.toUpperCase()}`, problems: [],
     });
     for (const patch of [
       { serialEvidence: null }, { serialEvidence: "source-unknown" }, { verifiedUsbSerial: "6&123&0&USB001" },
@@ -166,7 +169,8 @@ describe("Windows discovery identity and queue observations", () => {
         expect(candidate.problems).toContain("serial-unverified");
       }
     }
-    const duplicated = parseWindowsPrinterProbe(probe([verified, { ...verified, queueName: "Second Zebra", pnpDeviceId: "USB\\VID_0A5F&PID_0185\\OTHER" }])).candidates;
+    const other = "USBPRINT\\Zebra_TechnologiesZTCZD421\\7&9999&0&USB002";
+    const duplicated = parseWindowsPrinterProbe(probe([verified, { ...verified, queueName: "Second Zebra", portName: "USB002", pnpDeviceId: other, usbPrintInstanceId: other }])).candidates;
     expect(duplicated.every((row) => row.problems.includes("duplicate-usb-serial") && row.selectionKey === null)).toBe(true);
   });
 
@@ -226,5 +230,234 @@ describe("Windows probe process boundary", () => {
       await expect(discoverWindowsPrinters({ platform: "win32", run, ...paths })).rejects.toMatchObject({ reason });
       expect(run).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+// Captured on Windows 11 with a Zebra ZD421 on the official ZDesigner driver (2026-11-20), as the probe now
+// reports it. Win32_Printer leaves PNPDeviceID empty for this driver and reports an idle queue as PrinterStatus 3
+// with DetectedErrorState 0, like the PC's other local queues.
+const REAL_USBPRINT = "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB001";
+const realZd421 = {
+  queueName: "ZDesigner ZD421-203dpi ZPL", driverName: "ZDesigner ZD421-203dpi ZPL", portName: "USB001",
+  pnpDeviceId: null, usbPrintInstanceId: REAL_USBPRINT, verifiedUsbSerial: "D8J253115309", serialEvidence: "usbprint-port",
+  isLocal: true, isNetwork: false, workOffline: false, printerStatus: 3, detectedErrorState: 0,
+  printerState: 0, extendedDetectedErrorState: 0,
+};
+const realOthers = [
+  { queueName: "OneNote (Desktop)", driverName: "Send to Microsoft OneNote 16 Driver", portName: "nul:", pnpDeviceId: null, usbPrintInstanceId: null, verifiedUsbSerial: null, serialEvidence: null, isLocal: true, isNetwork: false, workOffline: false, printerStatus: 3, detectedErrorState: 0 },
+  { queueName: "Microsoft Print to PDF", driverName: "Microsoft Print To PDF", portName: "PORTPROMPT:", pnpDeviceId: null, usbPrintInstanceId: null, verifiedUsbSerial: null, serialEvidence: null, isLocal: true, isNetwork: false, workOffline: false, printerStatus: 3, detectedErrorState: 0 },
+];
+
+describe("real ZD421 on the ZDesigner driver (empty PNPDeviceID, DetectedErrorState 0)", () => {
+  it("offers the Zebra with its USB serial and a ready queue, and ignores the other queues", () => {
+    const report = parseWindowsPrinterProbe(probe([...realOthers, realZd421]));
+    expect(report.inspectedQueues).toBe(3);
+    expect(report.candidates).toEqual([{
+      queueName: realZd421.queueName, driverName: realZd421.driverName, portName: "USB001",
+      pnpDeviceId: null, verifiedUsbSerial: "D8J253115309", serialEvidence: "usbprint-port",
+      selectionKey: `windows-pnp:${REAL_USBPRINT}`, queueState: "available", problems: [],
+    }]);
+  });
+
+  it("refuses a port-found serial when the USBPRINT device is on another port", () => {
+    for (const patch of [
+      { portName: "USB002" },
+      { usbPrintInstanceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB002" },
+      { portName: "USB00", usbPrintInstanceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB001" },
+      { portName: "USB002", usbPrintInstanceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB0021" },
+      { usbPrintInstanceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0USB001" },
+      { usbPrintInstanceId: null }, { usbPrintInstanceId: "USB\\VID_0A5F&PID_0185\\D8J253115309" },
+      { usbPrintInstanceId: "USBPRINT\\HP_LASER\\6&1DBA03D&0&USB001" },
+    ]) {
+      const [candidate] = parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates;
+      expect(candidate.verifiedUsbSerial).toBeNull();
+      expect(candidate.serialEvidence).toBeNull();
+      expect(candidate.selectionKey).toBeNull();
+      expect(candidate.problems).toContain("serial-unverified");
+    }
+  });
+
+  it("cross-checks the evidence against PNPDeviceID (review F1)", () => {
+    // Port evidence is only valid when Windows gave no PNPDeviceID.
+    const portWithPnp = parseWindowsPrinterProbe(probe([{ ...realZd421, pnpDeviceId: REAL_USBPRINT }])).candidates[0];
+    expect(portWithPnp.problems).toContain("serial-unverified");
+    // A PNPDeviceID walk must be from the very USBPRINT device on the queue's port.
+    const pnp = { ...realZd421, pnpDeviceId: REAL_USBPRINT, serialEvidence: "unique-usb-parent" };
+    expect(parseWindowsPrinterProbe(probe([pnp])).candidates[0]).toMatchObject({ verifiedUsbSerial: "D8J253115309", serialEvidence: "unique-usb-parent", problems: [] });
+    for (const patch of [
+      { pnpDeviceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&99&0&USB001" },
+      { pnpDeviceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB002", usbPrintInstanceId: "USBPRINT\\ZEBRA_TECHNOLOGIES_ZTC_ZD421-203DPI_ZPL\\6&1DBA03D&0&USB002" },
+      { pnpDeviceId: "USB\\VID_0A5F&PID_0185\\D8J253115309", usbPrintInstanceId: "USB\\VID_0A5F&PID_0185\\D8J253115309" },
+      { pnpDeviceId: null },
+    ]) {
+      expect(parseWindowsPrinterProbe(probe([{ ...pnp, ...patch }])).candidates[0].problems).toContain("serial-unverified");
+    }
+  });
+
+  it("blocks two queues that claim the same port-found device", () => {
+    const candidates = parseWindowsPrinterProbe(probe([realZd421, { ...realZd421, queueName: "Zebra copy" }])).candidates;
+    expect(candidates).toHaveLength(2);
+    for (const candidate of candidates) {
+      expect(candidate.selectionKey).toBeNull();
+      expect(candidate.problems).toEqual(expect.arrayContaining(["duplicate-hardware-id", "duplicate-usb-serial"]));
+    }
+  });
+
+  it("matches the port only as the whole last segment of a Zebra USBPRINT ID", () => {
+    expect(usbPrintInstanceOnPort(REAL_USBPRINT, "USB001")).toBe(true);
+    expect(usbPrintInstanceOnPort(REAL_USBPRINT.toLowerCase(), "usb001")).toBe(true);
+    for (const [id, port] of [
+      [REAL_USBPRINT, "USB002"], [REAL_USBPRINT, "USB01"], [REAL_USBPRINT, "SB001"], [REAL_USBPRINT, "nul:"],
+      [`${REAL_USBPRINT}1`, "USB001"], [null, "USB001"], ["USB\\VID_0A5F&PID_0185\\X&USB001", "USB001"],
+    ] as const) {
+      expect(usbPrintInstanceOnPort(id, port)).toBe(false);
+    }
+  });
+
+  it("treats DetectedErrorState 0 as ready only while idle, printing, or warming up and not offline", () => {
+    for (const printerStatus of [3, 4, 5]) {
+      expect(parseWindowsPrinterProbe(probe([{ ...realZd421, printerStatus }])).candidates[0].queueState).toBe("available");
+    }
+    for (const [patch, expected] of [
+      [{ printerStatus: 7 }, "offline"], [{ workOffline: true }, "offline"], [{ printerStatus: 1 }, "unknown"],
+      [{ printerStatus: 2 }, "unknown"], [{ printerStatus: null }, "unknown"], [{ detectedErrorState: 1 }, "unknown"],
+      [{ detectedErrorState: 4 }, "attention"], [{ detectedErrorState: 6 }, "attention"], [{ detectedErrorState: 7 }, "attention"],
+      [{ detectedErrorState: 9 }, "offline"], [{ detectedErrorState: null }, "unknown"],
+    ] as const) {
+      expect(parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates[0].queueState).toBe(expected);
+    }
+  });
+
+  it("lets DetectedErrorState 3 Low Paper and 5 Low Toner print, like ExtendedDetectedErrorState 3 and 5", () => {
+    const stateWith = (patch: Record<string, unknown>) => parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates[0].queueState;
+    for (const detectedErrorState of [3, 5]) {
+      for (const printerStatus of [3, 4, 5]) {
+        expect([detectedErrorState, printerStatus, stateWith({ detectedErrorState, printerStatus })]).toEqual([detectedErrorState, printerStatus, "available"]);
+      }
+      // A warning alone does not make the queue available: the rest of the rules still apply.
+      expect(stateWith({ detectedErrorState, printerStatus: 1 })).toBe("unknown");
+      expect(stateWith({ detectedErrorState, printerStatus: 6 })).toBe("attention");
+      expect(stateWith({ detectedErrorState, printerStatus: 7 })).toBe("offline");
+      expect(stateWith({ detectedErrorState, printerState: 0x10 })).toBe("attention");
+      expect(stateWith({ detectedErrorState, extendedDetectedErrorState: 4 })).toBe("attention");
+    }
+    for (const detectedErrorState of [4, 6, 7, 8, 10, 11]) {
+      expect([detectedErrorState, stateWith({ detectedErrorState })]).toEqual([detectedErrorState, "attention"]);
+    }
+  });
+
+  // DetectedErrorState 0 is "the driver reports no status", so PrinterState (PRINTER_STATUS_* bits) and
+  // ExtendedDetectedErrorState must still turn the queue away. Not yet captured on hardware: synthetic values.
+  const stateOf = (patch: Record<string, unknown>) => parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }])).candidates[0].queueState;
+
+  it("keeps the real idle values (PrinterState 0, ExtendedDetectedErrorState 0) available", () => {
+    expect(stateOf({})).toBe("available");
+  });
+
+  it("keeps the old rule when an older probe omits PrinterState or reports it as null", () => {
+    const older = Object.fromEntries(Object.entries(realZd421).filter(([key]) => key !== "printerState" && key !== "extendedDetectedErrorState"));
+    expect(older).not.toHaveProperty("printerState");
+    expect(parseWindowsPrinterProbe(probe([older])).candidates[0].queueState).toBe("available");
+    expect(stateOf({ printerState: null, extendedDetectedErrorState: null })).toBe("available");
+    expect(stateOf({ printerState: null, printerStatus: 7 })).toBe("offline");
+  });
+
+  it("needs attention for paused, error, paper, door, toner, memory, and intervention bits", () => {
+    for (const bit of [0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x800, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000, 0x4000000]) {
+      expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "attention"]);
+      expect([bit, stateOf({ printerState: bit | 0x400 })]).toEqual([bit, "attention"]);
+    }
+  });
+
+  it("is offline for offline, not-available, and server bits, ahead of any attention bit", () => {
+    for (const bit of [0x80, 0x1000, 0x800000, 0x2000000]) {
+      expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "offline"]);
+      expect([bit, stateOf({ printerState: bit | 0x1 | 0x10 })]).toEqual([bit, "offline"]);
+    }
+  });
+
+  it("stays available for busy, printing, warming-up, toner-low, and power-save bits", () => {
+    for (const bit of [0x100, 0x200, 0x400, 0x2000, 0x4000, 0x8000, 0x10000, 0x20000, 0x1000000]) {
+      expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "available"]);
+    }
+  });
+
+  it("does not call a queue available when PrinterState has a bit this code does not name", () => {
+    for (const bit of [0x8000000, 0x80000000]) expect([bit, stateOf({ printerState: bit })]).toEqual([bit, "unknown"]);
+    expect(stateOf({ printerState: 0xffffffff })).toBe("offline");
+  });
+
+  it("stays available for ExtendedDetectedErrorState 0 Unknown, 2 No Error, 3 Low Paper and 5 Low Toner", () => {
+    for (const extendedDetectedErrorState of [0, 2, 3, 5]) {
+      expect([extendedDetectedErrorState, stateOf({ extendedDetectedErrorState })]).toEqual([extendedDetectedErrorState, "available"]);
+    }
+  });
+
+  it("needs attention for any other ExtendedDetectedErrorState", () => {
+    for (const extendedDetectedErrorState of [1, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 65535]) {
+      expect([extendedDetectedErrorState, stateOf({ extendedDetectedErrorState })]).toEqual([extendedDetectedErrorState, "attention"]);
+    }
+    expect(stateOf({ extendedDetectedErrorState: 3, workOffline: true })).toBe("offline");
+  });
+
+  it("fails closed on a PrinterState or ExtendedDetectedErrorState outside its CIM type", () => {
+    for (const patch of [
+      { printerState: -1 }, { printerState: 0x100000000 }, { printerState: 1.5 }, { printerState: "0" },
+      { extendedDetectedErrorState: -1 }, { extendedDetectedErrorState: 65536 }, { extendedDetectedErrorState: "0" },
+    ]) {
+      expect(() => parseWindowsPrinterProbe(probe([{ ...realZd421, ...patch }]))).toThrow("invalid-probe");
+    }
+  });
+});
+
+// The .ps1 port binding and status fields are only checked as text here: PowerShell does not run in this suite, so
+// a logic error the assertions below do not spell out would only show on a Windows PC (review nit).
+describe("probe script port binding (read as text; PowerShell does not run here)", () => {
+  const script = readFileSync(new URL("../../../../scripts/windows/probe-printers.ps1", import.meta.url), "utf8");
+  const fn = (name: string) => {
+    const start = script.indexOf(`function ${name}`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    return script.slice(start, script.indexOf("\n}\n", start));
+  };
+
+  it("ties a USBPRINT device to a queue only by an '&' + PortName suffix, case-insensitively", () => {
+    const test = fn("Test-UsbPrintInstanceOnPort");
+    expect(test).toContain("$portName -notmatch '^USB[0-9]{3,}$'");
+    expect(test).toContain("$instanceId.StartsWith('USBPRINT\\', [System.StringComparison]::OrdinalIgnoreCase)");
+    expect(test).toContain("$instanceId.EndsWith('&' + $portName, [System.StringComparison]::OrdinalIgnoreCase)");
+  });
+
+  it("requires exactly one present, working USBPRINT device on the port", () => {
+    const select = fn("Select-UsbPrintInstanceForPort");
+    expect(select).toContain("Where-Object { Test-UsbPrintInstanceOnPort $_ $portName }");
+    expect(select).toContain("if ($found.Count -ne 1) { return $null }");
+    const present = fn("Get-PresentUsbPrintInstanceIds");
+    expect(present).toContain("Get-PnpDevice -PresentOnly -ErrorAction Stop");
+    expect(present).toContain("$_.Status -eq 'OK'");
+    expect(present).toContain("catch { $script:presentUsbPrintIds = @() }");
+  });
+
+  it("uses the port lookup only for an empty PNPDeviceID and cross-checks a present one", () => {
+    expect(script).toContain("if ([string]::IsNullOrWhiteSpace($pnp)) {\n                $usbPrint = Select-UsbPrintInstanceForPort $port (Get-PresentUsbPrintInstanceIds)");
+    expect(script).toContain("} elseif (Test-UsbPrintInstanceOnPort $pnp $port) {");
+    expect(script).toContain("if ($null -ne $serial) { $evidence = 'usbprint-port' }");
+    expect(script).toContain("if ($null -ne $serial) { $evidence = 'unique-usb-parent' }");
+    expect(script).toContain("usbPrintInstanceId = $usbPrint");
+    // Both paths still need the Zebra USB parent with CM_DEVCAP_UNIQUEID.
+    expect(fn("Get-VerifiedZebraUsbSerial")).toContain("([int]$cap.Data -band 16) -ne 16");
+    expect(script.match(/Get-VerifiedZebraUsbSerial \$/g)).toHaveLength(2);
+  });
+
+  it("stays read-only and does not bypass execution policy", () => {
+    expect(script).not.toMatch(/\b(?:Set|Remove|Add|Enable|Disable|Install|Uninstall|Restart|Invoke|Start|Stop)-[A-Z]|\bNew-(?!Object\b)/);
+    expect(script).not.toMatch(/Bypass|Unrestricted/i);
+  });
+
+  it("reports PrinterState as a full uint32 and ExtendedDetectedErrorState, null when Windows has none", () => {
+    expect(script).toContain("printerState = if ($null -eq $queue.PrinterState) { $null } else { [int64]$queue.PrinterState }");
+    expect(script).toContain(
+      "extendedDetectedErrorState = if ($null -eq $queue.ExtendedDetectedErrorState) { $null } else { [int]$queue.ExtendedDetectedErrorState }",
+    );
+    expect(script).toContain("schemaVersion = 1");
   });
 });
