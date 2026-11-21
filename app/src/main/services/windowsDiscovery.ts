@@ -6,6 +6,7 @@
 
 import path from "node:path";
 
+import { validateWindowsQueueName } from "../../../../vendor/relay/windowsSpooler";
 import { isUsableUsbSerial } from "../../shared";
 import type { CommandRunner } from "./command";
 
@@ -17,7 +18,8 @@ export type WindowsDiscoveryProblem =
   | "duplicate-queue-name"
   | "duplicate-hardware-id"
   | "serial-unverified"
-  | "duplicate-usb-serial";
+  | "duplicate-usb-serial"
+  | "unsupported-queue-name";
 
 export type WindowsQueueState = "available" | "offline" | "attention" | "unknown";
 
@@ -126,6 +128,28 @@ function queueState(row: ProbePrinter): WindowsQueueState {
   return "unknown";
 }
 
+function namesAQueue(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const name = (value as Record<string, unknown>).queueName;
+  return typeof name === "string" && name.length > 0;
+}
+
+/** Loose on purpose: used only to decide that an unreadable row must not be ignored. */
+function couldBeZebra(row: Record<string, unknown>): boolean {
+  return [row.queueName, row.driverName, row.pnpDeviceId].some(
+    (value) => typeof value === "string" && /zebra|zdesigner|ztc|VID_0A5F/i.test(value),
+  );
+}
+
+function isPrintableQueueName(name: string): boolean {
+  try {
+    validateWindowsQueueName(name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function counts(values: string[]): Map<string, number> {
   const result = new Map<string, number>();
   for (const value of values) result.set(value, (result.get(value) ?? 0) + 1);
@@ -145,7 +169,16 @@ export function parseWindowsPrinterProbe(stdout: string): WindowsDiscoveryReport
   if (payload.schemaVersion !== 1 || payload.source !== "Win32_Printer" || !Array.isArray(payload.printers) || payload.printers.length > MAX_QUEUES) {
     throw new WindowsDiscoveryError("invalid-probe");
   }
-  const rows = payload.printers.map(readPrinter);
+  const rows: ProbePrinter[] = [];
+  for (const raw of payload.printers) {
+    try {
+      rows.push(readPrinter(raw));
+    } catch (error) {
+      // One unrelated queue with an unusable field (an empty port, a null flag) must not turn printing off for
+      // a Zebra on the same PC. A row that could be a Zebra, or that does not even name a queue, still fails closed.
+      if (!(error instanceof WindowsDiscoveryError) || !namesAQueue(raw) || couldBeZebra(raw)) throw error;
+    }
+  }
   const queueNames = counts(rows.map((row) => row.queueName.toUpperCase()));
   const instanceIds = counts(rows.map((row) => windowsZebraInstanceId(row.pnpDeviceId)).filter((id): id is string => id !== null));
   const serials = counts(rows.filter((row) => row.serialEvidence === "unique-usb-parent" && isUsableUsbSerial(row.verifiedUsbSerial)).map((row) => row.verifiedUsbSerial!.toUpperCase()));
@@ -163,6 +196,9 @@ export function parseWindowsPrinterProbe(stdout: string): WindowsDiscoveryReport
     if (!serial) problems.push("serial-unverified");
     if (serial && (serials.get(serial.toUpperCase()) ?? 0) > 1) problems.push("duplicate-usb-serial");
     if ((queueNames.get(row.queueName.toUpperCase()) ?? 0) > 1) problems.push("duplicate-queue-name");
+    // Printing only accepts names it can hand to the spooler helper as plain argv data. A queue it would refuse
+    // must not be offered, or the one-time pairing code is spent on a printer that can never print.
+    if (!isPrintableQueueName(row.queueName)) problems.push("unsupported-queue-name");
     if (instanceId && (instanceIds.get(instanceId) ?? 0) > 1) problems.push("duplicate-hardware-id");
     candidates.push({
       queueName: row.queueName,
@@ -175,7 +211,7 @@ export function parseWindowsPrinterProbe(stdout: string): WindowsDiscoveryReport
       problems,
     });
   }
-  return { inspectedQueues: rows.length, candidates };
+  return { inspectedQueues: payload.printers.length, candidates };
 }
 
 /** Uses the existing execFile boundary. The fixed probe gets no queue names or interpolated commands. */
