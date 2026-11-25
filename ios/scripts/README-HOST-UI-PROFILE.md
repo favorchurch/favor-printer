@@ -9,6 +9,6 @@ cd ios
 FAVOR_UI_TEST_DESTINATION='platform=iOS Simulator,name=iPad Air 13-inch (M4)' scripts/profile-host-ui-tests.sh
 ```
 
-This exercises **only** `HostStatusUITests` with Debug fake relay/transport and records a dated log, `.xcresult` bundle and `history.csv` in `ios/.ui-test-profile`. Compare the duration for the **same** simulator, Xcode, hardware, test subset and clean/warm boot state; investigate the trace rather than disabling assertions or swallowing tests. Target: **under 120 seconds**, without reduced coverage. It does not run on Linux, sign/release a build or print to a real Zebra.
+This exercises **only** the three `HostStatusUITests` methods in `HostStatusUITests.swift` (selected by name, so the extra methods in `HostStatusTests.swift` are excluded) with Debug fake relay/transport and records a dated log, `.xcresult` bundle and `history.csv` in `ios/.ui-test-profile`. Compare the duration for the **same** simulator, Xcode, hardware, test subset and clean/warm boot state; investigate the trace rather than disabling assertions or swallowing tests. Target: **under 120 seconds**, without reduced coverage. It does not run on Linux, sign/release a build or print to a real Zebra.
 
 The harness changes no production behavior. Keep #44 open until actual after-change timing and three Xcode-hosted test results are attached.

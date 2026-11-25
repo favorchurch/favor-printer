@@ -19,13 +19,15 @@ results="$output/host-status-$timestamp.xcresult"
 start="$(date +%s)"
 
 xcodegen generate >/dev/null
-echo "Profiling HostStatusUITests, destination: $destination"
+echo "Profiling HostStatusUITests (3 methods), destination: $destination"
 echo "Result bundle: $results"
 set +e
 xcodebuild test \
   -scheme FavorPrinter \
   -destination "$destination" \
-  -only-testing:FavorPrinterUITests/HostStatusUITests \
+  -only-testing:FavorPrinterUITests/HostStatusUITests/testFakeRelayShowsStatusAndPrintsTheSyntheticLabel \
+  -only-testing:FavorPrinterUITests/HostStatusUITests/testEnrollFormRefusesAConflictThenEnrollsAndUnenrolls \
+  -only-testing:FavorPrinterUITests/HostStatusUITests/testDriverNotRunningShowsTheSettingsHintAndRefusesEnrollment \
   -resultBundlePath "$results" \
   2>&1 | tee "$log"
 test_exit=${PIPESTATUS[0]}
