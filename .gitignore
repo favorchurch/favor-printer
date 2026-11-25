@@ -15,3 +15,6 @@ __pycache__/
 
 # Local release secrets (signing keychain password, .p12 backup, API keys)
 .secrets/
+
+# Local iOS UI-test performance artifacts
+ios/.ui-test-profile/
