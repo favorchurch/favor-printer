@@ -352,12 +352,28 @@ struct RelayAPIClient: Sendable, CustomStringConvertible, CustomDebugStringConve
         try await post("/rename", body: body, as: RelayRenameResponse.self)
     }
 
+    /// The cloud job id is an opaque identifier, never a trusted URL path.
+    /// Do not let a malformed claim redirect a bearer-bearing request to a
+    /// different route; no retry is safe until the cloud fixes its job id.
+    private func validatedJobPath(_ jobId: String, action: String) throws -> String {
+        guard !jobId.isEmpty, jobId.utf8.count <= 80,
+              let first = jobId.utf8.first, Self.isAlphaNumeric(first),
+              jobId.utf8.dropFirst().allSatisfy({ Self.isAlphaNumeric($0) || $0 == 45 || $0 == 95 }) else {
+            throw RelayFailure.invalidResponse
+        }
+        return "/jobs/\(jobId)/\(action)"
+    }
+
+    private static func isAlphaNumeric(_ value: UInt8) -> Bool {
+        (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57)
+    }
+
     func sending(jobId: String, claimToken: String) async throws -> RelayJobCallResult {
-        try await jobCall("/jobs/\(jobId)/sending", body: ClaimTokenBody(claimToken: claimToken))
+        try await jobCall(try validatedJobPath(jobId, action: "sending"), body: ClaimTokenBody(claimToken: claimToken))
     }
 
     func report(jobId: String, claimToken: String, outcome: RelayReportOutcome, error: String? = nil) async throws -> RelayJobCallResult {
-        try await jobCall("/jobs/\(jobId)/report", body: ReportBody(claimToken: claimToken, outcome: outcome, error: error))
+        try await jobCall(try validatedJobPath(jobId, action: "report"), body: ReportBody(claimToken: claimToken, outcome: outcome, error: error))
     }
 
     private func jobCall(_ path: String, body: some Encodable) async throws -> RelayJobCallResult {
