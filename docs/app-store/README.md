@@ -6,7 +6,7 @@ Favor Printer is a dedicated iPad USB Zebra **print relay** for the Favor RSVP w
 
 ## Supported operating mode
 
-- Keep the iPad unlocked, in the foreground, attached to a compatible USB Zebra; use Guided Access and Auto-Lock Never. Backgrounding, locking, switching apps and interruptions **pause claiming**; queue remains in the cloud. Mac relay is the fallback.
+- Keep the iPad unlocked, in the foreground, attached to a compatible USB Zebra; use Guided Access and Auto-Lock Never. Claiming **pauses when the app enters the background** (locking the iPad or switching apps). A brief `inactive` state, such as a system sheet or the app switcher, does not pause it by itself, so do not rely on interruptions to stop claiming; queue remains in the cloud. Mac relay is the fallback.
 - Debug/Internal audio/background experiments are **not an approved App Store capability**. The public Release build does not claim continuous background printing.
 - Default intended distribution: **unlisted iPad App Store app via direct link**, **only after Apple entitlement approval, TestFlight device/hardware verification, legal signoff and explicit release authorization**.
 - The internal iPad keep-alive build is separate from this release. It may go to internal TestFlight testers only (see [IPAD-INSTALL.md](../IPAD-INSTALL.md)) and must never be an external TestFlight build or the binary submitted for App Review (guideline 2.5.4).
