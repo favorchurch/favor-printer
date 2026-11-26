@@ -143,6 +143,8 @@ export type AppController = {
   /** Stops the relay for quit. `jobInFlight` says whether a send was still writing. */
   shutdown(): Promise<{ outcome: StopOutcome; jobInFlight: boolean }>;
   jobInFlight(): boolean;
+  /** Claimed jobs with no recorded outcome in the relay's last status (claimed > sent + failed + ambiguous). 0 with no status. */
+  pendingEntries(): number;
   /** Resolves when the relay has stopped or exited. */
   settled(): Promise<void>;
 };
@@ -184,6 +186,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   let renamesInFlight = 0;
   /** Last cloud state the relay reported. Names are read when it turns ok, not on every status event (heartbeats, each label). */
   let lastRelayCloud: string | null = null;
+  let lastRelayCounts: RelayStatus["counts"] | null = null;
   let scanTimer: unknown = null;
   let supervisorState: SupervisorState = {
     phase: "idle",
@@ -283,6 +286,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       if (status.cloud === "revoked") void handleRevoked();
       if (status.cloud === "ok" && lastRelayCloud !== "ok") void syncCloudNames();
       lastRelayCloud = status.cloud;
+      lastRelayCounts = status.counts;
       // A running relay that reached the cloud still holds its binding, so a conflict left by a
       // re-enroll attempt is over and must not keep the status on "In use elsewhere".
       if (inUseElsewhere && status.state === "running" && status.cloud === "ok") {
@@ -897,6 +901,12 @@ export function createAppController(deps: ControllerDeps): AppController {
     },
 
     jobInFlight: () => supervisor.jobInFlight(),
+
+    pendingEntries() {
+      if (!lastRelayCounts) return 0;
+      const { claimed, sent, failed, ambiguous } = lastRelayCounts;
+      return Math.max(0, claimed - sent - failed - ambiguous);
+    },
 
     settled: () => supervisor.settled(),
   };

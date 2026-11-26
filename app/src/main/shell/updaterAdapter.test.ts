@@ -198,14 +198,14 @@ describe("install gating by the update policy", () => {
   it("installs at quit when an update is ready and no job is in flight", () => {
     const { controller, emit, updater } = policy();
     emit("update-downloaded", { version: "0.2.0" });
-    expect(controller.beforeQuit(false)).toBe("install");
+    expect(controller.beforeQuit(false, 0)).toBe("install");
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
   it("holds the install while a job is in flight, then installs when it settles", () => {
     const { controller, emit, updater } = policy();
     emit("update-downloaded", { version: "0.2.0" });
-    expect(controller.beforeQuit(true)).toBe("defer");
+    expect(controller.beforeQuit(true, 0)).toBe("defer");
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
     controller.jobsSettled();
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(1);
@@ -213,7 +213,7 @@ describe("install gating by the update policy", () => {
 
   it("does nothing at quit when no update was downloaded, and never auto installs", () => {
     const { controller, updater } = policy();
-    expect(controller.beforeQuit(false)).toBe("none");
+    expect(controller.beforeQuit(false, 0)).toBe("none");
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
     expect(updater.autoInstallOnAppQuit).toBe(false);
   });
@@ -266,7 +266,7 @@ describe("pinned electron-updater 6.8.9", () => {
     controller.jobsSettled();
     expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
 
-    expect(controller.beforeQuit(false)).toBe("install");
+    expect(controller.beforeQuit(false, 0)).toBe("install");
     expect(fake.updater.quitAndInstall).toHaveBeenCalledExactlyOnceWith(false, true);
   });
 
@@ -275,7 +275,7 @@ describe("pinned electron-updater 6.8.9", () => {
     const adapter = createUpdaterAdapter(fake.updater, () => undefined);
     const controller = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
     fake.emit("update-downloaded", { version: "0.2.0" });
-    expect(controller.beforeQuit(true)).toBe("defer");
+    expect(controller.beforeQuit(true, 0)).toBe("defer");
     expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
   });
 

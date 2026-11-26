@@ -48,10 +48,13 @@ describe("channelSettings", () => {
 
 describe("installDecision", () => {
   it.each([
-    [{ updateReady: false, jobInFlight: false }, "none"],
-    [{ updateReady: false, jobInFlight: true }, "none"],
-    [{ updateReady: true, jobInFlight: false }, "install"],
-    [{ updateReady: true, jobInFlight: true }, "defer"],
+    [{ updateReady: false, jobInFlight: false, pendingEntries: 0 }, "none"],
+    [{ updateReady: false, jobInFlight: true, pendingEntries: 0 }, "none"],
+    [{ updateReady: false, jobInFlight: false, pendingEntries: 3 }, "none"],
+    [{ updateReady: true, jobInFlight: false, pendingEntries: 0 }, "install"],
+    [{ updateReady: true, jobInFlight: true, pendingEntries: 0 }, "defer"],
+    [{ updateReady: true, jobInFlight: false, pendingEntries: 1 }, "defer"],
+    [{ updateReady: true, jobInFlight: true, pendingEntries: 2 }, "defer"],
   ] as const)("%j -> %s", (input, decision) => {
     expect(installDecision(input)).toBe(decision);
   });
@@ -220,8 +223,8 @@ describe("update state", () => {
 describe("install deferral", () => {
   it("does nothing at quit when no update is downloaded", () => {
     const { adapter, controller } = setup();
-    expect(controller.beforeQuit(false)).toBe("none");
-    expect(controller.beforeQuit(true)).toBe("none");
+    expect(controller.beforeQuit(false, 0)).toBe("none");
+    expect(controller.beforeQuit(true, 0)).toBe("none");
     controller.jobsSettled();
     expect(adapter.quitAndInstall).not.toHaveBeenCalled();
   });
@@ -229,7 +232,7 @@ describe("install deferral", () => {
   it("installs at quit when an update is ready and no job is in flight", () => {
     const { adapter, controller, emit } = setup();
     emit({ kind: "downloaded", version: "0.2.0" });
-    expect(controller.beforeQuit(false)).toBe("install");
+    expect(controller.beforeQuit(false, 0)).toBe("install");
     expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
@@ -237,7 +240,7 @@ describe("install deferral", () => {
     const { adapter, controller, emit } = setup();
     emit({ kind: "downloaded", version: "0.2.0" });
 
-    expect(controller.beforeQuit(true)).toBe("defer");
+    expect(controller.beforeQuit(true, 0)).toBe("defer");
     expect(adapter.quitAndInstall).not.toHaveBeenCalled();
 
     controller.jobsSettled();
