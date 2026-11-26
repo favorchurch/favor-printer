@@ -267,7 +267,7 @@ Shown on the iPad host status screen only when the update check finds a newer re
 
 - **Card Title:** `Update available`
 - **Latest Row:** `Latest` / `{version} ({build})`, for example `0.3.0 (412)`
-- **Button, OTA install:** `Install update`
-- **Button, TestFlight install:** `Open TestFlight`
+- **Button, OTA install:** `Open install page`
+- **Button, TestFlight install:** `Update in TestFlight`
 - **Installed Version Row (App card):** `Version` / `{version} ({build})`
 - **No update, development build, or untrusted/failed check:** no card and no error text.

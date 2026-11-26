@@ -26,10 +26,10 @@ The iPad app checks for updates itself. When a newer build is released for the w
 screen shows an **Update available** card with the latest version and build, and one button. The app never opens the
 button's target on its own. It opens only when you tap.
 
-| Installed through                                                | Button              | What happens                                                                      |
-| ---------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------- |
-| OTA (**Install on iPad** on <https://rsvp.favor.church/printer>) | **Install update**  | Opens the OTA install link. iOS asks to install over the current app.             |
-| TestFlight                                                       | **Open TestFlight** | Opens TestFlight, which owns updates for TestFlight builds. Tap **Update** there. |
+| Installed through                                                | Button                   | What happens                                                                      |
+| ---------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------- |
+| OTA (**Install on iPad** on <https://rsvp.favor.church/printer>) | **Open install page**    | Opens the OTA install link. iOS asks to install over the current app.             |
+| TestFlight                                                       | **Update in TestFlight** | Opens TestFlight, which owns updates for TestFlight builds. Tap **Update** there. |
 
 The status screen's **Version** row shows the installed version and build.
 
