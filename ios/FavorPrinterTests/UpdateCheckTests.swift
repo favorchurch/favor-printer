@@ -126,6 +126,13 @@ struct UpdateCheckModelTests {
         #expect(hostile.action == .openTestFlight)
     }
 
+    @Test func theActionLabelsNameTheDistributionChannel() throws {
+        let ota = try #require(evaluate(metadata()).prompt)
+        #expect(ota.action.buttonTitle == "Open install page")
+        let testFlight = try #require(evaluate(metadata(channel: "testflight"), kind: .testFlight).prompt)
+        #expect(testFlight.action.buttonTitle == "Update in TestFlight")
+    }
+
     @Test func aNetworkFailureOrNon200StatusNeverPrompts() {
         #expect(result(.networkFailure) == .failed(.network))
         for status in [100, 201, 204, 301, 304, 400, 403, 404, 429, 500, 503] {

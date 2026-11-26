@@ -22,7 +22,7 @@ extension HostStatusUITests {
 
         XCTAssertTrue(app.staticTexts["update-available"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["update-latest"].label, "0.3.0 (9)")
-        XCTAssertEqual(app.buttons["update-button"].label, "Install update")
+        XCTAssertEqual(app.buttons["update-button"].label, "Open install page")
         XCTAssertEqual(app.staticTexts["app-version"].label, "0.2.0 (4)")
     }
 
@@ -32,7 +32,7 @@ extension HostStatusUITests {
         app.launch()
 
         XCTAssertTrue(app.staticTexts["update-available"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.buttons["update-button"].label, "Open TestFlight")
+        XCTAssertEqual(app.buttons["update-button"].label, "Update in TestFlight")
     }
 
     func testNoUpdateStateShowsTheInstalledVersionOnly() {

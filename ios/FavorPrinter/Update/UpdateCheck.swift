@@ -72,8 +72,8 @@ enum UpdateAction: Sendable, Equatable {
 
     var buttonTitle: String {
         switch self {
-        case .install: "Install update"
-        case .openTestFlight: "Open TestFlight"
+        case .install: "Open install page"
+        case .openTestFlight: "Update in TestFlight"
         }
     }
 }
