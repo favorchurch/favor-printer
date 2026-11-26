@@ -119,5 +119,9 @@ An update installs only when the app quits, and only after the relay has stopped
   `Update ready` line can still show after a restart. Queued labels are not lost and resume from the spool on the next
   start.
 
-The app does not inspect the spool itself. Quit between services, and if a quit did not install, quit again once the
-status window shows no labels waiting or marked `to check`.
+This is fail closed: when the relay's stop wait times out and the relay has to be ended, the update is never installed
+on that quit. It stays ready and installs on the next clean quit.
+
+It is best-effort until the relay exposes a reconciliation signal. The app does not read the spool itself, so a relay
+that exits cleanly is trusted to have finished with it. Tracked in follow-up #116. Quit between services, and if a quit
+did not install, quit again once the status window shows no labels waiting or marked `to check`.
