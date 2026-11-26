@@ -32,9 +32,13 @@ export function channelSettings(channel: UpdateChannel): { allowPrerelease: bool
 
 export type InstallDecision = "install" | "defer" | "none";
 
-export function installDecision(input: { updateReady: boolean; jobInFlight: boolean }): InstallDecision {
+/**
+ * A job in flight or a claimed job with no recorded outcome blocks the install. `pendingEntries` is what the
+ * relay's last status shows: claimed jobs that are not yet sent, failed or ambiguous.
+ */
+export function installDecision(input: { updateReady: boolean; jobInFlight: boolean; pendingEntries: number }): InstallDecision {
   if (!input.updateReady) return "none";
-  return input.jobInFlight ? "defer" : "install";
+  return input.jobInFlight || input.pendingEntries > 0 ? "defer" : "install";
 }
 
 export type UpdateController = {
@@ -46,7 +50,7 @@ export type UpdateController = {
   /** ISO time of the last check that got an answer from the feed, or null. */
   lastCheckedAt(): string | null;
   /** Call when the volunteer quits. Installs now, or waits for `jobsSettled`. */
-  beforeQuit(jobInFlight: boolean): InstallDecision;
+  beforeQuit(jobInFlight: boolean, pendingEntries: number): InstallDecision;
   /** Call when the in-flight job has finished. Installs an update deferred by `beforeQuit`. */
   jobsSettled(): void;
 };
@@ -137,8 +141,8 @@ export function createUpdateController(deps: {
     checkNow,
     state: () => state,
     lastCheckedAt: () => checkedAt,
-    beforeQuit(jobInFlight) {
-      const decision = installDecision({ updateReady: state.kind === "ready", jobInFlight });
+    beforeQuit(jobInFlight, pendingEntries) {
+      const decision = installDecision({ updateReady: state.kind === "ready", jobInFlight, pendingEntries });
       if (decision === "install") install();
       if (decision === "defer") installPending = true;
       return decision;

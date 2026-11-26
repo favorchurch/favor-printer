@@ -18,8 +18,10 @@ export type QuitDeps = {
   updates: {
     stop(): void;
     /** Installs now (and quits) when an update is ready and no job is in flight. */
-    beforeQuit(jobInFlight: boolean): "install" | "defer" | "none";
+    beforeQuit(jobInFlight: boolean, pendingEntries: number): "install" | "defer" | "none";
   };
+  /** Claimed jobs the relay's last status shows without a recorded outcome. Read after the relay has stopped. */
+  pendingEntries(): number;
   /** Quits the Electron app. */
   quit(): void;
   log?: (message: string) => void;
@@ -61,7 +63,8 @@ export function createQuitCoordinator(deps: QuitDeps): QuitCoordinator {
           deps.quit();
           return;
         }
-        if (deps.updates.beforeQuit(jobInFlight) !== "install") deps.quit();
+        // Queued entries the app can see fail closed too: the policy holds the install, the app quits as is.
+        if (deps.updates.beforeQuit(jobInFlight, deps.pendingEntries()) !== "install") deps.quit();
       } catch (error) {
         // A failed shutdown must not leave the app unable to quit later.
         allowed = false;

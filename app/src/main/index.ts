@@ -271,6 +271,7 @@ async function runApp(): Promise<void> {
   const quit = createQuitCoordinator({
     shutdown: () => controller.shutdown(),
     settled: () => controller.settled(),
+    pendingEntries: () => controller.pendingEntries(),
     updates,
     quit: () => app.quit(),
     log: (message) => log("info", "main", message),
