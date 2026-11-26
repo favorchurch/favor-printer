@@ -104,11 +104,16 @@ The metadata never installs anything by itself, and a TestFlight build is never 
 Any change to the fields above needs a new `schemaVersion`. Old apps fail closed on a version they do not know, so
 publish the new schema only after the app that reads it is out. The decoder is `ios/FavorPrinter/Update/UpdateCheck.swift`.
 
-## Install on quit fails closed
+## What install on quit does
 
-An update installs only on a clean quit. When you quit, the app stops the printing relay and waits a bounded time for it
-to stop. If that wait expires and the relay has to be ended, or a label is still being printed or reconciled with RSVP,
-the app quits **without installing**. The relay may have been cut off mid-reconciliation, so the app never installs
-after that. Nothing is lost: queued labels resume from the spool on the next start. The downloaded update stays ready
-and installs on the next clean quit, so the `Update ready` line can still show after a restart. To let it install, wait
-until the status window shows no labels waiting or marked `to check`, then quit again.
+An update installs only when the app quits, and only after the relay has stopped on its own:
+
+- **Relay stops cleanly, no label in flight.** The update installs as the app quits.
+- **A label is being printed.** The app waits for that label to finish, then installs.
+- **The relay does not stop in time and has to be ended.** It may have been cut off while reconciling its spool, so
+  the app quits **without installing**. The downloaded update stays ready and installs on the next clean quit, so the
+  `Update ready` line can still show after a restart. Queued labels are not lost and resume from the spool on the next
+  start.
+
+The app does not inspect the spool itself. Quit between services, and if a quit did not install, quit again once the
+status window shows no labels waiting or marked `to check`.
