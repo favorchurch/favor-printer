@@ -94,7 +94,7 @@ extension UITestHarness {
             return UpdateChecker(installed: updateInstalled, distribution: .development, expectedBundleID: bundleID, metadataURL: nil)
         }
         let isTestFlight = arguments[index + 1] == "testflight"
-        let install = "itms-services://?action=download-manifest&url=https://relay.invalid/manifest.plist"
+        let install = "itms-services://?action=download-manifest&url=https://relay.invalid/downloads/ipad/manifest.plist"
         let body = Data("""
         {"schemaVersion":1,"bundleId":"\(bundleID)","channel":"\(isTestFlight ? "testflight" : "ota")",\
         "version":"\(updateLatestVersion)","build":"\(updateLatestBuild)","released":true,"installURL":"\(install)"}

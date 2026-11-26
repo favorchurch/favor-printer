@@ -91,6 +91,8 @@ enum UpdateCheck {
     static let supportedSchema = 1
     static let maxBodyBytes = 64 * 1024
     static let testFlightURL = URL(string: "itms-beta://")!
+    /// Where RSVP serves the OTA install manifest (docs/IPAD-INSTALL.md).
+    static let manifestPath = "/downloads/ipad/manifest.plist"
 
     enum FetchResult: Sendable, Equatable {
         case reply(status: Int, body: Data)
@@ -206,19 +208,25 @@ enum UpdateCheck {
         return version.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || ".-+".contains($0)) }
     }
 
-    /// `itms-services://?action=download-manifest&url=https://<trusted host>/...` and nothing else.
+    /// `itms-services://?action=download-manifest&url=https://<trusted host>/...` and nothing else: no authority, path,
+    /// port, userinfo or fragment (a lone `/` path is allowed), exactly the query items `action` and `url`, and a manifest on
+    /// the trusted host at `manifestPath` with no query or fragment.
     static func otaInstallURL(_ raw: String, trustedHost: String?) -> URL? {
         guard let trustedHost, !trustedHost.isEmpty,
               let components = URLComponents(string: raw),
               components.scheme?.lowercased() == "itms-services",
-              let items = components.queryItems,
+              components.host?.isEmpty ?? true, components.path.isEmpty || components.path == "/",
+              components.port == nil, components.user == nil, components.password == nil, components.fragment == nil,
+              let items = components.queryItems, items.count == 2,
               items.filter({ $0.name == "action" }).map(\.value) == ["download-manifest"],
-              let manifest = items.filter({ $0.name == "url" }).compactMap(\.value).first,
               items.filter({ $0.name == "url" }).count == 1,
+              let manifest = items.first(where: { $0.name == "url" })?.value,
               let manifestComponents = URLComponents(string: manifest),
               manifestComponents.scheme?.lowercased() == "https",
               manifestComponents.user == nil, manifestComponents.password == nil,
               manifestComponents.host?.lowercased() == trustedHost.lowercased(),
+              manifestComponents.port == nil, manifestComponents.path == manifestPath,
+              manifestComponents.query == nil, manifestComponents.fragment == nil,
               let url = components.url
         else { return nil }
         return url
