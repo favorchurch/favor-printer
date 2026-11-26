@@ -86,9 +86,10 @@ Release build, the check stays off.
 | `released`      | boolean           | `true` only once the artifact is published and installable. `false` means no prompt.                                                                                         |
 | `installURL`    | string            | OTA only. Required for `ota`, ignored for `testflight`. See below.                                                                                                           |
 
-`installURL` must be `itms-services://?action=download-manifest&url=<manifest>` with exactly one `action` and one
-`url`. The manifest URL must be HTTPS, carry no credentials, and be on the same host as the metadata file. Anything
-else means no prompt.
+`installURL` must be `itms-services://?action=download-manifest&url=<manifest>` and nothing else: no host, path (a lone
+`/` is allowed), port, credentials or fragment, and exactly two query items, one `action` and one `url`. The manifest
+URL must be HTTPS on the same host as the metadata file, with no credentials, port, query or fragment, and its path must
+be exactly `/downloads/ipad/manifest.plist`. Anything else means no prompt.
 
 The document must be at most 64 KiB and the response status must be 200.
 
