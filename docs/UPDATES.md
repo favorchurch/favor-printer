@@ -43,10 +43,14 @@ No card is shown when the app is up to date, when it is a development build, or 
 
 ## Rollout and revocation
 
-- **Mac.** The update feed is the releases on `favorchurch/favor-printer`. Only a **published** release is offered, and
-  only after the release owner approved publishing (see [Publishing the draft](RELEASING.md#publishing-the-draft)).
-  Drafts and prereleases are never announced to Mac volunteers. The iPad internal builds are prereleases for this
-  reason.
+- **Mac.** The update feed is the releases on `favorchurch/favor-printer`. Drafts are never announced. A published
+  release is offered only after the release owner approved publishing (see
+  [Publishing the draft](RELEASING.md#publishing-the-draft)). What a Mac is offered depends on its update channel:
+  - **Stable** is offered published stable releases only. Prereleases are excluded.
+  - **Preview** is offered the newest published release above its own version, stable or `-beta.N` prerelease.
+    Other prerelease names (`-alpha`, `-rc`) and non-version tags are skipped.
+  - The iPad internal builds are published as prereleases tagged `ipad-internal-<sha>`. That is not a version tag, so no
+    Mac on either channel is offered it.
 - **iPad.** Only a metadata file with `"released": true` can show a prompt. The app announces an update only for a
   build that is already published and installable. Set `released` to `false` to stop prompts.
 - **Revocation stops prompts. It never downgrades.** Pulling a release (Mac: unpublish or supersede it, iPad:
