@@ -107,7 +107,8 @@ publish the new schema only after the app that reads it is out. The decoder is `
 ## Install on quit fails closed
 
 An update installs only on a clean quit. When you quit, the app stops the printing relay and waits a bounded time for it
-to stop. If that wait expires, or the spool still has pending entries (labels not yet reconciled with RSVP), the app
-quits **without installing**. Nothing is interrupted and no queued label is lost. The downloaded update stays ready and
-installs on the next clean quit, so the `Update ready` line can still show after a restart. To let it install, wait
+to stop. If that wait expires and the relay has to be ended, or a label is still being printed or reconciled with RSVP,
+the app quits **without installing**. The relay may have been cut off mid-reconciliation, so the app never installs
+after that. Nothing is lost: queued labels resume from the spool on the next start. The downloaded update stays ready
+and installs on the next clean quit, so the `Update ready` line can still show after a restart. To let it install, wait
 until the status window shows no labels waiting or marked `to check`, then quit again.
