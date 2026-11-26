@@ -85,7 +85,7 @@ struct UpdateCheckModelTests {
 
     @Test func anUnreleasedBuildNeverPrompts() {
         #expect(evaluate(metadata(released: false)) == .noPrompt(.notReleased))
-        #expect(evaluate(metadata(released: false), kind: .testFlight) != .prompt(UpdatePrompt(version: "0.3.0", build: 9, action: .openTestFlight)))
+        #expect(evaluate(metadata(channel: "testflight", released: false), kind: .testFlight) == .noPrompt(.notReleased))
     }
 
     @Test func anOTAUpdateWithoutAnInstallURLNeverPrompts() {
