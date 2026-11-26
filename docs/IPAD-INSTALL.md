@@ -62,9 +62,10 @@ The Mac must already be on Favor Printer v0.3.0-beta.2 or later.
 ## Updating an iPad
 
 The app checks for updates itself and shows an **Update available** card on the status screen. OTA iPads tap
-**Open install page**. TestFlight iPads tap **Update in TestFlight** and then **Update** there. Operators always use the same
+**Open install page**. TestFlight iPads tap **Update in TestFlight** and then **Update** there. For OTA installs, operators always use the same
 fixed install link, the **Install on iPad** button on <https://rsvp.favor.church/printer>, which serves
-`/downloads/ipad/manifest.plist`. It never changes per build, so do not share or bookmark a per-build link. The card's
+`/downloads/ipad/manifest.plist`. It never changes per build, so do not share or bookmark a per-build link. This link
+does not apply to TestFlight iPads, which update only through TestFlight. The card's
 details, the 90-day TestFlight expiry and the metadata format are in [UPDATES.md](UPDATES.md).
 
 ## Troubleshooting
