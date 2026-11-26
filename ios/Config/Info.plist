@@ -4,5 +4,7 @@
 <dict>
 	<key>RSVPBaseURL</key>
 	<string>$(RSVP_BASE_URL)</string>
+	<key>UpdateMetadataURL</key>
+	<string>$(UPDATE_METADATA_URL)</string>
 </dict>
 </plist>

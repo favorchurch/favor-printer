@@ -1,5 +1,7 @@
 // Debug builds talk to RSVP preview. `/` is a comment start in xcconfig, so $() splits the scheme separator.
 RSVP_BASE_URL = https:/$()/rsvp-preview.favor.church
+// iPad update metadata, read over HTTPS only. Absent or unreachable means no update prompt.
+UPDATE_METADATA_URL = https:/$()/rsvp-preview.favor.church/downloads/ipad/update.json
 
 // Optional local override (untracked), e.g. RSVP_BASE_URL = https:/$()/my-branch.vercel.app
 #include? "Local.xcconfig"

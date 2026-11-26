@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     let host: HostController
+    let updates: UpdateChecker
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("firstRunOnboardingCompleted") private var onboardingCompleted = false
     @State private var showingOnboarding = false
@@ -21,7 +22,7 @@ struct RootView: View {
                         onExit: { showingOnboarding = false }
                     )
                 } else {
-                    HostStatusView(host: host)
+                    HostStatusView(host: host, updates: updates)
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button("Setup guide") { showingOnboarding = true }
@@ -34,6 +35,10 @@ struct RootView: View {
         }
             .onChange(of: scenePhase, initial: true) { _, phase in host.scenePhaseChanged(phase) }
             .task { decideInitialRoute() }
+            // The update check runs on its own schedule while the app is in the foreground. The host loop does not wait for it.
+            .task(id: scenePhase == .active) {
+                if scenePhase == .active { await updates.runWhileForeground() }
+            }
             .onChange(of: host.enrollment) { _, _ in decideInitialRoute() }
     }
 
