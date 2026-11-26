@@ -106,12 +106,46 @@ struct UpdateCheckModelTests {
             "itms-services://?action=download-manifest",
             "itms-services://?action=download&url=https://rsvp.favor.church/manifest.plist",
             "itms-services://?action=download-manifest&url=https://rsvp.favor.church/a&url=https://evil.example/b",
+            "itms-services://evil.example/path?action=download-manifest&url=https%3A%2F%2Frsvp.favor.church%2Fdownloads%2Fipad%2Fmanifest.plist",
+            "itms-services://evil.example?action=download-manifest&url=https://rsvp.favor.church/manifest.plist",
+            "itms-services:///path?action=download-manifest&url=https://rsvp.favor.church/manifest.plist",
+            "itms-services://:443?action=download-manifest&url=https://rsvp.favor.church/manifest.plist",
+            "itms-services://user@?action=download-manifest&url=https://rsvp.favor.church/manifest.plist",
+            "itms-services://?action=download-manifest&url=https://rsvp.favor.church/manifest.plist&extra=1",
+            "itms-services://?action=download-manifest&url=https://rsvp.favor.church/manifest.plist#frag",
+            "itms-services://?action=download-manifest&url=https://rsvp.favor.church/other/manifest.plist",
+            "itms-services://?action=download-manifest&url=https://rsvp.favor.church/downloads/ipad/manifest.plist?x=1",
+            "itms-services://?action=download-manifest&url=https://rsvp.favor.church/downloads/ipad/manifest.plist%23f",
+            "itms-services://?action=download-manifest&url=https://rsvp.favor.church:8443/downloads/ipad/manifest.plist",
+            "itms-services://?action=download-manifest&action=download-manifest&url=https://rsvp.favor.church/downloads/ipad/manifest.plist",
             "javascript:alert(1)", "itms-beta://", "not a url",
         ]
         for link in bad {
             #expect(evaluate(metadata(install: link)) == .noPrompt(.badInstallURL), "\(link)")
         }
         #expect(evaluate(metadata(install: otaLink)).prompt != nil)
+        // A percent-encoded manifest URL is the same canonical shape.
+        let encoded = "itms-services://?action=download-manifest&url=https%3A%2F%2Frsvp.favor.church%2Fdownloads%2Fipad%2Fmanifest.plist"
+        #expect(evaluate(metadata(install: encoded)).prompt != nil)
+        #expect(evaluate(metadata(install: "itms-services:///?action=download-manifest&url=https://rsvp.favor.church/downloads/ipad/manifest.plist")).prompt != nil)
+    }
+
+    @Test func anOTAInstallURLMustBeHostlessAndCarryOnlyActionAndURL() {
+        let manifest = "https%3A%2F%2Frsvp.favor.church%2Fdownloads%2Fipad%2Fmanifest.plist"
+        let query = "action=download-manifest&url=\(manifest)"
+        // Each differs from the canonical link in one way only.
+        let refused = [
+            "itms-services://evil.example/path?\(query)",
+            "itms-services://evil.example?\(query)",
+            "itms-services:///path?\(query)",
+            "itms-services://?\(query)&extra=1",
+            "itms-services://?extra=1&\(query)",
+        ]
+        for link in refused {
+            #expect(evaluate(metadata(install: link)) == .noPrompt(.badInstallURL), "\(link)")
+        }
+        #expect(evaluate(metadata(install: "itms-services://?\(query)")).prompt != nil)
+        #expect(evaluate(metadata(install: "itms-services:///?\(query)")).prompt != nil)
     }
 
     @Test func aTestFlightBuildNeverGetsTheOTAInstallURL() throws {
