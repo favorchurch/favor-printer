@@ -205,8 +205,10 @@ This flow appears when a MacBook has the previous background launchd relay servi
 - **Update Status Lines (`UpdateState`):**
   - `idle`: `Up to date`
   - `checking`: `Checking for updates...`
-  - `downloading`: `Update available: v{version}. Downloading...` (or `Downloading update...` when the updater gave no version)
-  - `ready`: `Update ready: v{version}. It installs when you quit.` (or `Update ready. Restart to apply.` when the updater gave no version)
+  - `downloading`: `Downloading update...`
+  - `downloading` with a version: `Update available: v{version}. Downloading...`
+  - `ready`: `Update ready. Restart to apply.`
+  - `ready` with a version: `Update ready: v{version}. It installs when you quit.`
   - `error`: `Update check failed.`
 - **Last Checked Line:** `Last checked {time}`, shown under the update line once a check has reached the update feed. `{time}` is `3:42 PM` for a check today and `Nov 24, 3:42 PM` for an earlier day. Hidden when there is no valid time.
 - **No Enabled Printer (status detail and recovery line):** Shown when Favor RSVP answers but lists no enabled printer for this laptop (the cloud printer was turned off, removed or handed over). The pill reads `Needs attention` (RSVP did answer, so it is not `Waiting for connection`). It also applies before any heartbeat, when the relay reports `config_invalid` or `printer_handed_over`.
