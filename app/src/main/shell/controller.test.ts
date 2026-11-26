@@ -1426,6 +1426,23 @@ describe("pause and settings", () => {
     h.controller.setUpdateState({ kind: "ready", version: "0.2.0" });
     expect(h.controller.snapshot().update).toEqual({ kind: "ready", version: "0.2.0" });
   });
+
+  it("shows the installed version, the channel and when an update check last answered", async () => {
+    const h = await started({ prefs: { channel: "preview" } });
+    expect(h.controller.snapshot()).toMatchObject({ version: "0.1.0", channel: "preview", updateCheckedAt: null });
+
+    const seen: (string | null)[] = [];
+    h.controller.subscribe((snapshot) => seen.push(snapshot.updateCheckedAt));
+    h.controller.setUpdateCheckedAt("2026-11-24T15:42:00.000Z");
+    expect(h.controller.snapshot().updateCheckedAt).toBe("2026-11-24T15:42:00.000Z");
+    expect(seen).toEqual(["2026-11-24T15:42:00.000Z"]);
+
+    h.controller.setUpdateState({ kind: "downloading", version: "0.3.0-beta.5" });
+    expect(h.controller.snapshot()).toMatchObject({
+      update: { kind: "downloading", version: "0.3.0-beta.5" },
+      updateCheckedAt: "2026-11-24T15:42:00.000Z",
+    });
+  });
 });
 
 describe("warnings", () => {

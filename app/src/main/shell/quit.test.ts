@@ -12,15 +12,16 @@ function deferred<T = void>() {
   return { promise, resolve };
 }
 
-function setup(patch: Partial<QuitDeps> & { decision?: "install" | "defer" | "none" } = {}) {
+function setup(patch: Partial<QuitDeps> & { decision?: "install" | "defer" | "none"; pending?: number } = {}) {
   const order: string[] = [];
   const coordinatorRef: { current: ReturnType<typeof createQuitCoordinator> | null } = { current: null };
   const deps: QuitDeps = {
     shutdown: vi.fn(async () => ({ outcome: "stopped" as const, jobInFlight: false })),
     settled: vi.fn(async () => undefined),
+    pendingEntries: vi.fn(() => patch.pending ?? 0),
     updates: {
       stop: vi.fn(() => void order.push("updates.stop")),
-      beforeQuit: vi.fn((jobInFlight: boolean) => {
+      beforeQuit: vi.fn((jobInFlight: boolean, _pendingEntries: number) => {
         order.push(`beforeQuit(${jobInFlight}) allowed=${coordinatorRef.current?.isQuitAllowed()}`);
         return patch.decision ?? "none";
       }),
@@ -109,6 +110,42 @@ describe("quit coordinator", () => {
     expect(deps.quit).toHaveBeenCalledTimes(1);
   });
 
+  it("quits without installing when the relay had to be ended, and never asks the update policy", async () => {
+    const { coordinator, deps, order } = setup({
+      decision: "install",
+      shutdown: vi.fn(async () => ({ outcome: "killed" as const, jobInFlight: false })),
+    });
+    await coordinator.request();
+    expect(deps.updates.beforeQuit).not.toHaveBeenCalled();
+    expect(deps.quit).toHaveBeenCalledTimes(1);
+    expect(coordinator.isQuitAllowed()).toBe(true);
+    expect(order).toEqual(["updates.stop", "quit"]);
+  });
+
+  it("still asks the update policy after a clean stop", async () => {
+    const { coordinator, deps } = setup({
+      decision: "install",
+      shutdown: vi.fn(async () => ({ outcome: "stopped" as const, jobInFlight: false })),
+    });
+    await coordinator.request();
+    expect(deps.updates.beforeQuit).toHaveBeenCalledWith(false, 0);
+    expect(deps.quit).not.toHaveBeenCalled();
+  });
+
+  it("hands the pending entry count to the update policy, read after the relay has settled", async () => {
+    let pending = 4;
+    const { coordinator, deps } = setup({
+      decision: "defer",
+      shutdown: vi.fn(async () => ({ outcome: "abandoned" as const, jobInFlight: true })),
+      settled: vi.fn(async () => void (pending = 2)),
+    });
+    deps.pendingEntries = vi.fn(() => pending);
+    await coordinator.request();
+    expect(deps.updates.beforeQuit).toHaveBeenCalledWith(false, 2);
+    // A held install quits the app as it is.
+    expect(deps.quit).toHaveBeenCalledTimes(1);
+  });
+
   it("clears its latch when shutdown fails, so quitting can be tried again", async () => {
     const shutdown = vi
       .fn<QuitDeps["shutdown"]>()
@@ -160,6 +197,7 @@ describe("quit with the real controller, supervisor and update policy", () => {
     const coordinator = createQuitCoordinator({
       shutdown: () => h.controller.shutdown(),
       settled: () => h.controller.settled(),
+      pendingEntries: () => h.controller.pendingEntries(),
       updates,
       quit: appQuit,
     });

@@ -178,6 +178,7 @@ async function runApp(): Promise<void> {
     adapter: updateAdapter,
     channel: prefs.get().channel,
     onState: (state) => controller.setUpdateState(state),
+    onChecked: (checkedAt) => controller.setUpdateCheckedAt(checkedAt),
   });
 
   const run = createCommandRunner();
@@ -270,6 +271,7 @@ async function runApp(): Promise<void> {
   const quit = createQuitCoordinator({
     shutdown: () => controller.shutdown(),
     settled: () => controller.settled(),
+    pendingEntries: () => controller.pendingEntries(),
     updates,
     quit: () => app.quit(),
     log: (message) => log("info", "main", message),

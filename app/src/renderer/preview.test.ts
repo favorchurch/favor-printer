@@ -5,7 +5,7 @@ import { boot } from "./boot";
 import { ENROLL_CONFLICT_COPY, ENROLL_CONFLICT_REASONS, type EnrollConflictReason } from "../shared";
 import { startApp } from "./app";
 import { INITIAL_LOCAL, ENROLL_ERROR_COPY, LOCAL_TEST_COPY, RENAME_ERROR_COPY } from "./model";
-import { channelLabel, renderScreen, updateStatusText } from "./screens";
+import { channelLabel, lastCheckedText, renderScreen, updateStatusText } from "./screens";
 import { createMockApi, FIXTURE_NAMES, fixtureFor } from "./fixtures";
 import { fixtureButtons, shouldShowFixtureBar, startPreview } from "./preview";
 
@@ -117,8 +117,9 @@ describe("status / about screen rendering", () => {
   it.each([
     [{ kind: "idle" as const }, "Up to date"],
     [{ kind: "checking" as const }, "Checking for updates..."],
-    [{ kind: "downloading" as const }, "Downloading update..."],
-    [{ kind: "ready" as const, version: "0.2.0" }, "Update ready. Restart to apply."],
+    [{ kind: "downloading" as const, version: "" }, "Downloading update..."],
+    [{ kind: "downloading" as const, version: "0.3.0-beta.5" }, "Update available: v0.3.0-beta.5. Downloading..."],
+    [{ kind: "ready" as const, version: "0.3.0-beta.5" }, "Update ready: v0.3.0-beta.5. It installs when you quit."],
     [{ kind: "ready" as const, version: "" }, "Update ready. Restart to apply."],
     [{ kind: "error" as const }, "Update check failed."],
   ])("renders update state %o as %s", (update, expected) => {
@@ -129,6 +130,54 @@ describe("status / about screen rendering", () => {
     }) as unknown as FakeElement;
     expect(text(rendered)).toContain(expected);
     expect(text(rendered)).toContain("Version 0.1.0 (Stable)");
+  });
+
+  const statusText = (patch: Partial<AppSnapshot>) =>
+    text(
+      renderScreen("status", {
+        snapshot: { ...fixtureFor("status").snapshot, ...patch },
+        local: INITIAL_LOCAL,
+        actions: {} as never,
+      }) as unknown as FakeElement,
+    );
+
+  it("shows installed version, channel, last checked time and the update line together", () => {
+    const lines = statusText({
+      version: "0.3.0-beta.4",
+      channel: "preview",
+      update: { kind: "downloading", version: "0.3.0-beta.5" },
+      updateCheckedAt: "2026-11-24T15:42:00.000Z",
+    });
+    expect(lines).toContain("Version 0.3.0-beta.4 (Preview)");
+    expect(lines).toContain("Update available: v0.3.0-beta.5. Downloading...");
+    expect(lines).toContain(`Last checked ${lastCheckedText("2026-11-24T15:42:00.000Z")}`);
+  });
+
+  it("omits the last checked line until a check has answered, and for an unreadable time", () => {
+    expect(statusText({ updateCheckedAt: null }).some((line) => line.startsWith("Last checked"))).toBe(false);
+    expect(statusText({ updateCheckedAt: "not a date" }).some((line) => line.startsWith("Last checked"))).toBe(false);
+  });
+
+  it("keeps the failed check line and the last good check time", () => {
+    const lines = statusText({ update: { kind: "error" }, updateCheckedAt: "2026-11-24T15:42:00.000Z" });
+    expect(lines).toContain("Update check failed.");
+    expect(lines.some((line) => line.startsWith("Last checked"))).toBe(true);
+  });
+
+  describe("lastCheckedText", () => {
+    const now = new Date(2026, 10, 24, 18, 0, 0);
+    it("is null for no time or a bad one", () => {
+      expect(lastCheckedText(null, now)).toBeNull();
+      expect(lastCheckedText("nope", now)).toBeNull();
+    });
+    it("shows only the time for a check today and adds the date for an earlier one", () => {
+      const today = new Date(2026, 10, 24, 15, 42).toISOString();
+      const earlier = new Date(2026, 10, 22, 15, 42).toISOString();
+      expect(lastCheckedText(today, now)).toBe(new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(new Date(today)));
+      expect(lastCheckedText(earlier, now)).toBe(
+        new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(earlier)),
+      );
+    });
   });
 
   it("displays preview channel clearly when on preview", () => {
@@ -157,8 +206,8 @@ describe("status / about screen rendering", () => {
     // Verify all helper outputs match the deck strings
     expect(updateStatusText({ kind: "idle" })).toBe("Up to date");
     expect(updateStatusText({ kind: "checking" })).toBe("Checking for updates...");
-    expect(updateStatusText({ kind: "downloading" })).toBe("Downloading update...");
-    expect(updateStatusText({ kind: "ready", version: "1.0.0" })).toBe("Update ready. Restart to apply.");
+    expect(updateStatusText({ kind: "downloading", version: "" })).toBe("Downloading update...");
+    expect(updateStatusText({ kind: "ready", version: "" })).toBe("Update ready. Restart to apply.");
     expect(updateStatusText({ kind: "error" })).toBe("Update check failed.");
     expect(channelLabel("stable")).toBe("Stable");
     expect(channelLabel("preview")).toBe("Preview");

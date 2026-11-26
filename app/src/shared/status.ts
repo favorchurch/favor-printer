@@ -26,7 +26,8 @@ export type JobCounts = {
 export type UpdateState =
   | { kind: "idle" }
   | { kind: "checking" }
-  | { kind: "downloading" }
+  /** An update was found and is downloading in the background. `version` is "" when the updater's text was not a version. */
+  | { kind: "downloading"; version: string }
   /** Downloaded. Installs when the app quits with no job in flight. */
   | { kind: "ready"; version: string }
   | { kind: "error" };
@@ -71,6 +72,8 @@ export type AppSnapshot = {
   openAtLogin: boolean;
   channel: UpdateChannel;
   update: UpdateState;
+  /** ISO time of the last update check that reached the feed and got an answer. Null until one has. */
+  updateCheckedAt: string | null;
   recentJobs: JobCounts;
   setupStep: SetupStep | null;
   printer: PrinterScan;
@@ -80,3 +83,7 @@ export type AppSnapshot = {
   /** Lid, sleep and battery warnings. Never claims printing works with the lid closed. */
   warnings: string[];
 };
+/** `v0.3.0-beta.5` for a release version, "" for none. Versions are checked before they get here, so this only adds the prefix. */
+export function versionTag(version: string): string {
+  return version ? `v${version}` : "";
+}

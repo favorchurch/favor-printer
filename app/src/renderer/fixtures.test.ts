@@ -29,6 +29,7 @@ const EXPECTED: Record<(typeof FIXTURE_NAMES)[number], ScreenId> = {
   "no-enabled-printers": "status",
   "reenroll-confirm": "reenroll-confirm",
   "backlog-warning": "status",
+  "update-available": "status",
   "update-ready": "status",
   "update-error": "status",
 };
@@ -66,6 +67,7 @@ describe("fixture states used by the visual check", () => {
   it("provides done, status, update-ready, and update-error fixtures with expected properties", () => {
     expect(fixtureFor("done").snapshot.setupStep).toBe("done");
     expect(fixtureFor("status").snapshot.update).toEqual({ kind: "idle" });
+    expect(fixtureFor("update-available").snapshot.update).toEqual({ kind: "downloading", version: "0.3.0-beta.5" });
     expect(fixtureFor("update-ready").snapshot.update).toEqual({ kind: "ready", version: "0.2.0" });
     expect(fixtureFor("update-error").snapshot.update).toEqual({ kind: "error" });
   });
