@@ -113,16 +113,20 @@ publish the new schema only after the app that reads it is out. The decoder is `
 
 An update installs only when the app quits, and only after the relay has stopped on its own:
 
-- **Relay stops cleanly, no label in flight.** The update installs as the app quits.
-- **A label is being printed.** The app waits for that label to finish, then installs.
+- **Relay stops cleanly, no label in flight, nothing queued.** The update installs as the app quits.
+- **A label is being printed.** The app waits for that label to finish, then installs if nothing is left queued.
 - **The relay does not stop in time and has to be ended.** It may have been cut off while reconciling its spool, so
   the app quits **without installing**. The downloaded update stays ready and installs on the next clean quit, so the
   `Update ready` line can still show after a restart. Queued labels are not lost and resume from the spool on the next
   start.
+- **The relay stops cleanly but labels are still queued.** The app counts claimed labels with no recorded outcome
+  (claimed, minus sent, failed and marked `to check`) from the relay's last status. If any remain, the app quits
+  **without installing** and the update waits for the next clean quit.
 
-This is fail closed: when the relay's stop wait times out and the relay has to be ended, the update is never installed
-on that quit. It stays ready and installs on the next clean quit.
+This is fail closed: when the relay's stop wait times out and the relay has to be ended, or labels are still queued, the
+update is never installed on that quit. It stays ready and installs on the next clean quit.
 
-It is best-effort until the relay exposes a reconciliation signal. The app does not read the spool itself, so a relay
-that exits cleanly is trusted to have finished with it. Tracked in follow-up #116. Quit between services, and if a quit
+It is best-effort until the relay exposes a reconciliation signal. The queued count comes from the relay's last status
+report and the app does not read the spool itself, so a relay that exits cleanly with no queued count is trusted to have
+finished with it. Tracked in follow-up #116. Quit between services, and if a quit
 did not install, quit again once the status window shows no labels waiting or marked `to check`.
