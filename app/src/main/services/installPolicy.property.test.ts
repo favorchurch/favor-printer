@@ -117,8 +117,64 @@ const relayOps = fc.array(
   { maxLength: 30 },
 );
 
+/** A later launch: the updater finds the downloaded update again, the relay is idle, and the volunteer quits. Returns how many times it installed. */
+async function laterCleanQuitInstalls(): Promise<number> {
+  const h = createControllerHarness({ credentials: CREDENTIALS, scan: foundPrinter(), prefs: { openAtLogin: true, setupComplete: true } });
+  await h.controller.initialize();
+  const child = h.forks.last();
+  child.emitMessage({ type: "event", event: relayStatus() });
+  let listener: (event: UpdaterEvent) => void = () => undefined;
+  const adapter: UpdaterAdapter = {
+    configure: vi.fn(),
+    subscribe: (next) => void (listener = next),
+    check: vi.fn(async () => undefined),
+    quitAndInstall: vi.fn(),
+  };
+  const updates = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
+  listener({ kind: "downloaded", version: "0.3.0-beta.5" });
+  const appQuit = vi.fn();
+  const coordinator = createQuitCoordinator({ shutdown: () => h.controller.shutdown(), settled: () => h.controller.settled(), updates, quit: appQuit });
+  const request = coordinator.request();
+  for (let i = 0; i < 5; i += 1) await Promise.resolve();
+  child.emitMessage({ type: "stopped" });
+  child.emitExit(0);
+  await request;
+  expect(appQuit).not.toHaveBeenCalled();
+  return vi.mocked(adapter.quitAndInstall).mock.calls.length;
+}
+
 describe("install policy through the real supervisor and quit coordinator", () => {
-  it("never installs while a live relay is sending or reconciling, and installs once after it has stopped", async () => {
+  it("a stop wait that expires during reconciliation quits without installing, and a later clean quit installs once", async () => {
+    const h = createControllerHarness({ credentials: CREDENTIALS, scan: foundPrinter(), prefs: { openAtLogin: true, setupComplete: true } });
+    await h.controller.initialize();
+    const child = h.forks.last();
+    child.emitMessage({ type: "event", event: relayStatus({ state: "running", inFlight: false }) });
+    let listener: (event: UpdaterEvent) => void = () => undefined;
+    const adapter: UpdaterAdapter = {
+      configure: vi.fn(),
+      subscribe: (next) => void (listener = next),
+      check: vi.fn(async () => undefined),
+      quitAndInstall: vi.fn(),
+    };
+    const updates = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
+    listener({ kind: "downloaded", version: "0.3.0-beta.5" });
+    const appQuit = vi.fn();
+    const coordinator = createQuitCoordinator({ shutdown: () => h.controller.shutdown(), settled: () => h.controller.settled(), updates, quit: appQuit });
+
+    // The relay is still reconciling its spool: it reports neither a send in flight nor stopped. The wait expires.
+    const request = coordinator.request();
+    await Promise.resolve();
+    h.timers.fire("timeout");
+    await request;
+
+    expect(child.kills).toBe(1);
+    expect(adapter.quitAndInstall).not.toHaveBeenCalled();
+    expect(appQuit).toHaveBeenCalledTimes(1);
+    expect(updates.state()).toEqual({ kind: "ready", version: "0.3.0-beta.5" });
+    expect(await laterCleanQuitInstalls()).toBe(1);
+  });
+
+  it("never installs while the relay is sending, reconciling or was ended by the stop wait, and a later clean quit installs once", async () => {
     await fc.assert(
       fc.asyncProperty(relayOps, async (ops) => {
         const h = createControllerHarness({ credentials: CREDENTIALS, scan: foundPrinter(), prefs: { openAtLogin: true, setupComplete: true } });
@@ -138,10 +194,8 @@ describe("install policy through the real supervisor and quit coordinator", () =
           subscribe: (next) => void (listener = next),
           check: vi.fn(async () => undefined),
           quitAndInstall: vi.fn(() => {
-            // The supervisor ends an idle relay that outlives the stop wait. Its spool keeps whatever it was
-            // reconciling for the next start, so a relay that was ended no longer counts as reconciling.
-            const live = alive && child.kills === 0;
-            if (jobInFlight || (live && reconciling)) unsafe.push(`jobInFlight=${jobInFlight} reconciling=${reconciling} live=${live}`);
+            // No exemption for a relay the supervisor ended: that is a stop that did not confirm clean, and it never installs.
+            if (jobInFlight || reconciling || child.kills > 0) unsafe.push(`jobInFlight=${jobInFlight} reconciling=${reconciling} kills=${child.kills}`);
           }),
         };
         const real = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
@@ -232,10 +286,13 @@ describe("install policy through the real supervisor and quit coordinator", () =
           // Installing quits the app itself, so the app is never quit a second way.
           expect(installs + appQuit.mock.calls.length).toBe(1);
           expect(installs).toBe(readyWhenDecided === true ? 1 : 0);
+          // A stop wait that ended the relay quits without installing; the update is kept for the next clean quit.
+          if (child.kills > 0) expect(installs).toBe(0);
+          // That next clean quit, in a later launch where the cached update is found again, installs once.
+          if (ready && installs === 0) expect(await laterCleanQuitInstalls()).toBe(1);
         } else {
           expect(installs).toBe(0);
         }
-        void ready;
       }),
       propertyParams(150),
     );

@@ -4,6 +4,8 @@
  * stays open until the relay reports it has stopped, and only then finishes
  * quitting or installs a downloaded update. While that is going on, further quit
  * requests (the menu, Cmd-Q, logout) are held, so the app cannot exit mid-send.
+ * A relay that had to be ended (`killed`) never gets an install: the app quits and
+ * the update waits for the next clean quit.
  */
 
 import type { StopOutcome } from "./supervisor";
@@ -51,6 +53,14 @@ export function createQuitCoordinator(deps: QuitDeps): QuitCoordinator {
         // Set before the update policy runs: installing quits the app itself,
         // and that `before-quit` must not be held back.
         allowed = true;
+        if (result.outcome === "killed") {
+          // The relay did not confirm a clean stop in time, so it may have been cut off mid-spool
+          // (reconciling or recording an outcome). Fail closed: quit as is and keep the downloaded
+          // update for the next clean quit.
+          deps.log?.("quit without installing: the relay did not stop cleanly");
+          deps.quit();
+          return;
+        }
         if (deps.updates.beforeQuit(jobInFlight) !== "install") deps.quit();
       } catch (error) {
         // A failed shutdown must not leave the app unable to quit later.
