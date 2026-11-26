@@ -4,7 +4,7 @@
  * actions. Nothing here shows ZPL or a security code.
  */
 
-import { isEnrollmentCode, NO_ENABLED_PRINTERS_RECOVERY, printerSetupFailureCopy, RENAME_MAX_LENGTH, type AppSnapshot, type PrinterDevice } from "../shared";
+import { isEnrollmentCode, NO_ENABLED_PRINTERS_RECOVERY, printerSetupFailureCopy, RENAME_MAX_LENGTH, versionTag, type AppSnapshot, type PrinterDevice } from "../shared";
 import { h } from "./dom";
 import {
   boundPrinterText,
@@ -83,7 +83,7 @@ const statusPill = (snapshot: AppSnapshot) =>
   h(
     "p",
     { class: `pill ${snapshot.status.color}` },
-    h("span", { class: "dot", "aria-hidden": "true" }),
+    h("span", { class: "dot", "aria-hidden": "true"}),
     h("span", null, snapshot.status.headline),
   );
 
@@ -193,12 +193,23 @@ export function updateStatusText(update: AppSnapshot["update"]): string {
     case "checking":
       return "Checking for updates...";
     case "downloading":
-      return "Downloading update...";
+      return update.version ? `Update available: ${versionTag(update.version)}. Downloading...` : "Downloading update...";
     case "ready":
-      return "Update ready. Restart to apply.";
+      return update.version
+        ? `Update ready: ${versionTag(update.version)}. It installs when you quit.`
+        : "Update ready. Restart to apply.";
     case "error":
       return "Update check failed.";
   }
+}
+
+/** "3:42 PM" for a check today, "Nov 24, 3:42 PM" for an earlier one, null when there is no valid time. */
+export function lastCheckedText(checkedAt: string | null, now: Date = new Date()): string | null {
+  if (!checkedAt) return null;
+  const date = new Date(checkedAt);
+  if (Number.isNaN(date.getTime())) return null;
+  const sameDay = date.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat(undefined, sameDay ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 export function channelLabel(channel: AppSnapshot["channel"]): string {
@@ -444,6 +455,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
 
     case "status": {
       const seenAt = lastSeenTime(snapshot);
+      const checkedText = lastCheckedText(snapshot.updateCheckedAt);
       const backlogWarning = snapshot.warnings.find((warning) => warning.startsWith("Print backlog is "));
       return frame(
         screen,
@@ -468,6 +480,7 @@ export function renderScreen(screen: ScreenId, { snapshot, local, actions: a }: 
           { class: "status-meta" },
           h("p", { class: "hint" }, `Version ${snapshot.version} (${channelLabel(snapshot.channel)})`),
           h("p", { class: "hint" }, updateStatusText(snapshot.update)),
+          checkedText ? h("p", { class: "hint" }, `Last checked ${checkedText}`) : null,
         ),
         actions(
           button("Close", a.closeWindow, { primary: true }),

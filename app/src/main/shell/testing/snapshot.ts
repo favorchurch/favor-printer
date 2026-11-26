@@ -12,6 +12,7 @@ export function snapshotFor(patch: Partial<AppSnapshot> = {}): AppSnapshot {
     openAtLogin: true,
     channel: "stable",
     update: { kind: "idle" },
+    updateCheckedAt: null,
     recentJobs: { sent: 0, failed: 0, ambiguous: 0 },
     setupStep: null,
     printer: { kind: "none" },

@@ -63,7 +63,8 @@ export function createUpdaterAdapter(updater: AutoUpdaterLike, log: Logger): Upd
     },
     subscribe(listener: (event: UpdaterEvent) => void) {
       updater.on("checking-for-update", () => listener({ kind: "checking" }));
-      updater.on("update-available", () => listener({ kind: "available" }));
+      updater.on("update-available", ((info: { version?: unknown }) =>
+        listener({ kind: "available", version: safeVersion(info?.version) })) as never);
       updater.on("update-not-available", () => listener({ kind: "not-available" }));
       updater.on("update-downloaded", ((info: { version?: unknown }) =>
         listener({ kind: "downloaded", version: safeVersion(info?.version) })) as never);

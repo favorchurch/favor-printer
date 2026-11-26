@@ -4,7 +4,7 @@
  * label's content or a security code.
  */
 
-import type { AppSnapshot, StatusColor, UpdateChannel } from "../../shared";
+import { versionTag, type AppSnapshot, type StatusColor, type UpdateChannel } from "../../shared";
 
 export type MenuItemTemplate = {
   label?: string;
@@ -50,11 +50,13 @@ export function updateItem(snapshot: AppSnapshot, actions: TrayActions): MenuIte
     case "checking":
       return info("Checking for updates...");
     case "downloading":
-      return info("Downloading an update...");
+      return info(
+        snapshot.update.version ? `Update available: ${versionTag(snapshot.update.version)}` : "Downloading an update...",
+      );
     case "ready":
       return info(
         snapshot.update.version
-          ? `Update ${snapshot.update.version} ready. It installs when you quit.`
+          ? `Update ready: ${versionTag(snapshot.update.version)}. It installs when you quit.`
           : "An update is ready. It installs when you quit.",
       );
     case "error":

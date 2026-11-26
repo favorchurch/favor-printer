@@ -101,10 +101,22 @@ describe("createUpdaterAdapter", () => {
 
     expect(events).toEqual([
       { kind: "checking" },
-      { kind: "available" },
+      { kind: "available", version: "0.2.0" },
       { kind: "not-available" },
       { kind: "downloaded", version: "0.2.0" },
       { kind: "error" },
+    ]);
+  });
+
+  it("copes with an available event that carries no version, or text that is not one", () => {
+    const { adapter, emit } = setup();
+    const events: UpdaterEvent[] = [];
+    adapter.subscribe((event) => events.push(event));
+    emit("update-available", undefined);
+    emit("update-available", { version: "Jane Q. Attendee ^XA" });
+    expect(events).toEqual([
+      { kind: "available", version: "" },
+      { kind: "available", version: "" },
     ]);
   });
 

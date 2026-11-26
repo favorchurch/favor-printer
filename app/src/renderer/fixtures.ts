@@ -39,12 +39,16 @@ const base: AppSnapshot = {
   openAtLogin: true,
   channel: "stable",
   update: { kind: "idle" },
+  updateCheckedAt: null,
   recentJobs: { sent: 0, failed: 0, ambiguous: 0 },
   setupStep: "welcome",
   printer: { kind: "none" },
   legacyRelayLoaded: false,
   warnings: ["Keep the lid open while printing. Closing the lid can stop labels from printing."],
 };
+
+/** A fixed time, so the status window and its screenshots read the same on every run. */
+const CHECKED_AT = "2026-11-24T15:42:00.000Z";
 
 const ready: AppSnapshot["status"] = { color: "green", headline: "Connected", detail: null };
 
@@ -82,6 +86,7 @@ export const FIXTURE_NAMES = [
   "no-enabled-printers",
   "reenroll-confirm",
   "backlog-warning",
+  "update-available",
   "update-ready",
   "update-error",
 ] as const;
@@ -176,6 +181,7 @@ export function fixtureFor(requested: string | null): Fixture {
           fiveState: "Connected",
           recoveryAction: "Run a local test print in Favor Printer to verify labels.",
           update: { kind: "idle" },
+          updateCheckedAt: CHECKED_AT,
         }),
       };
     case "setup-printer-confirm":
@@ -235,11 +241,22 @@ export function fixtureFor(requested: string | null): Fixture {
           warnings: ["Print backlog is growing: 6 jobs are waiting to print. Check the printer and label stock."],
         }),
       };
+    case "update-available":
+      return {
+        snapshot: withStep(null, {
+          ...enrolled,
+          version: "0.3.0-beta.4",
+          channel: "preview",
+          update: { kind: "downloading", version: "0.3.0-beta.5" },
+          updateCheckedAt: CHECKED_AT,
+        }),
+      };
     case "update-ready":
       return {
         snapshot: withStep(null, {
           ...enrolled,
           update: { kind: "ready", version: "0.2.0" },
+          updateCheckedAt: CHECKED_AT,
         }),
       };
     case "update-error":
@@ -247,6 +264,7 @@ export function fixtureFor(requested: string | null): Fixture {
         snapshot: withStep(null, {
           ...enrolled,
           update: { kind: "error" },
+          updateCheckedAt: CHECKED_AT,
         }),
       };
     default:

@@ -11,7 +11,9 @@ import {
   type UpdaterEvent,
 } from "./updates";
 
-function setup(options: { channel?: UpdateChannel; check?: () => Promise<void> } = {}) {
+function setup(
+  options: { channel?: UpdateChannel; check?: () => Promise<void>; now?: () => Date; onChecked?: (checkedAt: string) => void } = {},
+) {
   let listener: (event: UpdaterEvent) => void = () => undefined;
   const adapter: UpdaterAdapter = {
     configure: vi.fn(),
@@ -28,6 +30,8 @@ function setup(options: { channel?: UpdateChannel; check?: () => Promise<void> }
     channel: options.channel ?? "stable",
     onState: (state) => states.push(state),
     timers: fake.timers,
+    now: options.now,
+    onChecked: options.onChecked,
   });
   return { adapter, controller, fake, states, emit: (event: UpdaterEvent) => listener(event) };
 }
@@ -92,15 +96,72 @@ describe("check schedule", () => {
   });
 });
 
+describe("last successful check", () => {
+  function timed() {
+    let at = "2026-11-24T15:00:00.000Z";
+    const seen: string[] = [];
+    const harness = setup({ now: () => new Date(at), onChecked: (checkedAt) => seen.push(checkedAt) });
+    return { ...harness, seen, setNow: (value: string) => void (at = value) };
+  }
+
+  it("is null until a check gets an answer", () => {
+    const { controller, emit, seen } = timed();
+    expect(controller.lastCheckedAt()).toBeNull();
+    emit({ kind: "checking" });
+    emit({ kind: "error" });
+    expect(controller.lastCheckedAt()).toBeNull();
+    expect(seen).toEqual([]);
+  });
+
+  it.each<[string, UpdaterEvent]>([
+    ["no update", { kind: "not-available" }],
+    ["an update found", { kind: "available", version: "0.2.0" }],
+    ["an update downloaded", { kind: "downloaded", version: "0.2.0" }],
+  ])("records the time when the answer is %s", (_name, event) => {
+    const { controller, emit, seen } = timed();
+    emit(event);
+    expect(controller.lastCheckedAt()).toBe("2026-11-24T15:00:00.000Z");
+    expect(seen).toEqual(["2026-11-24T15:00:00.000Z"]);
+  });
+
+  it("moves forward on each answer, and a later failure keeps the last good time", () => {
+    const { controller, emit, setNow } = timed();
+    emit({ kind: "not-available" });
+    setNow("2026-11-24T21:00:00.000Z");
+    emit({ kind: "not-available" });
+    expect(controller.lastCheckedAt()).toBe("2026-11-24T21:00:00.000Z");
+    setNow("2026-11-25T03:00:00.000Z");
+    emit({ kind: "error" });
+    expect(controller.lastCheckedAt()).toBe("2026-11-24T21:00:00.000Z");
+  });
+
+  it("still records an answer while a downloaded update stays offered", () => {
+    const { controller, emit, setNow } = timed();
+    emit({ kind: "downloaded", version: "0.2.0" });
+    setNow("2026-11-24T21:00:00.000Z");
+    emit({ kind: "not-available" });
+    expect(controller.state()).toEqual({ kind: "ready", version: "0.2.0" });
+    expect(controller.lastCheckedAt()).toBe("2026-11-24T21:00:00.000Z");
+  });
+});
+
 describe("update state", () => {
   it("follows the updater through check, download and ready", () => {
     const { controller, emit, states } = setup();
     expect(controller.state()).toEqual({ kind: "idle" });
     emit({ kind: "checking" });
-    emit({ kind: "available" });
+    emit({ kind: "available", version: "0.2.0" });
     emit({ kind: "downloaded", version: "0.2.0" });
-    expect(states).toEqual([{ kind: "checking" }, { kind: "downloading" }, { kind: "ready", version: "0.2.0" }]);
+    expect(states).toEqual([{ kind: "checking" }, { kind: "downloading", version: "0.2.0" }, { kind: "ready", version: "0.2.0" }]);
     expect(controller.state()).toEqual({ kind: "ready", version: "0.2.0" });
+  });
+
+  it("carries the available version through downloading and ready", () => {
+    const { controller, emit } = setup();
+    emit({ kind: "available", version: "0.3.0-beta.5" });
+    expect(controller.state()).toEqual({ kind: "downloading", version: "0.3.0-beta.5" });
+    emit({ kind: "downloaded", version: "0.3.0-beta.5" });
+    expect(controller.state()).toEqual({ kind: "ready", version: "0.3.0-beta.5" });
   });
 
   it("returns to idle when there is no update", () => {

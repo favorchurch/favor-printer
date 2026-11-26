@@ -443,6 +443,28 @@ describe("errors from the updater", () => {
     emit("update-downloaded", { version: "0.2.0" });
     expect(ctx.h.controller.snapshot().update).toEqual({ kind: "ready", version: "0.2.0" });
   });
+
+  it("shows an available update's version only when it is a version, and no text from the updater", async () => {
+    const ctx = await setup();
+    const { emit } = updaterFlow(ctx);
+
+    emit("update-available", { version: `${NAME} ${ZPL}`, releaseNotes: `${NAME} ${CODE}`, releaseName: NAME_2 });
+    expect(ctx.h.controller.snapshot().update).toEqual({ kind: "downloading", version: "" });
+    expectClean(await surface(ctx));
+
+    emit("update-available", { version: "0.3.0-beta.5", releaseNotes: `${NAME} ${CODE}` });
+    expect(ctx.h.controller.snapshot().update).toEqual({ kind: "downloading", version: "0.3.0-beta.5" });
+    expectClean(await surface(ctx));
+  });
+
+  it("carries only a timestamp for the last check, never updater text", async () => {
+    const ctx = await setup();
+    const { emit } = updaterFlow(ctx);
+    ctx.h.controller.setUpdateCheckedAt("2026-11-24T15:42:00.000Z");
+    expect(ctx.h.controller.snapshot().updateCheckedAt).toBe("2026-11-24T15:42:00.000Z");
+    emit("update-not-available");
+    expectClean(await surface(ctx));
+  });
 });
 
 describe("the log line itself", () => {

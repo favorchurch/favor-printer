@@ -16,10 +16,11 @@ import path from "node:path";
 
 import { AppUpdater } from "electron-updater/out/AppUpdater";
 import type { AppAdapter } from "electron-updater/out/AppAdapter";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { UpdateChannel } from "../../shared";
-import { channelSettings, type UpdaterEvent } from "../services";
+import type { UpdateChannel, UpdateState } from "../../shared";
+import { channelSettings, createUpdateController, type UpdaterEvent } from "../services";
+import { createFakeTimers } from "../services/testing/fakes";
 import { createUpdaterAdapter, type AutoUpdaterLike } from "./updaterAdapter";
 
 const OWNER = "favorchurch";
@@ -323,5 +324,82 @@ describe("switching from Preview to Stable", () => {
     expect(offer.updater.channel).toBe("beta");
     expect(offer.updater.allowDowngrade).toBe(false);
     expect(offer.offered).toBe("1.3.0-beta.1");
+  });
+});
+describe("0.3.0-beta.4 against a 0.3.0-beta.5 release", () => {
+  const RELEASES = ["v0.3.0-beta.5", "v0.3.0-beta.4"];
+
+  it("offers a Preview client 0.3.0-beta.5, with downgrades still off", async () => {
+    const offer = await check("preview", "0.3.0-beta.4", RELEASES);
+    expect(offer.offered).toBe("0.3.0-beta.5");
+    expect(kinds(offer)).toEqual(["checking", "available"]);
+    expect(offer.updater.allowDowngrade).toBe(false);
+  });
+
+  it("does not offer a Stable client that beta, and does not even fetch its files", async () => {
+    const offer = await check("stable", "0.3.0-beta.4", [...RELEASES, "v0.2.0"]);
+    expect(offer.offered).toBeNull();
+    expect(kinds(offer)).not.toContain("available");
+    expect(offer.updater.allowDowngrade).toBe(false);
+    expect(offer.github.downloads().filter((request) => request.includes("beta"))).toEqual([]);
+  });
+
+  it("never offers a Preview client 0.3.0-beta.4 when it already runs 0.3.0-beta.5", async () => {
+    const offer = await check("preview", "0.3.0-beta.5", RELEASES);
+    expect(offer.offered).toBeNull();
+    expect(offer.updater.allowDowngrade).toBe(false);
+  });
+
+  it("carries the offered version through the adapter into the update state", async () => {
+    const { updater } = await newUpdater("0.3.0-beta.4", RELEASES);
+    updater.autoDownload = false;
+    const adapter = createUpdaterAdapter(updater as unknown as AutoUpdaterLike, () => undefined);
+    const states: UpdateState[] = [];
+    const policy = createUpdateController({ adapter, channel: "preview", onState: (state) => states.push(state), timers: createFakeTimers().timers });
+    await policy.checkNow();
+    expect(states).toEqual([{ kind: "checking" }, { kind: "downloading", version: "0.3.0-beta.5" }]);
+  });
+});
+
+describe("a feed or check error", () => {
+  const RELEASES = ["v0.3.0-beta.5", "v0.3.0-beta.4"];
+
+  /** A Preview client on 0.3.0-beta.4 whose feed fails until `recover()`. */
+  async function flaky(failure: "http" | "network") {
+    const { updater, github } = await newUpdater("0.3.0-beta.4", RELEASES);
+    updater.autoDownload = false;
+    let failing = true;
+    // The provider already holds this executor, so it is wrapped in place.
+    const inner = github.executor.request.bind(github.executor);
+    github.executor.request = async (request: { path?: string }) => {
+      if (!failing) return inner(request);
+      throw failure === "http" ? new HttpError(503, "unavailable") : Object.assign(new Error("net::ERR_INTERNET_DISCONNECTED"), { code: "ERR_INTERNET_DISCONNECTED" });
+    };
+    const quitAndInstall = vi.spyOn(updater, "quitAndInstall");
+    const adapter = createUpdaterAdapter(updater as unknown as AutoUpdaterLike, () => undefined);
+    const states: UpdateState[] = [];
+    const policy = createUpdateController({ adapter, channel: "preview", onState: (state) => states.push(state), timers: createFakeTimers().timers });
+    return { policy, states, quitAndInstall, github, recover: () => void (failing = false) };
+  }
+
+  it.each(["http", "network"] as const)("(%s) gives the error state, installs nothing and is not an update", async (failure) => {
+    const { policy, states, quitAndInstall } = await flaky(failure);
+    await policy.checkNow();
+    expect(policy.state()).toEqual({ kind: "error" });
+    expect(states.at(-1)).toEqual({ kind: "error" });
+    expect(policy.lastCheckedAt()).toBeNull();
+    expect(policy.beforeQuit(false)).toBe("none");
+    expect(quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("lets the volunteer try again, and the retry finds the update", async () => {
+    const { policy, recover, quitAndInstall } = await flaky("http");
+    await policy.checkNow();
+    expect(policy.state()).toEqual({ kind: "error" });
+    recover();
+    await policy.checkNow();
+    expect(policy.state()).toEqual({ kind: "downloading", version: "0.3.0-beta.5" });
+    expect(policy.lastCheckedAt()).not.toBeNull();
+    expect(quitAndInstall).not.toHaveBeenCalled();
   });
 });

@@ -178,6 +178,7 @@ async function runApp(): Promise<void> {
     adapter: updateAdapter,
     channel: prefs.get().channel,
     onState: (state) => controller.setUpdateState(state),
+    onChecked: (checkedAt) => controller.setUpdateCheckedAt(checkedAt),
   });
 
   const run = createCommandRunner();

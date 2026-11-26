@@ -104,7 +104,7 @@ describe("deriveStatus copy", () => {
     ["unreachable", { relay: relay({ cloud: "unreachable" }) }, "amber", "Waiting for connection", "Printing resumes when the internet is back."],
     ["paused", { paused: true }, "amber", "Connected", "Choose Resume printing in the menu."],
     ["relay paused", { relay: relay({ state: "paused" }) }, "amber", "Waiting for connection", "Choose Resume printing in the menu."],
-    ["downloading", { update: { kind: "downloading" } }, "amber", "Connected", null],
+    ["downloading", { update: { kind: "downloading", version: "0.2.0" } }, "amber", "Connected", null],
     [
       "ambiguous",
       { relay: relay({ lastError: "send_ambiguous" }) },
@@ -164,7 +164,7 @@ const inputsArb: fc.Arbitrary<StatusInputs> = fc.record({
   update: fc.constantFrom<UpdateState[]>(
     { kind: "idle" },
     { kind: "checking" },
-    { kind: "downloading" },
+    { kind: "downloading", version: "0.2.0" },
     { kind: "ready", version: "0.2.0" },
     { kind: "error" },
   ),

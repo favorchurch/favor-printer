@@ -12,7 +12,7 @@ export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export type UpdaterEvent =
   | { kind: "checking" }
-  | { kind: "available" }
+  | { kind: "available"; version: string }
   | { kind: "not-available" }
   | { kind: "downloaded"; version: string }
   | { kind: "error" };
@@ -43,6 +43,8 @@ export type UpdateController = {
   setChannel(channel: UpdateChannel): Promise<void>;
   checkNow(): Promise<void>;
   state(): UpdateState;
+  /** ISO time of the last check that got an answer from the feed, or null. */
+  lastCheckedAt(): string | null;
   /** Call when the volunteer quits. Installs now, or waits for `jobsSettled`. */
   beforeQuit(jobInFlight: boolean): InstallDecision;
   /** Call when the in-flight job has finished. Installs an update deferred by `beforeQuit`. */
@@ -53,7 +55,10 @@ export function createUpdateController(deps: {
   adapter: UpdaterAdapter;
   channel: UpdateChannel;
   onState?: (state: UpdateState) => void;
+  /** Called with the time (ISO) of each check that got an answer from the feed. */
+  onChecked?: (checkedAt: string) => void;
   timers?: Timers;
+  now?: () => Date;
 }): UpdateController {
   const { adapter } = deps;
   const timers = deps.timers ?? systemTimers;
@@ -61,6 +66,8 @@ export function createUpdateController(deps: {
   let state: UpdateState = { kind: "idle" };
   let interval: unknown = null;
   let installPending = false;
+  let installed = false;
+  let checkedAt: string | null = null;
 
   const set = (next: UpdateState) => {
     if (JSON.stringify(next) === JSON.stringify(state)) return;
@@ -68,14 +75,28 @@ export function createUpdateController(deps: {
     deps.onState?.(next);
   };
 
+  const now = deps.now ?? (() => new Date());
+
+  const answered = () => {
+    checkedAt = now().toISOString();
+    deps.onChecked?.(checkedAt);
+  };
+
+  /** Never twice: the app is already on its way out after the first. */
+  const install = () => {
+    if (installed) return;
+    installed = true;
+    adapter.quitAndInstall();
+  };
+
   const handle = (event: UpdaterEvent) => {
-    // A downloaded update stays offered whatever a later check reports.
+    if (event.kind === "available" || event.kind === "not-available" || event.kind === "downloaded") answered();    // A downloaded update stays offered whatever a later check reports.
     if (state.kind === "ready" && event.kind !== "downloaded") return;
     switch (event.kind) {
       case "checking":
         return set({ kind: "checking" });
       case "available":
-        return set({ kind: "downloading" });
+        return set({ kind: "downloading", version: event.version });
       case "not-available":
         return set({ kind: "idle" });
       case "downloaded":
@@ -115,16 +136,17 @@ export function createUpdateController(deps: {
     },
     checkNow,
     state: () => state,
+    lastCheckedAt: () => checkedAt,
     beforeQuit(jobInFlight) {
       const decision = installDecision({ updateReady: state.kind === "ready", jobInFlight });
-      if (decision === "install") adapter.quitAndInstall();
+      if (decision === "install") install();
       if (decision === "defer") installPending = true;
       return decision;
     },
     jobsSettled() {
       if (!installPending) return;
       installPending = false;
-      adapter.quitAndInstall();
+      install();
     },
   };
 }

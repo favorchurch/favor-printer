@@ -118,8 +118,9 @@ describe("buildMenuTemplate", () => {
     it.each([
       [{ kind: "idle" }, "Check for updates", true],
       [{ kind: "checking" }, "Checking for updates...", false],
-      [{ kind: "downloading" }, "Downloading an update...", false],
-      [{ kind: "ready", version: "0.2.0" }, "Update 0.2.0 ready. It installs when you quit.", false],
+      [{ kind: "downloading", version: "" }, "Downloading an update...", false],
+      [{ kind: "downloading", version: "0.3.0-beta.5" }, "Update available: v0.3.0-beta.5", false],
+      [{ kind: "ready", version: "0.3.0-beta.5" }, "Update ready: v0.3.0-beta.5. It installs when you quit.", false],
       [{ kind: "ready", version: "" }, "An update is ready. It installs when you quit.", false],
       [{ kind: "error" }, "Update check failed. Try again", true],
     ] as const)("%j shows %s", (update, label, clickable) => {

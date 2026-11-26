@@ -135,6 +135,8 @@ export type AppController = {
   openSetup(): void;
 
   setUpdateState(state: UpdateState): void;
+  /** Records when an update check last got an answer from the feed. */
+  setUpdateCheckedAt(checkedAt: string): void;
   setPowerContext(context: PowerContext): void;
   /** Re-reads the printer and the legacy agent. Call after wake or unlock. */
   refresh(): Promise<void>;
@@ -169,6 +171,7 @@ export function createAppController(deps: ControllerDeps): AppController {
   let inUseElsewhere = false;
   let paused = false;
   let update: UpdateState = { kind: "idle" };
+  let updateCheckedAt: string | null = null;
   let setupStep: SetupStep | null = null;
   /** The volunteer is pairing again while the saved pairing keeps printing. Not saved: a restart drops it. */
   let reenrolling = false;
@@ -320,7 +323,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       : legacyLoaded && migrationFailed && derived.color !== "red"
         ? { ...derived, detail: LEGACY_FAILED_DETAIL }
         : derived;
-    const warnings = powerWarnings({ onBattery: power.onBattery === true });
+    const warnings = powerWarnings({ onBattery: power.onBattery=== true });
     if (scanWarning) warnings.push(scanWarning);
     if (power.asleep) warnings.push(ASLEEP_WARNING);
     if (power.locked) warnings.push(LOCKED_WARNING);
@@ -340,6 +343,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       openAtLogin: current.openAtLogin ?? true,
       channel: current.channel,
       update,
+      updateCheckedAt,
       recentJobs: recentJobs(relay),
       setupStep,
       printer: scan,
@@ -554,8 +558,7 @@ export function createAppController(deps: ControllerDeps): AppController {
 
   const controller: AppController = {
     async initialize() {
-      const loaded = await prefs.load();
-      if (loaded.openAtLogin === null) {
+      const loaded = await prefs.load();   if (loaded.openAtLogin === null) {
         // First run: open at login unless the volunteer turns it off.
         await prefs.update({ openAtLogin: true }).catch(() => undefined);
         deps.applyOpenAtLogin(true);
@@ -698,8 +701,7 @@ export function createAppController(deps: ControllerDeps): AppController {
       if (!trimmed) return { ok: false, reason: "invalid_name" };
       return withRename(async () => {
         const credentials = await pairing();
-        if (!credentials) return { ok: false, reason: "not_enrolled" };
-        const printerId = cloudPrinterIds[0] ?? supervisorState.relay?.printerIds[0];
+        if (!credentials) return { ok: false, reason: "not_enrolled" };     const printerId = cloudPrinterIds[0] ?? supervisorState.relay?.printerIds[0];
         if (!printerId) return { ok: false, reason: "printer_not_ready" };
         return renameCloud({ printerId, name: trimmed }, credentials);
       });
@@ -865,6 +867,11 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     setUpdateState(state) {
       update = state;
+      emit();
+    },
+
+    setUpdateCheckedAt(checkedAt) {
+      updateCheckedAt = checkedAt;
       emit();
     },
 
