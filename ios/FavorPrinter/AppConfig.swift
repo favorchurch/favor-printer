@@ -22,6 +22,8 @@ struct AppConfig: Sendable, Equatable {
     }
 
     let rsvpBaseURL: URL
+    /// Where the iPad update metadata lives. Nil when absent or unusable: the update check then stays off and the app runs normally.
+    let updateMetadataURL: URL?
 
     enum Failure: Error, Equatable {
         case missing
@@ -29,7 +31,7 @@ struct AppConfig: Sendable, Equatable {
         case nonProduction
     }
 
-    init(rsvpBaseURL: URL, build: Build = .current) throws {
+    init(rsvpBaseURL: URL, updateMetadataURL: URL? = nil, build: Build = .current) throws {
         guard rsvpBaseURL.scheme?.lowercased() == "https", rsvpBaseURL.host?.isEmpty == false else {
             throw Failure.insecure
         }
@@ -39,6 +41,20 @@ struct AppConfig: Sendable, Equatable {
             guard isProductionOrigin else { throw Failure.nonProduction }
         }
         self.rsvpBaseURL = rsvpBaseURL
+        self.updateMetadataURL = updateMetadataURL.flatMap { Self.isUsableUpdateURL($0, build: build) ? $0 : nil }
+    }
+
+    /// HTTPS with no credentials. A Release build reads it from production only, like the relay.
+    private static func isUsableUpdateURL(_ url: URL, build: Build) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased(), !host.isEmpty,
+              url.user == nil, url.password == nil
+        else { return false }
+        return build == .debug || (host == productionHost && (url.port ?? 443) == 443)
+    }
+
+    private static func updateMetadataURL(info: [String: Any]?) -> URL? {
+        let raw = (info?["UpdateMetadataURL"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return raw.flatMap { $0.isEmpty ? nil : URL(string: $0) }
     }
 
     init(info: [String: Any]?, build: Build = .current) throws {
@@ -49,11 +65,11 @@ struct AppConfig: Sendable, Equatable {
             guard build == .debug, let preview = URL(string: "https://\(Self.previewHost)") else {
                 throw Failure.missing
             }
-            try self.init(rsvpBaseURL: preview, build: build)
+            try self.init(rsvpBaseURL: preview, updateMetadataURL: Self.updateMetadataURL(info: info), build: build)
             return
         }
         guard let raw, let url = URL(string: raw) else { throw Failure.missing }
-        try self.init(rsvpBaseURL: url, build: build)
+        try self.init(rsvpBaseURL: url, updateMetadataURL: Self.updateMetadataURL(info: info), build: build)
     }
 
     static func load(bundle: Bundle = .main, build: Build = .current) throws -> AppConfig {

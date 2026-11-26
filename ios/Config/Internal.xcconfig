@@ -1,2 +1,4 @@
 // Internal builds (development-signed, Favor iPads only) talk to RSVP production. `/` is a comment start in xcconfig, so $() splits the scheme separator.
 RSVP_BASE_URL = https:/$()/rsvp.favor.church
+// iPad update metadata, read over HTTPS only. Absent or unreachable means no update prompt.
+UPDATE_METADATA_URL = https:/$()/rsvp.favor.church/downloads/ipad/update.json

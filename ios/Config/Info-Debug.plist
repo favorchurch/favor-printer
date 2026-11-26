@@ -4,6 +4,8 @@
 <dict>
 	<key>RSVPBaseURL</key>
 	<string>$(RSVP_BASE_URL)</string>
+	<key>UpdateMetadataURL</key>
+	<string>$(UPDATE_METADATA_URL)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
