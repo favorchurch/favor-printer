@@ -109,6 +109,28 @@ describe("quit coordinator", () => {
     expect(deps.quit).toHaveBeenCalledTimes(1);
   });
 
+  it("quits without installing when the relay had to be ended, and never asks the update policy", async () => {
+    const { coordinator, deps, order } = setup({
+      decision: "install",
+      shutdown: vi.fn(async () => ({ outcome: "killed" as const, jobInFlight: false })),
+    });
+    await coordinator.request();
+    expect(deps.updates.beforeQuit).not.toHaveBeenCalled();
+    expect(deps.quit).toHaveBeenCalledTimes(1);
+    expect(coordinator.isQuitAllowed()).toBe(true);
+    expect(order).toEqual(["updates.stop", "quit"]);
+  });
+
+  it("still asks the update policy after a clean stop", async () => {
+    const { coordinator, deps } = setup({
+      decision: "install",
+      shutdown: vi.fn(async () => ({ outcome: "stopped" as const, jobInFlight: false })),
+    });
+    await coordinator.request();
+    expect(deps.updates.beforeQuit).toHaveBeenCalledWith(false);
+    expect(deps.quit).not.toHaveBeenCalled();
+  });
+
   it("clears its latch when shutdown fails, so quitting can be tried again", async () => {
     const shutdown = vi
       .fn<QuitDeps["shutdown"]>()
