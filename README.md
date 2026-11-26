@@ -18,6 +18,7 @@ Download and setup steps for volunteers: [docs/INSTALL-MAC.md](docs/INSTALL-MAC.
   RSVP native API (`docs/native-api/v1.md` in the RSVP repository). Build and simulator test commands
   are in `ios/README.md`. Tracked in favorchurch/favor-printer#22.
 - `docs/app-store/` — the App Store readiness dossier for the iPad app.
+- `docs/UPDATES.md` — how Mac and iPad updates work, rollout and revocation, and the iPad release-metadata contract.
 - `build/` — packaging resources (`entitlements.mac.plist`).
 - `scripts/` — build, preview and vendor verification scripts.
 

@@ -15,8 +15,9 @@ explicit OK. Until then no volunteer's app can see the release.
 4. [Publishing the draft](#publishing-the-draft)
 5. [Local signing and notarization](#local-signing-and-notarization)
 6. [Rollback](#rollback)
-7. [What the workflows do](#what-the-workflows-do)
-8. [Windows printer host (Preview)](#windows-printer-host-preview)
+7. [iPad update metadata](#ipad-update-metadata)
+8. [What the workflows do](#what-the-workflows-do)
+9. [Windows printer host (Preview)](#windows-printer-host-preview)
 
 ## Versions and channels
 
@@ -334,6 +335,26 @@ it back. The only fix is a **fix-forward release with a higher version than the 
 
 Volunteers who are stuck on the bad build and cannot update can install the fix-forward DMG over it
 (see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)).
+
+## iPad update metadata
+
+Mac updates come from the published GitHub release. The iPad reads `https://rsvp.favor.church/downloads/ipad/update.json`,
+whose format is in [UPDATES.md](UPDATES.md#release-metadata-contract-ipad). Bump it when:
+
+- **A new OTA build is published.** After the `.ipa` downloads from the URL RSVP serves, set `channel` to `ota`,
+  `version`, `build` and `released: true`. `installURL` stays the fixed manifest link.
+- **A new TestFlight build finishes processing and is added to the internal group.** Set `channel` to `testflight`,
+  `version`, `build` and `released: true`, with no `installURL`.
+
+The file is one object with one `channel`. iPads installed through the other channel ignore it and never prompt, so
+publish the file for the channel you want announced.
+- **A build must stop being offered.** Set `released` to `false`. This stops prompts only. It never downgrades an
+  iPad, so ship a higher build to replace a bad one.
+
+**The metadata must never claim an update before its artifact is published and installable.** An early
+`released: true` sends iPads to an install link that fails, or to TestFlight with nothing new. Publish the artifact,
+verify it downloads, then change the metadata, in that order. `build` must always be higher than the build it replaces.
+Changing the field set needs a new `schemaVersion`.
 
 ## What the workflows do
 

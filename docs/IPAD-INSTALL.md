@@ -59,13 +59,21 @@ Simulator screenshots of the guide are in [docs/verification/ipad-ux](verificati
 If the printer is currently set up on a Mac, the admin must confirm **Hand over from <host>** when they issue the code.
 The Mac must already be on Favor Printer v0.3.0-beta.2 or later.
 
+## Updating an iPad
+
+The app checks for updates itself and shows an **Update available** card on the status screen. OTA iPads tap
+**Install update**. TestFlight iPads tap **Open TestFlight** and then **Update** there. Operators always use the same
+fixed install link, the **Install on iPad** button on <https://rsvp.favor.church/printer>, which serves
+`/downloads/ipad/manifest.plist`. It never changes per build, so do not share or bookmark a per-build link. The card's
+details, the 90-day TestFlight expiry and the metadata format are in [UPDATES.md](UPDATES.md).
+
 ## Troubleshooting
 
 | What you see | What to do |
 | --- | --- |
 | "Unable to install" | The iPad is not registered, or the network blocked the download. Ask the printer admin to check the registration, then try again on a different network. |
 | No TestFlight invite email, or TestFlight does not list Favor Printer | The owner is not an internal tester yet, or the iPad is signed in to a different Apple ID. Ask a maintainer to check the tester list. |
-| TestFlight shows the build as expired | TestFlight builds last 90 days. Ask a maintainer for a newer build, then update in TestFlight. |
+| TestFlight shows the build as expired | TestFlight builds last 90 days. Ask a maintainer for a newer build, then update in TestFlight. See [UPDATES.md](UPDATES.md). |
 | "Printer seen, driver not running" | Turn the driver off and on in Settings > Favor Printer > Drivers, then replug the printer. |
 | "This printer is active on another host" | Ask an RSVP printing admin for a handover code. |
 | "Printer moved to another host" | Another host took over this printer, so this iPad stopped printing. If that was not intended, ask an admin for a new handover code. |
@@ -131,7 +139,13 @@ gh release create ipad-internal-<sha> FavorPrinter-iPad-internal.ipa \
 In `rsvp.favor.church`, edit `src/lib/printer/ipadRelease.ts` and change only `IPAD_IPA_URL` (to the new asset URL,
 `https://github.com/favorchurch/favor-printer/releases/download/ipad-internal-<sha>/FavorPrinter-iPad-internal.ipa`)
 and `IPAD_VERSION`. Open a PR. **Merging deploys to production**, so merge only when the asset is already published and
-downloads.
+downloads. The install link operators use stays the fixed `/downloads/ipad/manifest.plist`. Only the asset behind it
+changes.
+
+Then update the iPad release metadata, `/downloads/ipad/update.json`, in the same or a follow-up RSVP PR, **after** the
+asset downloads. Set `channel` to `ota`, `version` and `build` to the new build and `released` to `true`. The format and rules are in
+[UPDATES.md](UPDATES.md#release-metadata-contract-ipad), and [RELEASING.md](RELEASING.md#ipad-update-metadata) says when
+to bump it.
 
 The current build is `ipad-internal-c9c07ac`.
 
@@ -142,6 +156,7 @@ After the deploy:
 ```sh
 curl -sI https://rsvp.favor.church/downloads/ipad/manifest.plist | head -1   # expect 200
 curl -s https://rsvp.favor.church/downloads/ipad/manifest.plist | grep -A1 software-package
+curl -s https://rsvp.favor.church/downloads/ipad/update.json                  # expect schemaVersion 1, the new build, released true
 curl -sIL <IPA URL> | grep -E '^HTTP|content-length'                          # expect 200 and a non-trivial size
 ```
 
@@ -177,7 +192,8 @@ record, the distribution certificate and the API key), the build number rule and
    add the build to one.
 5. **Invite.** Testers get the invitation email. Send them the TestFlight operator runbook above.
 6. **Build expiry.** Every TestFlight build expires **90 days** after upload and then stops launching. Upload a newer
-   build before then, and tell testers to update in TestFlight. Unlike the OTA profile, no iPad registration is needed.
+   build before then, and tell testers to update in TestFlight. The app shows an **Open TestFlight** button once the metadata (`channel` `testflight`) names the
+   new build (see [UPDATES.md](UPDATES.md)). Unlike the OTA profile, no iPad registration is needed.
 
 ### Constraints
 

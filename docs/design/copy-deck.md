@@ -205,9 +205,10 @@ This flow appears when a MacBook has the previous background launchd relay servi
 - **Update Status Lines (`UpdateState`):**
   - `idle`: `Up to date`
   - `checking`: `Checking for updates...`
-  - `downloading`: `Downloading update...`
-  - `ready`: `Update ready. Restart to apply.`
+  - `downloading`: `Update available: v{version}. Downloading...` (or `Downloading update...` when the updater gave no version)
+  - `ready`: `Update ready: v{version}. It installs when you quit.` (or `Update ready. Restart to apply.` when the updater gave no version)
   - `error`: `Update check failed.`
+- **Last Checked Line:** `Last checked {time}`, shown under the update line once a check has reached the update feed. `{time}` is `3:42 PM` for a check today and `Nov 24, 3:42 PM` for an earlier day. Hidden when there is no valid time.
 - **No Enabled Printer (status detail and recovery line):** Shown when Favor RSVP answers but lists no enabled printer for this laptop (the cloud printer was turned off, removed or handed over). The pill reads `Needs attention` (RSVP did answer, so it is not `Waiting for connection`). It also applies before any heartbeat, when the relay reports `config_invalid` or `printer_handed_over`.
   - Detail Text: `RSVP has no enabled printer for this laptop, so nothing can print.`
   - Recovery Line: `Ask an admin to turn the printer on in RSVP printing settings, or pair with a new code.`
@@ -237,8 +238,8 @@ This flow appears when a MacBook has the previous background launchd relay servi
 ### Update Status Items
 - Idle: `Check for updates`
 - Checking: `Checking for updates...`
-- Downloading: `Downloading an update...`
-- Ready: `Update {version} ready. It installs when you quit.` (or `An update is ready. It installs when you quit.`)
+- Downloading: `Update available: v{version}` (or `Downloading an update...` when the updater gave no version)
+- Ready: `Update ready: v{version}. It installs when you quit.` (or `An update is ready. It installs when you quit.`)
 - Error: `Update check failed. Try again`
 
 ### Tray Menu Actions
@@ -259,3 +260,14 @@ This flow appears when a MacBook has the previous background launchd relay servi
 - App Information & Exit:
   - App Version: `Favor Printer {version}`
   - Quit: `Quit Favor Printer`
+
+## 5. iPad Update Surfaces
+
+Shown on the iPad host status screen only when the update check finds a newer released build. See [UPDATES.md](../UPDATES.md).
+
+- **Card Title:** `Update available`
+- **Latest Row:** `Latest` / `{version} ({build})`, for example `0.3.0 (412)`
+- **Button, OTA install:** `Install update`
+- **Button, TestFlight install:** `Open TestFlight`
+- **Installed Version Row (App card):** `Version` / `{version} ({build})`
+- **No update, development build, or untrusted/failed check:** no card and no error text.
