@@ -12,6 +12,8 @@ enum UITestHarness {
     static let scenarioFlag = "-FavorUITestScenario"
     static let resetOnboardingFlag = "-FavorUITestResetOnboarding"
     static let respectOnboardingFlag = "-FavorUITestRespectOnboarding"
+    /// Injects an available update for screenshots: `-FavorUITestUpdate ota` or `-FavorUITestUpdate testflight`.
+    static let updateFlag = "-FavorUITestUpdate"
 
     enum Scenario: String, CaseIterable {
         case driverNotRunning, unplugged, notEnrolled, enrolled, keepAliveInterrupted, backgroundEnabled, guidedAccessOff
@@ -74,6 +76,36 @@ extension UITestHarness {
         )
         if scenario == .keepAliveInterrupted { host.simulateKeepAliveInterruptionForUITest() }
         return host
+    }
+}
+
+extension UITestHarness {
+    static let updateInstalled = InstalledBuild(version: "0.2.0", build: "4")
+    static let updateLatestVersion = "0.3.0"
+    static let updateLatestBuild = "9"
+
+    /// A checker that runs the real update model against canned metadata, so no scenario touches the network. Without
+    /// `updateFlag` it has no metadata URL and never prompts.
+    @MainActor static func makeUpdateChecker(arguments: [String] = ProcessInfo.processInfo.arguments) -> UpdateChecker {
+        let bundleID = "church.favor.printer.ios"
+        guard let index = arguments.firstIndex(of: updateFlag), arguments.indices.contains(index + 1),
+              let url = URL(string: "https://relay.invalid/update.json")
+        else {
+            return UpdateChecker(installed: updateInstalled, distribution: .development, expectedBundleID: bundleID, metadataURL: nil)
+        }
+        let isTestFlight = arguments[index + 1] == "testflight"
+        let install = "itms-services://?action=download-manifest&url=https://relay.invalid/manifest.plist"
+        let body = Data("""
+        {"schemaVersion":1,"bundleId":"\(bundleID)","channel":"\(isTestFlight ? "testflight" : "ota")",\
+        "version":"\(updateLatestVersion)","build":"\(updateLatestBuild)","released":true,"installURL":"\(install)"}
+        """.utf8)
+        return UpdateChecker(
+            installed: updateInstalled,
+            distribution: isTestFlight ? .testFlight : .ota,
+            expectedBundleID: bundleID,
+            metadataURL: url,
+            fetch: { _ in .reply(status: 200, body: body) }
+        )
     }
 }
 

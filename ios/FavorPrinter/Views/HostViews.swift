@@ -5,6 +5,8 @@ import SwiftUI
 
 struct HostStatusView: View {
     let host: HostController
+    let updates: UpdateChecker
+    @Environment(\.openURL) private var openURL
     @State private var code = ""
     @State private var confirmingUnenroll = false
     @State private var confirmingSetup = false
@@ -18,10 +20,12 @@ struct HostStatusView: View {
             VStack(alignment: .leading, spacing: FavorSpace.medium) {
                 headlineCard
                 if let error = host.error { errorCard(error) }
+                updateCard
                 printerCard
                 hostCard
                 keepAliveCard
                 enrollmentCard
+                appCard
                 #if DEBUG
                 debugSections
                 #endif
@@ -69,6 +73,31 @@ struct HostStatusView: View {
         if host.isSettingUpPrinter { return Headline(title: "Setting up", detail: "The printer is being set up. Printing resumes when it finishes.", badge: .unavailable) }
         if host.isLoopRunning { return Headline(title: "Ready", detail: "This iPad is connected and ready to print.", badge: .ready) }
         return Headline(title: "Paused", detail: "Printing resumes when this app is active.", badge: .unavailable)
+    }
+
+    @ViewBuilder
+    private var updateCard: some View {
+        if let prompt = updates.prompt {
+            FavorCard {
+                VStack(alignment: .leading, spacing: FavorSpace.medium) {
+                    Text("Update available")
+                        .font(FavorType.utility(20, weight: .semibold))
+                        .foregroundStyle(FavorColor.ink)
+                        .accessibilityIdentifier("update-available")
+                    HostRow(title: "Latest", value: prompt.summary, id: "update-latest")
+                    // Opens only on this tap. The check itself never leaves the app.
+                    Button(prompt.action.buttonTitle) { openURL(prompt.action.url) }
+                        .buttonStyle(FavorPrimaryButtonStyle())
+                        .accessibilityIdentifier("update-button")
+                }
+            }
+        }
+    }
+
+    private var appCard: some View {
+        card("App") {
+            HostRow(title: "Version", value: updates.installed.summary, id: "app-version")
+        }
     }
 
     private func errorCard(_ error: HostError) -> some View {

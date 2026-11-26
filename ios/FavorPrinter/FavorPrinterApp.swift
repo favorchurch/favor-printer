@@ -3,13 +3,14 @@ import SwiftUI
 @main
 struct FavorPrinterApp: App {
     @State private var host: HostController?
+    @State private var updates: UpdateChecker?
     @State private var configError: String?
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if let host {
-                    RootView(host: host)
+                if let host, let updates {
+                    RootView(host: host, updates: updates)
                 } else if let configError {
                     ConfigErrorView(message: configError)
                 } else {
@@ -25,6 +26,7 @@ struct FavorPrinterApp: App {
         #if DEBUG
         if UITestHarness.isActive {
             host = UITestHarness.makeHost()
+            updates = UITestHarness.makeUpdateChecker()
             return
         }
         #endif
@@ -35,6 +37,8 @@ struct FavorPrinterApp: App {
         }
         do { host = try HostController.make(baseURL: config.rsvpBaseURL) } catch {
             configError = "The print queue on this iPad could not be opened."
+            return
         }
+        updates = UpdateChecker.live(config: config)
     }
 }

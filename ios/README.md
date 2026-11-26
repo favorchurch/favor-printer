@@ -342,6 +342,30 @@ the wire with a job. Release builds compile neither.
 `HostStatusUITests` drives the screen with `-FavorUITestMock` plus either `-FavorHostFakeRelay -FavorHostFakeTransport` (the simulator cannot load the dext, so the fake printer is needed) or the mocked enroll
 call (code `CONFLICT` is refused with a conflict; `-FavorUITestDriverOff` fakes a printer without a running driver).
 
+### Update check
+
+The Host screen always shows "Version" (version and build) under "App". Where the install channel is known, a fail-closed check
+(`Update/UpdateCheck.swift`, pure) decides whether to show "Update available" with the latest version and one button.
+The button opens a URL only when tapped: the `itms-services` install link for an OTA install, TestFlight (`itms-beta://`)
+for a TestFlight install. A TestFlight build never receives the OTA link. Every doubt means no prompt: malformed JSON, an unknown
+schema, another bundle id or channel, `released: false`, an OTA entry without a valid install link, a network error, a non-200 status, a
+body over 64 KB, an equal or older build. Builds compare as plain integers.
+
+The metadata is a single JSON file at `UpdateMetadataURL` (Info.plist, from `UPDATE_METADATA_URL` in `Config/*.xcconfig`,
+default `https://<rsvp host>/downloads/ipad/update.json`). A Release build reads it from `rsvp.favor.church` only. Missing or unusable,
+the check stays off. Schema 1:
+
+```json
+{"schemaVersion": 1, "bundleId": "church.favor.printer.ios", "channel": "ota", "version": "0.3.0", "build": "9",
+ "released": true, "installURL": "itms-services://?action=download-manifest&url=https://rsvp.favor.church/downloads/ipad/manifest.plist"}
+```
+
+`channel` is `ota` or `testflight`. The install link must use the metadata's own host over HTTPS. Install kind comes from the build
+(Debug is development, a `sandboxReceipt` is TestFlight, an embedded provisioning profile is OTA, anything else is unknown and never prompts).
+The request is a bare GET with no credential, cookie or identifier. It runs at launch, on returning to the foreground and every 6 hours while
+active (never closer than 15 minutes), and backs off up to 6 hours after failures. It does not touch the host loop, spool or printer.
+UI tests inject a state with `-FavorUITestMock -FavorUITestUpdate ota|testflight`. The RSVP side that publishes `update.json` is outside this repo.
+
 ### Setup guide and simulator screenshots
 
 On first launch, until the iPad is enrolled, the app opens a Setup guide (`Views/Onboarding/OnboardingView.swift`, steps from
