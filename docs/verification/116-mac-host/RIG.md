@@ -458,3 +458,71 @@ node $T1/.scratch/116-mac/tapsum.mjs $TL | tail -9 | cut -c1-170
 tail -4 ~/Library/Logs/favor-printer/main.log | cut -c1-150
 ```
 
+
+## relay-bp.mjs (scenario 10 overlap) and tap-strip.js diff (scenario 2c)
+
+Extra scratch files for the fix round. Scenario drivers: `s2d.sh` (strip, quit), `s10b.sh <profile> <aclFlag>` (overlap) and `s10c.sh`.
+
+```
+// usage: node relay-bp.mjs <port> <statusfile> <resumeflag>
+// Attaches to the relay child's inspector. Breakpoint 1: runTick claim stage. Breakpoint 2: runTick finally block.
+import fs from 'node:fs';
+const [port, statusFile, resumeFlag] = process.argv.slice(2);
+const log = (s) => fs.appendFileSync(statusFile, new Date().toISOString() + ' ' + s + '\n');
+let list;
+for (let i = 0; i < 50; i++) { try { list = await (await fetch('http://127.0.0.1:' + port + '/json/list')).json(); if (list[0]) break; } catch {} await new Promise(r => setTimeout(r, 200)); }
+if (!list) { log('NO_INSPECTOR'); process.exit(2); }
+const ws = new WebSocket(list[0].webSocketDebuggerUrl);
+await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+let n = 0; const pending = new Map(); const scripts = [];
+let onPaused = () => {};
+ws.onmessage = (m) => { const d = JSON.parse(m.data);
+  if (d.method === 'Debugger.scriptParsed' && /relay\.js/.test(d.params.url)) scripts.push(d.params);
+  if (d.method === 'Debugger.paused') onPaused(d.params);
+  if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
+const call = (method, params = {}) => new Promise((res) => { const id = ++n; pending.set(id, res); ws.send(JSON.stringify({ id, method, params })); });
+await call('Debugger.enable');
+await new Promise(r => setTimeout(r, 500));
+const sc = scripts.find((s) => /relay\.js$/.test(s.url));
+if (!sc) { log('NO_RELAY_SCRIPT scripts=' + scripts.map(s => s.url).join(',')); process.exit(3); }
+const src = (await call('Debugger.getScriptSource', { scriptId: sc.scriptId })).result.scriptSource.split('\n');
+const lineOf = (re, from = 0) => { for (let i = from; i < src.length; i++) if (re.test(src[i])) return i; return -1; };
+const tick = lineOf(/async runTick\(\)/);
+const claim = lineOf(/this\.guarded\("claim"/, tick);
+const fin = lineOf(/const empty = await this\.options\.spool\.isReconciled\(\)/, tick);
+log('SCRIPT ' + sc.url.split('/').slice(-3).join('/') + ' runTick@' + (tick + 1) + ' claim@' + (claim + 1) + ' finally@' + (fin + 1));
+if (tick < 0 || claim < 0 || fin < 0) { log('LINES_NOT_FOUND'); process.exit(4); }
+const b1 = await call('Debugger.setBreakpoint', { location: { scriptId: sc.scriptId, lineNumber: claim } });
+const b2 = await call('Debugger.setBreakpoint', { location: { scriptId: sc.scriptId, lineNumber: fin } });
+log('BREAKPOINTS_SET claim=' + !!b1.result?.breakpointId + ' finally=' + !!b2.result?.breakpointId);
+const hit = (which) => new Promise((res) => { onPaused = res; });
+const evalHalted = async (p) => (await call('Debugger.evaluateOnCallFrame', { callFrameId: p.callFrames[0].callFrameId, expression: 'JSON.stringify({halted: this.halted, stopped: this.stopped, accepting: this.accepting})', returnByValue: true })).result?.result?.value;
+const p1 = await hit();
+log('PAUSED_AT_CLAIM_STAGE ' + (await evalHalted(p1)) + '  (work cycle is running, stop not yet processed)');
+while (!fs.existsSync(resumeFlag)) await new Promise(r => setTimeout(r, 100));
+const p2p = hit();
+await call('Debugger.removeBreakpoint', { breakpointId: b1.result.breakpointId });
+await call('Debugger.resume');
+log('RESUMED_FROM_CLAIM_STAGE');
+const p2 = await Promise.race([p2p, new Promise(r => setTimeout(() => r(null), 30000))]);
+if (p2) { log('PAUSED_AT_TICK_FINALLY ' + (await evalHalted(p2)) + '  (halted=true here means stop began while this cycle was still running)'); await call('Debugger.removeBreakpoint', { breakpointId: b2.result.breakpointId }); await call('Debugger.resume'); log('RESUMED_FROM_FINALLY'); }
+else log('NO_FINALLY_PAUSE');
+await new Promise(r => setTimeout(r, 500));
+try { ws.close(); } catch {}
+```
+
+```diff
+--- scratch/tap.js	2026-11-28 15:16:59
++++ scratch/tap-strip.js	2026-11-28 15:17:48
+@@ -4,6 +4,7 @@
+  w('TAP_ON main_pid='+process.pid+' app_version='+el.app.getVersion());
+  const up=el.utilityProcess; const orig=up.fork.bind(up);
+  up.fork=function(...a){ const c=orig(...a); w('RELAY_FORK'); globalThis.__t1child=c; c.on('spawn',()=>w('RELAY_SPAWN pid='+c.pid)); c.on('exit',(code)=>w('RELAY_EXIT code='+code));
++  const __origOn=c.on.bind(c); c.on=function(ev,fn){ if(ev==='message' && process.env.T1_STRIP_RECON==='1'){ return __origOn(ev,(m)=>{ try{ if(m&&m.type==='event'&&m.event&&typeof m.event==='object'&&'reconciliation' in m.event){ const raw=m.event.reconciliation; const e={...m.event}; delete e.reconciliation; w('OLDRELAY_STRIP raw_reconciliation='+raw+' -> field removed before the app sees it'); return fn({...m,event:e}); } }catch(e){} return fn(m); }); } return __origOn(ev,fn); };
+   c.on('message',(m)=>{ try{ const s=(m&&(m.status||m.event))||m||{}; w('RELAY_MSG type='+(m&&m.type)+' state='+s.state+' reconciliation='+s.reconciliation+' inFlight='+s.inFlight+' cloud='+s.cloud+' counts='+JSON.stringify(s.counts)+' err='+s.lastError);}catch(e){} });
+   return c; };
+  for (const ev of ['before-quit','will-quit','quit']) el.app.on(ev,()=>w('APP_'+ev));
+
+
+# relay-bp.mjs (full file, used for scenario 10) is reproduced in RIG.md; it is read-only except for the breakpoints it sets in the relay child.
+```

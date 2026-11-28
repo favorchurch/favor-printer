@@ -1,0 +1,81 @@
+A) overlap + failed lock release (ACL deny delete on the lock):
+UPDATE_READY
++ chmod +a 'user:<user> deny delete' <spool>/.relay.lock (lock release will fail)
+relay child is frozen inside its work cycle (claim stage)
+2026-11-28T07:19:48.368Z SCRIPT app.asar/dist/relay.js runTick@1136 claim@1147 finally@1153
+2026-11-28T07:19:48.370Z BREAKPOINTS_SET claim=true finally=true
+2026-11-28T07:19:49.292Z PAUSED_AT_CLAIM_STAGE {"halted":false,"stopped":false,"accepting":true}  (work cycle is running, stop not yet processed)
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 07:19:49.810
+{"type":"string","value":"quit-invoked"}
+2s after quit request: app alive=1; relay messages since the quit request: 0
+RELEASE_BREAKPOINT 07:19:51.901
+app gone after ~2 s
+bundle after: 0.3.3-test.11
++ chmod -a (restored)
+--- relay debugger log
+2026-11-28T07:19:48.368Z SCRIPT app.asar/dist/relay.js runTick@1136 claim@1147 finally@1153
+2026-11-28T07:19:48.370Z BREAKPOINTS_SET claim=true finally=true
+2026-11-28T07:19:49.292Z PAUSED_AT_CLAIM_STAGE {"halted":false,"stopped":false,"accepting":true}  (work cycle is running, stop not yet processed)
+2026-11-28T07:19:51.919Z RESUMED_FROM_CLAIM_STAGE
+2026-11-28T07:19:51.921Z PAUSED_AT_TICK_FINALLY {"halted":true,"stopped":true,"accepting":false}  (halted=true here means stop began while this cycle was still running)
+2026-11-28T07:19:51.921Z RESUMED_FROM_FINALLY
+--- tap since quit request (condensed)
+07:19:51.919 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+07:19:51.923 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+07:19:51.923 APP_before-quit
+07:19:52.034 APP_will-quit
+07:19:52.035 MAIN_EXIT code=0
+07:19:52.035 APP_quit
+07:19:52.054 RELAY_EXIT code=0
+--- spool
+total 8
+drwx------   3 <user>  staff   96 28 Nov 15:19 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 15:19 ..
+-rw-------   1 <user>  staff  220 28 Nov 15:19 .relay.lock
+  name_sha=5bb4afc5 ext=lock size=220
+
+
+B) overlap only, lock release succeeds (control):
+relay up
++ kill -USR1 relay pid (enables its inspector on 9229)
+UPDATE_READY
+relay child is frozen inside its work cycle (claim stage)
+2026-11-28T07:20:46.637Z SCRIPT app.asar/dist/relay.js runTick@1136 claim@1147 finally@1153
+2026-11-28T07:20:46.639Z BREAKPOINTS_SET claim=true finally=true
+2026-11-28T07:20:48.316Z PAUSED_AT_CLAIM_STAGE {"halted":false,"stopped":false,"accepting":true}  (work cycle is running, stop not yet processed)
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 07:20:49.074
+{"type":"string","value":"quit-invoked"}
+2s after quit request: app alive=1; relay messages since the quit request: 0
+RELEASE_BREAKPOINT 07:20:51.175
+app gone after ~3 s
+bundle after: 0.3.3-test.12
+--- relay debugger log
+2026-11-28T07:20:46.637Z SCRIPT app.asar/dist/relay.js runTick@1136 claim@1147 finally@1153
+2026-11-28T07:20:46.639Z BREAKPOINTS_SET claim=true finally=true
+2026-11-28T07:20:48.316Z PAUSED_AT_CLAIM_STAGE {"halted":false,"stopped":false,"accepting":true}  (work cycle is running, stop not yet processed)
+2026-11-28T07:20:51.246Z RESUMED_FROM_CLAIM_STAGE
+2026-11-28T07:20:51.247Z PAUSED_AT_TICK_FINALLY {"halted":true,"stopped":true,"accepting":false}  (halted=true here means stop began while this cycle was still running)
+2026-11-28T07:20:51.248Z RESUMED_FROM_FINALLY
+--- tap since quit request (condensed)
+07:20:51.246 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+07:20:51.249 RELAY_MSG type=event state=stopping reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+07:20:51.249 RELAY_MSG type=event state=stopped reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+07:20:51.249 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+07:20:51.250 NATIVE_UPDATER checking-for-update
+07:20:51.267 NATIVE_UPDATER update-available
+07:20:51.750 RELAY_EXIT code=0
+07:20:52.769 NATIVE_UPDATER update-downloaded
+07:20:52.815 APP_before-quit
+07:20:52.816 APP_will-quit
+07:20:52.816 MAIN_EXIT code=0
+07:20:52.816 APP_quit
+--- spool
+total 0
+drwx------   2 <user>  staff   64 28 Nov 15:20 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 15:20 ..
+stub requests(last400): {"/config":9,"/heartbeat":9,"/claim":37} reports: []
+2026-11-28T07:17:56.696Z SINK_LISTENING 19100
+relaunched app pid 6358 stopped (HOME was )
+

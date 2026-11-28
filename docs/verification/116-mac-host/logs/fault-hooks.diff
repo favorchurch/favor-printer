@@ -1,0 +1,13 @@
+--- scratch/tap.js	2026-11-28 15:16:59
++++ scratch/tap-strip.js	2026-11-28 15:17:48
+@@ -4,6 +4,7 @@
+  w('TAP_ON main_pid='+process.pid+' app_version='+el.app.getVersion());
+  const up=el.utilityProcess; const orig=up.fork.bind(up);
+  up.fork=function(...a){ const c=orig(...a); w('RELAY_FORK'); globalThis.__t1child=c; c.on('spawn',()=>w('RELAY_SPAWN pid='+c.pid)); c.on('exit',(code)=>w('RELAY_EXIT code='+code));
++  const __origOn=c.on.bind(c); c.on=function(ev,fn){ if(ev==='message' && process.env.T1_STRIP_RECON==='1'){ return __origOn(ev,(m)=>{ try{ if(m&&m.type==='event'&&m.event&&typeof m.event==='object'&&'reconciliation' in m.event){ const raw=m.event.reconciliation; const e={...m.event}; delete e.reconciliation; w('OLDRELAY_STRIP raw_reconciliation='+raw+' -> field removed before the app sees it'); return fn({...m,event:e}); } }catch(e){} return fn(m); }); } return __origOn(ev,fn); };
+   c.on('message',(m)=>{ try{ const s=(m&&(m.status||m.event))||m||{}; w('RELAY_MSG type='+(m&&m.type)+' state='+s.state+' reconciliation='+s.reconciliation+' inFlight='+s.inFlight+' cloud='+s.cloud+' counts='+JSON.stringify(s.counts)+' err='+s.lastError);}catch(e){} });
+   return c; };
+  for (const ev of ['before-quit','will-quit','quit']) el.app.on(ev,()=>w('APP_'+ev));
+
+
+# relay-bp.mjs (full file, used for scenario 10) is reproduced in RIG.md; it is read-only except for the breakpoints it sets in the relay child.
