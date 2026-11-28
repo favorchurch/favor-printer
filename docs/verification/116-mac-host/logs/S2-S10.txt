@@ -1,0 +1,107 @@
+S2a (relay silent/frozen):
++ kill -STOP 37205 immediately after spawn (relay never reports a status)
+UPDATE_READY
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":0}}
+relay messages seen so far: 21
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:18:50
+{"type":"string","value":"quit-invoked"}
+app gone after ~13 s
+bundle after: 0.3.3-test.11
+06:18:47.037 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:18:47.039 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:19:02.898 APP_before-quit
+06:19:03.000 RELAY_EXIT code=0
+06:19:03.011 APP_will-quit
+06:19:03.011 MAIN_EXIT code=0
+06:19:03.011 APP_quit
+2026-11-28T06:18:32.925Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:19:02.897Z info [main] quit without installing: the relay did not stop cleanly
+
+
+S2b (chmod 000 spool, relay self-heals mode; update installed, expected):
+relay up, reconciliation complete
+UPDATE_READY
++ chmod 000 spool dir (inventory becomes unreadable) at 06:20:09
+reconciliation values since chmod:    4 reconciliation=complete    4 reconciliation=pending 
+last relay status: :20:15.963Z RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"s
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:20:17
+{"type":"string","value":"quit-invoked"}
+app gone after ~3 s
+bundle after: 0.3.3-test.12
++ chmod 700 spool dir (restore)
+total 0
+drwx------   2 <user>  staff   64 28 Nov 14:20 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 14:20 ..
+06:20:17.660 NATIVE_UPDATER checking-for-update
+06:20:17.684 NATIVE_UPDATER update-available
+06:20:17.758 RELAY_EXIT code=0
+06:20:19.802 NATIVE_UPDATER update-downloaded
+06:20:19.858 APP_before-quit
+06:20:19.865 APP_will-quit
+06:20:19.865 MAIN_EXIT code=0
+06:20:19.865 APP_quit
+2026-11-28T06:18:32.925Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:19:02.897Z info [main] quit without installing: the relay did not stop cleanly
+2026-11-28T06:19:51.571Z info [main] Favor Printer 0.3.3-test.11 started
+
+
+S2c (ACL deny list on spool = unreadable inventory):
+relay up, reconciliation complete
+UPDATE_READY
++ chmod +a 'user:<user> deny list,search' <spool dir>  (ACL deny; the relay re-asserts mode 0700 each cycle but cannot remove an ACL) at 06:21:34
+reconciliation values since ACL:    1 reconciliation=pending 
+last relay status: :21:34.738Z RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"fai
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:21:44
+{"type":"string","value":"quit-invoked"}
+app gone after ~2 s
+bundle after: 0.3.3-test.11
++ chmod -a (restore) then show ACL state
+drwx------  3 <user>  staff  96 28 Nov 14:21 $SCR/home-sc2c/Library/Application Support/Favor Printer/spool
+06:21:32.737 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:21:34.738 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:21:44.225 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:21:44.226 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:21:44.226 APP_before-quit
+06:21:44.330 RELAY_EXIT code=0
+06:21:44.349 APP_will-quit
+06:21:44.349 MAIN_EXIT code=0
+06:21:44.349 APP_quit
+2026-11-28T06:21:42.756Z warn [relay] unexpected failure
+2026-11-28T06:21:42.757Z warn [relay] unexpected failure
+2026-11-28T06:21:42.757Z warn [relay] cycle failed
+
+
+S10 (lock release fails, ACL deny delete on lock):
+relay up, reconciliation complete
+UPDATE_READY
++ chmod +a 'user:<user> deny delete' <spool>/.relay.lock   (lock release will fail with a permission error) at 06:22:48
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:22:48
+{"type":"string","value":"quit-invoked"}
+app gone after ~2 s
+bundle after: 0.3.3-test.11
++ chmod -a (restore)
+total 0
+spool after (lock left in place by the failed release):
+total 8
+drwx------   3 <user>  staff   96 28 Nov 14:22 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 14:22 ..
+-rw-------   1 <user>  staff  220 28 Nov 14:22 .relay.lock
+  name_sha=5bb4afc5 ext=lock size=220
+06:22:46.967 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:22:48.249 RELAY_MSG type=event state=stopping reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:22:48.249 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:22:48.252 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:22:48.252 APP_before-quit
+06:22:48.356 RELAY_EXIT code=0
+06:22:48.377 APP_will-quit
+06:22:48.378 MAIN_EXIT code=0
+06:22:48.378 APP_quit
+2026-11-28T06:21:42.756Z warn [relay] unexpected failure
+2026-11-28T06:21:42.757Z warn [relay] unexpected failure
+2026-11-28T06:21:42.757Z warn [relay] cycle failed
+2026-11-28T06:22:30.343Z info [main] Favor Printer 0.3.3-test.11 started
+

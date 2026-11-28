@@ -198,22 +198,22 @@ describe("install gating by the update policy", () => {
   it("installs at quit when an update is ready and no job is in flight", () => {
     const { controller, emit, updater } = policy();
     emit("update-downloaded", { version: "0.2.0" });
-    expect(controller.beforeQuit(false, 0)).toBe("install");
+    expect(controller.beforeQuit(false, 0, "complete")).toBe("install");
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
   it("holds the install while a job is in flight, then installs when it settles", () => {
     const { controller, emit, updater } = policy();
     emit("update-downloaded", { version: "0.2.0" });
-    expect(controller.beforeQuit(true, 0)).toBe("defer");
+    expect(controller.beforeQuit(true, 0, "complete")).toBe("defer");
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
-    controller.jobsSettled();
+    controller.jobsSettled(false, 0, "complete");
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing at quit when no update was downloaded, and never auto installs", () => {
     const { controller, updater } = policy();
-    expect(controller.beforeQuit(false, 0)).toBe("none");
+    expect(controller.beforeQuit(false, 0, "complete")).toBe("none");
     expect(updater.quitAndInstall).not.toHaveBeenCalled();
     expect(updater.autoInstallOnAppQuit).toBe(false);
   });
@@ -263,10 +263,10 @@ describe("pinned electron-updater 6.8.9", () => {
     fake.emit("update-downloaded", { version: "0.2.0" });
     await controller.checkNow();
     await controller.setChannel("preview");
-    controller.jobsSettled();
+    controller.jobsSettled(false, 0, "complete");
     expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
 
-    expect(controller.beforeQuit(false, 0)).toBe("install");
+    expect(controller.beforeQuit(false, 0, "complete")).toBe("install");
     expect(fake.updater.quitAndInstall).toHaveBeenCalledExactlyOnceWith(false, true);
   });
 
@@ -275,7 +275,7 @@ describe("pinned electron-updater 6.8.9", () => {
     const adapter = createUpdaterAdapter(fake.updater, () => undefined);
     const controller = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
     fake.emit("update-downloaded", { version: "0.2.0" });
-    expect(controller.beforeQuit(true, 0)).toBe("defer");
+    expect(controller.beforeQuit(true, 0, "complete")).toBe("defer");
     expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
   });
 

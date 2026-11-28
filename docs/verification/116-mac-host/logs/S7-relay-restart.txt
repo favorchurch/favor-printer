@@ -1,0 +1,20 @@
+relay child pid=7654; state before kill: :08:44.321Z RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"clai|:08:44.324Z RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"cla|
++ kill -9 7654  at 06:08:44  (unexpected relay exit while the app keeps running)
+--- tap since kill (condensed)
+06:08:44.593 RELAY_EXIT code=9
+06:08:45.606 RELAY_FORK
+06:08:45.608 RELAY_SPAWN pid=17199
+06:08:45.672 RELAY_MSG type=event state=starting reconciliation=pending inFlight=false cloud=unreachable counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:45.702 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=unreachable counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:45.718 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null  (x4)
+06:08:45.743 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:47.744 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:47.747 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:49.748 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:49.751 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:51.752 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:08:51.755 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+2026-11-28T06:07:29.299Z info [relay] claimed job
+2026-11-28T06:07:50.114Z warn [relay] job ambiguous
+2026-11-28T06:08:44.595Z warn [relay] relay exited (code 9); restarting in 1000 ms
+

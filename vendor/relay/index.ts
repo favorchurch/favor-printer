@@ -197,6 +197,7 @@ export function createEmbeddedRelay(options: EmbeddedRelayOptions): EmbeddedRela
       if (signal.kind === "claimed") status.claimed();
       else if (signal.kind === "handedOver") status.handedOver(signal.printerIds);
       else if (signal.kind === "outcome") status.outcome(signal.outcome);
+      else if (signal.kind === "reconciliation") status.reconciliation(signal.value);
       else status.inFlight(signal.value);
     },
     version: RELAY_VERSION,

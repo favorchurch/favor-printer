@@ -12,6 +12,7 @@ const relay = (overrides: Partial<RelayStatus> = {}): RelayStatus => ({
   printerIds: ["printer-1"],
   handedOverPrinterIds: [],
   inFlight: false,
+  reconciliation: "complete",
   counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
   lastJobAt: null,
   lastHeartbeatAt: null,

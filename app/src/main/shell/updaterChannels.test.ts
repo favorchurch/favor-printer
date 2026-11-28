@@ -388,7 +388,7 @@ describe("a feed or check error", () => {
     expect(policy.state()).toEqual({ kind: "error" });
     expect(states.at(-1)).toEqual({ kind: "error" });
     expect(policy.lastCheckedAt()).toBeNull();
-    expect(policy.beforeQuit(false, 0)).toBe("none");
+    expect(policy.beforeQuit(false, 0, "complete")).toBe("none");
     expect(quitAndInstall).not.toHaveBeenCalled();
   });
 

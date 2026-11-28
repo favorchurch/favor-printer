@@ -1,0 +1,29 @@
+== checking packaged app: $SCR/out-primary-1/mac-arm64/Favor Printer.app
+CFBundleIdentifier: church.favor.printer
+ok   bundle id is church.favor.printer
+CFBundleShortVersionString: 0.3.3-test.1
+ok   version string is present
+== codesign / spctl status
+Identifier=church.favor.printer
+Signature size=9060
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+TeamIdentifier=3JJ4492TV8
+codesign: valid signature
+spctl status: $SCR/out-primary-1/mac-arm64/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+origin=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+== verifying relay.js is present
+relay.js confirmed present inside app.asar (dist/relay.js) via Electron runtime
+ok   relay.js is present in the packaged app
+== testing --self-test-relay against loopback stub cloud
+loopback stub cloud listening on port 53435
+binary output: {"type":"self-test","ok":true,"running":true,"cloud":"ok","stopOutcome":"stopped"}
+ok   binary exited with 0
+ok   self-test emitted json result line
+ok   self-test JSON shows running+cloud ok and stopped via utilityProcess
+
+6 passed, 0 failed
+smoke exit=0
+

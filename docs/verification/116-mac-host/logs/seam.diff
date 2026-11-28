@@ -1,0 +1,37 @@
+--- a/app/src/main/shell/controller.ts	2026-11-28 13:10:10
++++ b/app/src/main/shell/controller.ts	2026-11-28 13:31:22
+@@ -156,10 +156,23 @@
+ const ASLEEP_WARNING = "This computer went to sleep. Labels wait until it wakes.";
+ const LOCKED_WARNING = "The screen is locked. Keep the lid open so printing is not interrupted.";
+ 
++/** TEST SEAM (never committed): accepts only an http://127.0.0.1:<port> or http://localhost:<port> origin, ignores anything else. */
++function testApiUrl(raw: string | undefined): string | undefined {
++  if (!raw) return undefined;
++  try {
++    const url = new URL(raw);
++    const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
++    if (url.protocol !== "http:" || !loopback || !url.port || url.username || url.password || url.pathname !== "/" || url.search || url.hash) return undefined;
++    return url.origin;
++  } catch {
++    return undefined;
++  }
++}
++
+ export function createAppController(deps: ControllerDeps): AppController {
+   const { prefs, secrets, printers, legacy, log } = deps;
+   const timers = deps.timers ?? systemTimers;
+-  const apiUrl = deps.apiUrl ?? "https://rsvp.favor.church";
++  const apiUrl = deps.apiUrl ?? testApiUrl(process.env.FAVOR_PRINTER_TEST_API_URL) ?? "https://rsvp.favor.church";
+   const isWindows = deps.platform === "win32";
+ 
+   let enrolled = false;
+@@ -238,7 +251,7 @@
+     appSupportDir: deps.appSupportDir,
+     appVersion: deps.version,
+     osVersion: deps.osVersion,
+-    apiUrl: deps.apiUrl,
++    apiUrl,
+   });
+ 
+   const backlogMonitor = new BacklogMonitor();
+

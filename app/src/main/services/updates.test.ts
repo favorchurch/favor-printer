@@ -48,13 +48,13 @@ describe("channelSettings", () => {
 
 describe("installDecision", () => {
   it.each([
-    [{ updateReady: false, jobInFlight: false, pendingEntries: 0 }, "none"],
-    [{ updateReady: false, jobInFlight: true, pendingEntries: 0 }, "none"],
-    [{ updateReady: false, jobInFlight: false, pendingEntries: 3 }, "none"],
-    [{ updateReady: true, jobInFlight: false, pendingEntries: 0 }, "install"],
-    [{ updateReady: true, jobInFlight: true, pendingEntries: 0 }, "defer"],
-    [{ updateReady: true, jobInFlight: false, pendingEntries: 1 }, "defer"],
-    [{ updateReady: true, jobInFlight: true, pendingEntries: 2 }, "defer"],
+    [{ updateReady: false, jobInFlight: false, pendingEntries: 0, reconciliation: "complete" }, "none"],
+    [{ updateReady: false, jobInFlight: true, pendingEntries: 0, reconciliation: "complete" }, "none"],
+    [{ updateReady: false, jobInFlight: false, pendingEntries: 3, reconciliation: "complete" }, "none"],
+    [{ updateReady: true, jobInFlight: false, pendingEntries: 0, reconciliation: "complete" }, "install"],
+    [{ updateReady: true, jobInFlight: true, pendingEntries: 0, reconciliation: "complete" }, "defer"],
+    [{ updateReady: true, jobInFlight: false, pendingEntries: 1, reconciliation: "complete" }, "defer"],
+    [{ updateReady: true, jobInFlight: true, pendingEntries: 2, reconciliation: "complete" }, "defer"],
   ] as const)("%j -> %s", (input, decision) => {
     expect(installDecision(input)).toBe(decision);
   });
@@ -223,16 +223,16 @@ describe("update state", () => {
 describe("install deferral", () => {
   it("does nothing at quit when no update is downloaded", () => {
     const { adapter, controller } = setup();
-    expect(controller.beforeQuit(false, 0)).toBe("none");
-    expect(controller.beforeQuit(true, 0)).toBe("none");
-    controller.jobsSettled();
+    expect(controller.beforeQuit(false, 0, "complete")).toBe("none");
+    expect(controller.beforeQuit(true, 0, "complete")).toBe("none");
+    controller.jobsSettled(false, 0, "complete");
     expect(adapter.quitAndInstall).not.toHaveBeenCalled();
   });
 
   it("installs at quit when an update is ready and no job is in flight", () => {
     const { adapter, controller, emit } = setup();
     emit({ kind: "downloaded", version: "0.2.0" });
-    expect(controller.beforeQuit(false, 0)).toBe("install");
+    expect(controller.beforeQuit(false, 0, "complete")).toBe("install");
     expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
@@ -240,19 +240,19 @@ describe("install deferral", () => {
     const { adapter, controller, emit } = setup();
     emit({ kind: "downloaded", version: "0.2.0" });
 
-    expect(controller.beforeQuit(true, 0)).toBe("defer");
+    expect(controller.beforeQuit(true, 0, "complete")).toBe("defer");
     expect(adapter.quitAndInstall).not.toHaveBeenCalled();
 
-    controller.jobsSettled();
+    controller.jobsSettled(false, 0, "complete");
     expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
-    controller.jobsSettled();
+    controller.jobsSettled(false, 0, "complete");
     expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
   it("does not install when a job finishes and nobody asked to quit", () => {
     const { adapter, controller, emit } = setup();
     emit({ kind: "downloaded", version: "0.2.0" });
-    controller.jobsSettled();
+    controller.jobsSettled(false, 0, "complete");
     expect(adapter.quitAndInstall).not.toHaveBeenCalled();
   });
 });

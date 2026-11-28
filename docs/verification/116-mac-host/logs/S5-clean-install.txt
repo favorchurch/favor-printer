@@ -1,0 +1,116 @@
+--- relaunch the window and read snapshot
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":{"color":"amber","headline":"Printer unplugged","detail":"Plug in the Zebra with its USB cable."},"enrolled":true}
+
+---
+bundle version before: 0.3.3-test.11
+QUIT_REQUEST at 05:53:42
+{"type":"string","value":"quit-invoked"}
+t+1: 33291 $SCR/inst/s0/Favor Printer.app/Contents/MacOS/Favor Print|60351 /Applications/Antigravity IDE.app/Contents/Frameworks/Squirrel.framework/Resources/ShipIt com.google.ant|
+t+2: 33291 $SCR/inst/s0/Favor Printer.app/Contents/MacOS/Favor Print|42219 /usr/bin/ditto -xk ~/Library/Caches/church.favor.printer.ShipIt/update.t5EeOZV/93db64a4186d614|60351 /Applications/Antigravity IDE.app/Contents/Frameworks/Squirrel.framework/Resources/ShipIt com.google.ant|
+t+4: 33291 $SCR/inst/s0/Favor Printer.app/Contents/MacOS/Favor Print|42395 $SCR/inst/s0/Favor Printer.app/Contents/Frameworks/Squirr|60351 /Applications/Antigravity IDE.app/Contents/Frameworks/Squirrel.framework/Resources/ShipIt com.google.ant|
+t+5: 42395 $SCR/inst/s0/Favor Printer.app/Contents/Frameworks/Squirr|60351 /Applications/Antigravity IDE.app/Contents/Frameworks/Squirrel.framework/Resources/ShipIt com.google.ant|
+t+14: 42395 $SCR/inst/s0/Favor Printer.app/Contents/Frameworks/Squirr|43597 $SCR/inst/s0/Favor Printer.app/Contents/Frameworks/Squirr|60351 /Applications/Antigravity IDE.app/Contents/Frameworks/Squirrel.framework/Resources/ShipIt com.google.ant|
+t+18: 44192 $SCR/inst/s0/Favor Printer.app/Contents/MacOS/Favor Print|60351 /Applications/Antigravity IDE.app/Contents/Frameworks/Squirrel.framework/Resources/ShipIt com.google.ant|
+bundle version after: 0.3.3-test.12
+--- tap (condensed, tail)
+05:53:40.955 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:53:42.319 RELAY_MSG type=event state=stopping reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:53:42.320 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:53:42.349 RELAY_MSG type=event state=stopping reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:53:42.350 RELAY_MSG type=event state=stopped reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:53:42.350 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+05:53:42.352 NATIVE_UPDATER checking-for-update
+05:53:42.416 NATIVE_UPDATER update-available
+05:53:42.451 RELAY_EXIT code=0
+05:53:45.494 NATIVE_UPDATER update-downloaded
+05:53:45.595 APP_before-quit
+05:53:45.595 APP_will-quit
+05:53:45.595 MAIN_EXIT code=0
+05:53:45.595 APP_quit
+
+--- relaunched app inspection ---
+relaunched pid=44192
+HOME=~
+Sat 28 Nov 13:54:00 2026     $SCR/inst/s0/Favor Printer.app/Contents/MacOS/Favor Printer
+total 320
+drwx------@  3 <user>  staff      96  7 Oct 10:42 .
+drwx------+ 29 <user>  staff     928 23 Nov 15:29 ..
+-rw-r--r--@  1 <user>  staff  161439 28 Nov 13:54 main.log
+2026-11-28T05:47:16.219Z error [updater] update failed: Error
+2026-11-28T05:49:05.255Z info [main] Favor Printer 0.3.3-test.1 started
+2026-11-28T05:52:42.533Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:54:00.971Z info [main] Favor Printer 0.3.3-test.12 started
+
+--- killed relaunched app, real data dir diff vs before-manifest ---
+STILL_RUNNING
+3d2
+< 153b8849b572d53cea73a6fe4cc6565cc7a1d6f51d65bf1f2584d6de2c5dc62b  ./Session Storage/000003.log
+5,6c4,5
+< 257326f9d59e135da23512886d4fd30b7525fd60ad3397ca7679753b2481ea58  ./GPUCache/data_1
+< 2f3ecce659a9bf9bd0b8a026d5ffde7e65b765a6bdef6505776cc917b7a119ff  ./GraphiteDawnCache/index
+---
+> 2ad92f1b23cfbd1c542c56c14f349584b6f4a39d34d6bfc582836566597465a7  ./DIPS-wal
+> 309c222efb1cd0f4c823c749a23adfca0d9015c607e80bef3b0786882036be8e  ./DawnGraphiteCache/index
+8c7
+< 35b337361cb95dc928b984f702bef37f163dfe7697b816b46517e6b8b2cb4223  ./GPUCache/index
+---
+> 42ae0d39d56fcab182355cc07c06f1ef19eec2d2e4067b8d02879c035b4616f3  ./Session Storage/LOG
+11c10
+< 4cc6f04b54003d142ac74c29badf93f48cd9e7d9288d97f6af96c95fcfc3360d  ./Session Storage/LOG.old
+---
+> 563e3e9dbf15b807d8aa69289083aeb7ce62aaab7f89cb07e60356bc2b100128  ./DawnWebGPUCache/index
+16,17c15
+< 7894372009529431a8e138d4822d316c2d4cfb3f7062934e872e16795e27858d  ./DawnWebGPUCache/index
+< 7b489f3ba6ad8475a7cae3bc526c3c840204abd5171a4049df7d2390c8288bbf  ./Local Storage/leveldb/LOG.old
+---
+> 7ffad8b7804b483492d62e31b6482b25f218fdc13f130367ecb561a44f72b77d  ./GPUCache/index
+19c17
+< 86f6a3dbe86478fc33015e5150792b256b1433068f38533a4a760acbd6088ce8  ./Local Storage/leveldb/LOG
+---
+> 86f6a3dbe86478fc33015e5150792b256b1433068f38533a4a760acbd6088ce8  ./Local Storage/leveldb/LOG.old
+21c19
+< 8b7175005a26bf69ea650c2d94db02acdbfafd1fe366c20d94f1e3bf73a58cc0  ./Session Storage/LOG
+---
+> 8b7175005a26bf69ea650c2d94db02acdbfafd1fe366c20d94f1e3bf73a58cc0  ./Session Storage/LOG.old
+23,26c21,24
+< LINK ./SingletonCookie -> 15190442171302353699
+< LINK ./SingletonLock -> osmanthus.local-74699
+< LINK ./SingletonSocket -> /var/folders/vs/1fd5g_nn28d041nxwnk8wb7r0000gn/T/scoped_dirOyiRi5/SingletonSocket
+< STAT . drwx------ 896 1794539183
+---
+> LINK ./SingletonCookie -> 3595047446914385155
+> LINK ./SingletonLock -> Mac-44192
+> LINK ./SingletonSocket -> /var/folders/vs/1fd5g_nn28d041nxwnk8wb7r0000gn/T/scoped_dirLSry27/SingletonSocket
+> STAT . drwx------ 896 1795845240
+32c30
+diff exit=0
+total 1280
+drwx------@ 28 <user>  staff     896 28 Nov 13:54 .
+drwx------+ 91 <user>  staff    2912 20 Nov 18:16 ..
+-rw-r--r--@  1 <user>  staff      36  7 Oct 10:42 .updaterId
+drwx------@  3 <user>  staff      96 28 Nov 13:54 blob_storage
+drwx------@  4 <user>  staff     128  7 Oct 10:42 Cache
+drwx------@  5 <user>  staff     160  7 Oct 10:42 Code Cache
+drwx------@  7 <user>  staff     224  7 Oct 10:42 DawnGraphiteCache
+drwx------@  7 <user>  staff     224  7 Oct 10:42 DawnWebGPUCache
+-rw-------@  1 <user>  staff   32768  7 Oct 10:42 declarative_performance_observer.db
+-rw-------@  1 <user>  staff       0  7 Oct 10:42 declarative_performance_observer.db-journal
+-rw-------@  1 <user>  staff   36864 17 Oct 19:44 DIPS
+-rw-------@  1 <user>  staff  527392 28 Nov 13:54 DIPS-wal
+drwx------@  7 <user>  staff     224  7 Oct 10:42 GPUCache
+drwx------@  3 <user>  staff      96  7 Oct 10:42 GPUPersistentCache
+drwx------@  7 <user>  staff     224  7 Oct 10:42 GraphiteDawnCache
+-rw-------@  1 <user>  staff      57  7 Oct 10:42 Local State
+drwx------@  3 <user>  staff      96  7 Oct 10:42 Local Storage
+-rw-------@  1 <user>  staff     172 13 Nov 11:05 Network Persistent State
+-rw-------@  1 <user>  staff      41  7 Oct 10:42 Preferences
+-rw-------@  1 <user>  staff     307  9 Nov 23:05 prefs.json
+drwx------@  8 <user>  staff     256 28 Nov 13:54 Session Storage
+drwx------@  5 <user>  staff     160  7 Oct 10:42 Shared Dictionary
+lrwxr-xr-x@  1 <user>  staff      19 28 Nov 13:54 SingletonCookie -> 3595047446914385155
+lrwxr-xr-x@  1 <user>  staff       9 28 Nov 13:54 SingletonLock -> Mac-44192
+lrwxr-xr-x@  1 <user>  staff      81 28 Nov 13:54 SingletonSocket -> /var/folders/vs/1fd5g_nn28d041nxwnk8wb7r0000gn/T/scoped_dirLSry27/SingletonSocket
+drwx------@  2 <user>  staff      64  9 Nov 23:05 spool
+-rw-------@  1 <user>  staff   36864  7 Oct 10:42 Trust Tokens
+-rw-------@  1 <user>  staff       0  7 Oct 10:42 Trust Tokens-journal
+

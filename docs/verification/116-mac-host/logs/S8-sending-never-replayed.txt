@@ -1,0 +1,66 @@
+CRASH (kill -9 app+relay while a send was in flight):
+relay up
+UPDATE_READY
+inFlight observed: :07:29.300Z RELAY_MSG type=event state=running reconciliation=pending inFlight=true clo
+total 24
+drwx------   5 <user>  staff  160 28 Nov 14:07 .
+drwxr-xr-x  29 <user>  staff  928 28 Nov 14:07 ..
+-rw-------   1 <user>  staff  219 28 Nov 14:07 .relay.lock
+-rw-------   1 <user>  staff  267 28 Nov 14:07 t1-job-s1-a.json
+-rw-------   1 <user>  staff  219 28 Nov 14:07 t1-job-s1-a.send
+  name_sha=5bb4afc5 ext=lock size=219
+  name_sha=4d332a33 ext=json size=267 stage=sending hasZpl=false
+  name_sha=a67bdc5c ext=send size=219
+stub requests(last400): {"/config":15,"/heartbeat":12,"/claim":36,"/jobs/<id>/sending":6,"/jobs/<id>/report":1} reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"}]
+2026-11-28T05:45:27.093Z CONN 1 bytes=33 sha256=6f7a12a2351ead2a
+2026-11-28T06:06:05.512Z CONN 2 bytes=32 sha256=047c2fc406c8a987
++ CRASH: kill -9 main=1195 relay=1317
+spool after crash:
+total 24
+drwx------   5 <user>  staff  160 28 Nov 14:07 .
+drwxr-xr-x  30 <user>  staff  960 28 Nov 14:07 ..
+-rw-------   1 <user>  staff  219 28 Nov 14:07 .relay.lock
+-rw-------   1 <user>  staff  267 28 Nov 14:07 t1-job-s1-a.json
+-rw-------   1 <user>  staff  219 28 Nov 14:07 t1-job-s1-a.send
+  name_sha=5bb4afc5 ext=lock size=219
+  name_sha=4d332a33 ext=json size=267 stage=sending hasZpl=false
+  name_sha=a67bdc5c ext=send size=219
+stub requests(last400): {"/config":15,"/heartbeat":12,"/claim":36,"/jobs/<id>/sending":6,"/jobs/<id>/report":1} reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"}]
+2026-11-28T05:45:27.093Z CONN 1 bytes=33 sha256=6f7a12a2351ead2a
+2026-11-28T06:06:05.512Z CONN 2 bytes=32 sha256=047c2fc406c8a987
+
+
+RESTART:
+spool file hashes BEFORE restart:
+  617669e1 3ef25a76989b
+  2c992f94 d0d918c72137
+  ea6c016a 01e069f883c6
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":1}}
+--- tap (condensed, relay messages after restart)
+06:08:16.211 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:16.213 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:18.214 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:18.216 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:20.217 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:20.220 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:22.221 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous  (x2)
+06:08:22.243 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:24.244 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:24.246 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:26.247 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+06:08:26.249 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":1} err=send_ambiguous
+--- sink conns: 2 (2 before crash)
+total 8
+drwx------   3 <user>  staff   96 28 Nov 14:07 .
+drwxr-xr-x  30 <user>  staff  960 28 Nov 14:08 ..
+-rw-------   1 <user>  staff  219 28 Nov 14:07 .relay.lock
+  name_sha=5bb4afc5 ext=lock size=219
+stub requests(last400): {"/config":18,"/heartbeat":16,"/claim":55,"/jobs/<id>/sending":6,"/jobs/<id>/report":2} reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"},{"jobId":"t1-job-s1-a","outcome":"ambiguous"}]
+2026-11-28T05:45:27.093Z CONN 1 bytes=33 sha256=6f7a12a2351ead2a
+2026-11-28T06:06:05.512Z CONN 2 bytes=32 sha256=047c2fc406c8a987
+spool file hashes AFTER 20s of the new process:
+  617669e1 43088036850a
+2026-11-28T06:07:29.299Z info [relay] claimed job
+2026-11-28T06:07:50.078Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:07:50.114Z warn [relay] job ambiguous
+

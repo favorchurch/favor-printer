@@ -1,0 +1,19 @@
+relay up, reconciliation complete
+UPDATE_READY_AFTER_RESTART (previously deferred download)
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":0}}
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 05:57:03
+{"type":"string","value":"quit-invoked"}
+bundle became test.12 after ~21 s
+bundle after: 0.3.3-test.12
+05:57:04.028 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+05:57:04.031 NATIVE_UPDATER checking-for-update
+05:57:04.047 NATIVE_UPDATER update-available
+05:57:04.130 RELAY_EXIT code=0
+05:57:08.302 NATIVE_UPDATER update-downloaded
+05:57:08.319 APP_before-quit
+05:57:08.319 APP_will-quit
+05:57:08.319 MAIN_EXIT code=0
+05:57:08.319 APP_quit
+relaunched app pid 83600 stopped (HOME was )
+

@@ -478,7 +478,7 @@ describe("sanitizeRelayStatus", () => {
   it("drops fields it does not know", () => {
     const out = sanitizeRelayStatus({ ...relayStatus(), attendeeName: "Jane Q. Attendee", zpl: "^XA^XZ", securityCode: "483920" });
     expect(Object.keys(out ?? {}).sort()).toEqual(
-      ["cloud", "counts", "handedOverPrinterIds", "inFlight", "lastError", "lastHeartbeatAt", "lastJobAt", "printerIds", "state"].sort(),
+      ["cloud", "counts", "handedOverPrinterIds", "inFlight", "lastError", "lastHeartbeatAt", "lastJobAt", "printerIds", "reconciliation", "state"].sort(),
     );
   });
 
@@ -505,6 +505,7 @@ describe("sanitizeRelayStatus", () => {
       printerIds: ["printer-1"],
       handedOverPrinterIds: [],
       inFlight: false,
+      reconciliation: "complete",
       counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
       lastJobAt: null,
       lastHeartbeatAt: null,
@@ -576,5 +577,12 @@ describe("describeRelayOutput", () => {
 
   it("drops the text after a recognised phrase", () => {
     expect(describeRelayOutput(line("cycle failed: lp said ^XA^FDJane Q. Attendee^XZ code 483920"))).toBe("cycle failed");
+  });
+});
+
+
+describe("reconciliation compatibility", () => {
+  it.each([undefined, null, true, "unknown", "Pending", 1])("fails closed for a missing or malformed signal %s", (reconciliation) => {
+    expect(sanitizeRelayStatus({ ...relayStatus(), reconciliation })?.reconciliation).toBe("pending");
   });
 });

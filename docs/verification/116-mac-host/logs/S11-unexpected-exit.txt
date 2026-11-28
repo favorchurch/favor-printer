@@ -1,0 +1,113 @@
+A) unexpected exit during stop wait:
+relay up, reconciliation complete (pre-shutdown completion exists)
+UPDATE_READY
++ kill -STOP 42046 (relay cannot post its stopped status)
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:11:54
+{"type":"string","value":"quit-invoked"}
++ kill -9 42046  at 06:11:56 (unexpected child exit during the stop wait)
+app gone after ~2 s
+bundle after: 0.3.3-test.11
+06:11:50.730 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:11:52.732 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null  (x2)
+06:11:52.823 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:11:56.444 RELAY_EXIT code=9
+06:11:56.445 APP_before-quit
+06:11:56.551 APP_will-quit
+06:11:56.552 MAIN_EXIT code=0
+06:11:56.552 APP_quit
+2026-11-28T06:09:22.753Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:10:24.835Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T06:11:36.524Z info [main] Favor Printer 0.3.3-test.11 started
+
+
+C) bare stopped acknowledgement injected:
+relay up, reconciliation complete (pre-shutdown completion exists)
+UPDATE_READY
++ kill -STOP 54350 (relay cannot post a real stopped status)
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:12:42
+{"type":"string","value":"quit-invoked"}
++ inject bare {type:'stopped'} message at 06:12:44
+{"type":"string","value":"bare stopped acknowledgement injected into the supervisor message handler"}
+app gone after ~4 s
+bundle after: 0.3.3-test.11
++ cleanup: kill -9 54350 (frozen relay child left by the test)
+06:12:41.041 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null  (x2)
+06:12:41.076 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:12:44.338 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:12:44.339 APP_before-quit
+06:12:44.445 APP_will-quit
+06:12:44.446 MAIN_EXIT code=0
+06:12:44.446 APP_quit
+06:12:44.467 RELAY_EXIT code=0
+2026-11-28T06:11:36.524Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:12:24.925Z info [main] Favor Printer 0.3.3-test.11 started
+
+
+B) abandoned stop wait then exit (attempt 1 resolved by relay write timeout, installed; attempt 2 below is the scenario result):
+relay up, reconciliation complete
+UPDATE_READY
++ kill -STOP lp=63287 (write phase stalls)
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:13:28
+{"type":"string","value":"quit-invoked"}
+13s after quit (stop wait is 10s, so the wait is now abandoned): app alive=0 bundle=0.3.3-test.11
+2026-11-28T06:13:26.815Z info [relay] claimed job
+2026-11-28T06:13:36.997Z warn [relay] job ambiguous
++ kill -9 60825 at 06:13:41 (unexpected relay exit after the abandoned wait)
+$T1/.scratch/116-mac/s11b.sh: line 19: kill: (60825) - No such process
+app gone after ~1 s
+bundle after: 0.3.3-test.11
++ cleanup: kill -9 63287 (stopped lp left by the test)
+06:13:37.014 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:13:37.016 NATIVE_UPDATER checking-for-update
+06:13:37.037 NATIVE_UPDATER update-available
+06:13:37.115 RELAY_EXIT code=0
+06:13:39.504 NATIVE_UPDATER update-downloaded
+06:13:39.547 APP_before-quit
+06:13:39.547 APP_will-quit
+06:13:39.547 MAIN_EXIT code=0
+06:13:39.547 APP_quit
+total 0
+drwx------   2 <user>  staff   64 28 Nov 14:13 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 14:13 ..
+stub requests(last400): {"/config":34,"/heartbeat":40,"/claim":178,"/jobs/<id>/sending":7,"/jobs/<id>/report":3} reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"},{"jobId":"t1-job-s1-a","outcome":"ambiguous"},{"jobId":"t1-job-s11b-a","outcome":"ambiguous"}]
+2026-11-28T05:45:27.093Z CON
+
+B attempt 2:
+relay up, reconciliation complete
+UPDATE_READY
++ kill -STOP lp=73989 (write phase stalls)
+relay status: :14:40.407Z RELAY_MSG type=event state=running reconciliation=pending inFlight=true cloud=ok coun
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:14:42
+{"type":"string","value":"quit-invoked"}
++ kill -STOP relay=70352 (relay frozen with its last status showing inFlight=true)
+13s after quit: app alive=1 bundle=0.3.3-test.11 (stop wait of 10s has elapsed: abandoned, not killed)
+2026-11-28T06:14:22.112Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:14:40.405Z info [relay] claimed job
+relay still present: 70352 T   
++ kill -9 70352 at 06:14:56 (unexpected relay exit after the abandoned wait)
+app gone after ~2 s
+bundle after 30s: 0.3.3-test.11
++ cleanup: kill -9 73989 (stopped lp left by the test); cancel -a FP_T1_Test_Queue
+06:14:40.400 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:14:40.404 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:14:40.407 RELAY_MSG type=event state=running reconciliation=pending inFlight=true cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:14:42.264 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=true cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:14:56.089 RELAY_EXIT code=9
+06:14:56.090 APP_before-quit
+06:14:56.197 APP_will-quit
+06:14:56.198 MAIN_EXIT code=0
+06:14:56.198 APP_quit
+total 24
+drwx------   5 <user>  staff  160 28 Nov 14:14 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 14:14 ..
+-rw-------   1 <user>  staff  220 28 Nov 14:14 .relay.lock
+-rw-------   1 <user>  staff  269 28 Nov 14:14 t1-job-s11e-a.json
+-rw-------   1 <user>  staff  220 28 Nov 14:14 t1-job-s11e-a.send
+  name_sha=5bb4afc5 ext=lock size=220
+  name_sha=24dab637 ext=json size=269 stage=sending hasZpl=false
+  name_sha=91621f1e ext=send size=220
+

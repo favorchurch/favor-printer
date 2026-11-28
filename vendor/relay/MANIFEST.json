@@ -3,13 +3,13 @@
   "source": {
     "repository": "favorchurch/rsvp.favor.church",
     "path": "relay",
-    "commit": "7c5e48abada22554c4955a526f3cefe7e3574b1e"
+    "commit": "51bc4cb59b6e30708e86de323505755700a1c86f"
   },
   "entryPoints": [
     "embedded.ts",
     "index.ts"
   ],
-  "treeSha256": "c6d00694ea406bb1efaea62201fcc39c1f5dc161576602b9a4830c8e54e1280a",
+  "treeSha256": "135e545ee4c52e05005a546b6361b7a93bda6363628ee835d132f0a1718f19c7",
   "files": [
     {
       "path": "apiClient.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "index.ts",
-      "sha256": "27df86881bebe9724c1041fca9920fb11280f06f038b2278ee00ea369ea2882b",
-      "bytes": 10732
+      "sha256": "1644b1257b1f1b510284c8507315d7d0ca8ad954f7d5a7ad9bb6783a19f4dff6",
+      "bytes": 10818
     },
     {
       "path": "printer.ts",
@@ -58,18 +58,18 @@
     },
     {
       "path": "relay.ts",
-      "sha256": "765f6a3f405f792bd40ccd369cd532f0850bb238e49a762b43bf8aaf6ce7d48f",
-      "bytes": 31823
+      "sha256": "7ff3199182588bd0a253be895480e40d22b598424b8e084b695b2a175f91a5cd",
+      "bytes": 33070
     },
     {
       "path": "spool.ts",
-      "sha256": "d14d81ca7165d736d8dcdb5611a92ad8bbe7e3087e24de51e9086b8fb327bf13",
-      "bytes": 23727
+      "sha256": "0998b5baaeac6ae608c74bceb03faf3255dd4fa5f99566086ae55f4fa77cf733",
+      "bytes": 24496
     },
     {
       "path": "status.ts",
-      "sha256": "c6a9f8d9b752c19e0df77f0a046d005222f3e37a66d56abbc15b2420d3c2f0de",
-      "bytes": 4948
+      "sha256": "f5a38270843bddfe506897c75c7fd08a024fd97cbb3e3c30bb5ca77b3004126d",
+      "bytes": 5311
     },
     {
       "path": "windowsSpooler.ts",

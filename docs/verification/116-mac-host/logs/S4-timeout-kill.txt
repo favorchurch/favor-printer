@@ -1,0 +1,26 @@
+relay up
+UPDATE_READY
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":0}}
+relay child pid=63060
++ kill -STOP 63060   (relay child cannot answer the stop request)
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 05:56:08
+{"type":"string","value":"quit-invoked"}
+app gone after ~13 s
+bundle after: 0.3.3-test.11
+--- tap tail
+05:56:04.597 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null  (x2)
+05:56:04.650 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:56:06.616 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:56:06.621 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+05:56:21.356 APP_before-quit
+05:56:21.460 RELAY_EXIT code=0
+05:56:21.465 APP_will-quit
+05:56:21.465 MAIN_EXIT code=0
+05:56:21.465 APP_quit
+--- log tail
+2026-11-28T05:52:42.533Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:54:00.971Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T05:55:48.299Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:56:21.355Z info [main] quit without installing: the relay did not stop cleanly
+
