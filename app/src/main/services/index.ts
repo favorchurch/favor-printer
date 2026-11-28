@@ -10,6 +10,7 @@ export * from "./queue";
 export * from "./rename";
 export * from "./relayConfig";
 export * from "./secretStore";
+export * from "./spoolInventory";
 export * from "./statusSummary";
 export * from "./timers";
 export * from "./updates";

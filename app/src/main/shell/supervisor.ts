@@ -97,6 +97,8 @@ export type RelaySupervisor = {
    * Quit waits on this after `stop` gave up on a send that was still writing.
    */
   settled(): Promise<void>;
+  /** True while a child exists, a start is under way, or a restart is scheduled. A pending restart counts, so a relay about to return is never read as absent. */
+  running(): boolean;
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
@@ -488,6 +490,8 @@ export function createRelaySupervisor(deps: {
     state: () => state,
 
     jobInFlight: () => state.relay?.inFlight === true,
+
+    running: () => child !== null || launching !== null || restartTimer !== null,
 
     settled() {
       if (!child) return Promise.resolve();

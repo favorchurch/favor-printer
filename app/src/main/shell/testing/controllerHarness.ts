@@ -69,6 +69,10 @@ export type HarnessOptions = {
   /** Answers a rename. The default echoes the name the cloud was sent, as RSVP does. */
   rename?: (request: RelayRenameRequest) => Promise<RenameCloudOutcome>;
   readCloudNames?: () => Promise<CloudNamesOutcome>;
+  /** Defaults to a folder that does not exist, so no spool is seen. */
+  appSupportDir?: string;
+  /** A real update policy, so the controller's install-on-quit gate can be observed. Defaults to a stub. */
+  updates?: ControllerDeps["updates"];
 };
 
 export function createControllerHarness(options: HarnessOptions = {}) {
@@ -155,7 +159,11 @@ export function createControllerHarness(options: HarnessOptions = {}) {
   };
   const spyPower = { update: vi.fn(), dispose: vi.fn() };
   const power = options.realPower ? createPowerController({ blocker, now: () => clock.now, timers: timers.timers }) : spyPower;
-  const updates = { setChannel: vi.fn(async () => undefined), checkNow: vi.fn(async () => undefined) };
+  const updates = options.updates ?? {
+    setChannel: vi.fn(async () => undefined),
+    checkNow: vi.fn(async () => undefined),
+    setNoRelayEmptySpool: vi.fn(),
+  };
   const ui = {
     showSetupWindow: vi.fn(),
     closeSetupWindow: vi.fn(),
@@ -172,7 +180,7 @@ export function createControllerHarness(options: HarnessOptions = {}) {
     osVersion: options.platform === "win32" ? "Windows 11" : "macOS 15",
     platform: options.platform,
     windowsScriptPath: options.windowsScriptPath,
-    appSupportDir: "/Users/v/Library/Application Support/Favor Printer",
+    appSupportDir: options.appSupportDir ?? "/Users/v/Library/Application Support/Favor Printer",
     prefs,
     secrets,
     printers,

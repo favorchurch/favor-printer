@@ -123,6 +123,15 @@ An update installs only when the app quits, and only after the relay has stopped
   (claimed, minus sent, failed and marked `to check`) from the relay's last status. If any remain, the app quits
   **without installing** and the update waits for the next clean quit.
 
+**A Mac that never enrolled, or was revoked.** No relay runs on these Macs, so there is no relay status to read. The update
+installs as the app quits when all of these hold: no relay child is running, the Mac has no pairing or its pairing was
+revoked, and the relay's spool folder (`spool` inside the app's support folder) is absent or has no entries. Any entry
+in that folder blocks the install: a job record, a send marker, a temp file, the relay's lock, or a file or folder the app
+does not recognize. So does a spool folder that cannot be read. The app only reads the folder and never changes it, so a revoked Mac with entries still in it keeps its update until they
+are resolved. An update also waits while this Mac is enrolling.
+Reconciliation is not checked on these Macs, because no relay reports it. A job in flight or a pending entry still defers
+the install. An enrolled Mac follows the rules above, unchanged.
+
 This is fail closed: when the relay's stop wait times out and the relay has to be ended, or labels are still queued, the
 update is never installed on that quit. It stays ready and installs on the next clean quit.
 
