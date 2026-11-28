@@ -1,0 +1,84 @@
+=== out-primary-1
+e708ad124ec04ea510211f5221d1c98d49faeade6a3b940f30b6ef1e9d6bdae1  Favor-Printer-0.3.3-test.1-arm64.dmg  127557948 bytes
+c53868e538e2186873eccaa404c14203cdafd3e177efae70b2cfdaea60a5d14d  Favor-Printer-0.3.3-test.1-arm64.zip  126869397 bytes
+d05c6b13334d8a9e59dc5cca366f49dff82759c57b885b0f4414676d9d0b6224  Favor-Printer-0.3.3-test.1-x64.dmg  134483993 bytes
+99a22f13becadf73b0b6209ddb3e3a91bb16f15f40971ba18ba750c1259d4f24  Favor-Printer-0.3.3-test.1-x64.zip  133830082 bytes
+a8243ea979f7a1b103b9749cb5ce4d914f1015413a14d6aa0d61fdda2198a0a1  latest-mac.yml  871 bytes
+-- mac-arm64: version=0.3.3-test.1 arch=arm64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=448 flags=0x10000(runtime) hashes=3+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-primary-1/mac-arm64/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+-- mac: version=0.3.3-test.1 arch=x86_64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=480 flags=0x10000(runtime) hashes=4+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-primary-1/mac/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+=== out-primary-2
+e919f9bdb045899339a2967c31ca1e54f240f62211a9b3f036fd6cd2c5b16b7e  Favor-Printer-0.3.3-test.2-arm64.dmg  127570209 bytes
+73cc01553cef686283492910f10c24978547159e4848c19c7e7af506e64c121f  Favor-Printer-0.3.3-test.2-arm64.zip  126869398 bytes
+52adb60682582ba2108ac24a4901a1aa5833c1e01fdfa141e84cb4c42e835986  Favor-Printer-0.3.3-test.2-x64.dmg  134486803 bytes
+378c76823b02bdba0c50ddebd8f183ae2812631859191692eeab7a0e29f99dfd  Favor-Printer-0.3.3-test.2-x64.zip  133830088 bytes
+fb7de8eec09bae14c59288035ec8a04adeaa51eb4e6104456e87dc659979afbc  latest-mac.yml  871 bytes
+-- mac-arm64: version=0.3.3-test.2 arch=arm64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=448 flags=0x10000(runtime) hashes=3+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-primary-2/mac-arm64/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+-- mac: version=0.3.3-test.2 arch=x86_64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=480 flags=0x10000(runtime) hashes=4+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-primary-2/mac/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+=== out-seam-11b
+06b955421ffbc9788d01d9665aa2eb08f4fe357c6d90bfceb0189e6a0e4ba713  Favor-Printer-0.3.3-test.11-arm64.dmg  127556012 bytes
+fffa26e5e120193aae0d9a4def496c146f29840e0519aaf6eebf3bfccafdaddd  Favor-Printer-0.3.3-test.11-arm64.zip  126869586 bytes
+0cd77be6f93dc3167717e47cdff5c1846925c648b6803c892748b52e5779d676  Favor-Printer-0.3.3-test.11-x64.dmg  134481090 bytes
+9cacb04cc955e1ff19cce7b5ec35af70f308a6889b312d32d0622ca6d04fd356  Favor-Printer-0.3.3-test.11-x64.zip  133830277 bytes
+da3c3d8f0769b728bd50e5ccc4c31a246d6e6139f47b688256a160d5a162c8d3  latest-mac.yml  877 bytes
+-- mac-arm64: version=0.3.3-test.11 arch=arm64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=448 flags=0x10000(runtime) hashes=3+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-seam-11b/mac-arm64/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+-- mac: version=0.3.3-test.11 arch=x86_64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=480 flags=0x10000(runtime) hashes=4+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-seam-11b/mac/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+=== out-seam-12
+e164384609507548e8801f967cb56633dd0ab11830392c56956c6651738a53ef  Favor-Printer-0.3.3-test.12-arm64.dmg  127554492 bytes
+eda91bdf79b74356990fba77a10328b092ff0815eca6f11734a4b253b82c7887  Favor-Printer-0.3.3-test.12-arm64.zip  126869599 bytes
+cc9997a7867f7158ac12147a9246ea7476be3c0d4eb5a86c6851f2c2f82efbfa  Favor-Printer-0.3.3-test.12-x64.dmg  134475207 bytes
+90f10b2e8f2f409e234a2d61062e1ffafc4c2b4d21103371eb17133836370964  Favor-Printer-0.3.3-test.12-x64.zip  133830269 bytes
+c01444b24d2873a02f8fff6a5b02f9b50b825072067ecfceb4f32be01278147a  latest-mac.yml  877 bytes
+-- mac-arm64: version=0.3.3-test.12 arch=arm64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=448 flags=0x10000(runtime) hashes=3+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-seam-12/mac-arm64/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+-- mac: version=0.3.3-test.12 arch=x86_64 bundle-id=church.favor.printer
+CodeDirectory v=20500 size=480 flags=0x10000(runtime) hashes=4+7 location=embedded
+Authority=Developer ID Application: FAVOR CHURCH PH INC. (3JJ4492TV8)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+$SCR/out-seam-12/mac/Favor Printer.app: rejected
+source=Unnotarized Developer ID
+dmg Favor-Printer-0.3.3-test.1-arm64.dmg:  | spctl: rejected
+dmg Favor-Printer-0.3.3-test.1-x64.dmg:  | spctl: rejected
+dmg Favor-Printer-0.3.3-test.12-arm64.dmg:  | spctl: rejected
+

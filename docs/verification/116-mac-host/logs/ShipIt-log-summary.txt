@@ -1,0 +1,18 @@
+154
+2026-11-28 13:53:49.538 ShipIt[42395:5631616] Beginning installation
+2026-11-28 13:53:55.192 ShipIt[42395:5633521] Installation completed successfully
+2026-11-28 13:57:11.198 ShipIt[79211:5825450] Beginning installation
+2026-11-28 13:57:25.819 ShipIt[79211:5828681] Installation completed successfully
+2026-11-28 14:06:14.660 ShipIt[91480:6224645] Beginning installation
+2026-11-28 14:06:24.887 ShipIt[91480:6230188] Installation completed successfully
+2026-11-28 14:10:16.752 ShipIt[29714:6363877] Beginning installation
+2026-11-28 14:10:21.434 ShipIt[29714:6365617] Installation completed successfully
+2026-11-28 14:11:01.252 ShipIt[37829:6395143] Beginning installation
+2026-11-28 14:11:03.806 ShipIt[37829:6395887] Installation completed successfully
+2026-11-28 14:13:43.142 ShipIt[64300:6486686] Beginning installation
+2026-11-28 14:13:50.122 ShipIt[64300:6487714] Installation completed successfully
+2026-11-28 14:20:25.148 ShipIt[67226:6777738] Beginning installation
+2026-11-28 14:20:42.395 ShipIt[67226:6780265] Installation completed successfully
+
+Mapping: 13:53 scenario 5; 13:57 scenario 6; 14:06 scenario 3; 14:10 aborted attempt (tap not attached, relay not frozen); 14:11 SIGTERM cleanup of sc1 app; 14:13 scenario 11b attempt 1 (relay write timeout resolved before abandon); 14:20 scenario 2b chmod attempt (relay self-healed mode 0700). Each install-run quit produced exactly one ShipIt installation.
+

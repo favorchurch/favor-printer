@@ -1,0 +1,54 @@
+{"type":"string","value":"tap installed"}
+launched pid 80435
+NOT_DOWNLOADED
+2026-11-28T05:49:04.587Z TAP_ON main_pid=80435 app_version=0.3.3-test.1
+---feed
+2026-11-28T05:49:05.310Z GET /latest-mac.yml 200 
+2026-11-28T05:49:05.343Z GET /Favor-Printer-0.3.3-test.2-arm64.zip 200 
+---home
+blob_storage
+Cache
+Code Cache
+DawnGraphiteCache
+DawnWebGPUCache
+declarative_performance_observer.db
+declarative_performance_observer.db-journal
+DevToolsActivePort
+DIPS
+DIPS-wal
+GPUCache
+GPUPersistentCache
+GraphiteDawnCache
+Local State
+Local Storage
+Network Persistent State
+Preferences
+prefs.json
+Shared Dictionary
+SingletonCookie
+SingletonLock
+SingletonSocket
+Trust Tokens
+Trust Tokens-journal
+
+--- snapshot ---
+2026-11-28T05:49:04.587Z TAP_ON main_pid=80435 app_version=0.3.3-test.1
+  PID COMMAND
+80435 $SCR/inst/p2/Favor Printer.app/Contents/MacOS/F
+{"type":"string","value":"{\"version\":\"0.3.3-test.1\",\"status\":{\"color\":\"amber\",\"headline\":\"Needs re-enrollment\",\"detail\":\"Enter the six-digit code from an admin.\"},\"fiveState\":\"Needs re-enrollment\",\"recoveryAction\":\"Ask an admin for a new six-digit code in Favor RSVP.\",\"enrolled\":false,\"label\":\"T1 test laptop\",\"printerName\":null,\"campusId\":null,\"paused\":false,\"openAtLogin\":false,\"channel\":\"stable\",\"update\":{\"kind\":\"ready\",\"version\":\"0.3.3-test.2\"},\"updateCheckedAt\":\"2026-11-28T05:49:07.834Z\",\"recentJobs\":{\"sent\":0,\"failed\":0,\"ambiguous\":0},\"setupStep\":\"welcome\",\"printer\":{\"kind\":\"none\"},\"printerPresence\":{\"presence\":\"detached\",\"lastSeenAt\":null,\"consecutiveFailures\":0},\"legacyRelayLoaded\":false,\"warnings\":[\"Keep the lid open while printing. Closing the lid can stop labels from printing.\"]}"}
+pending
+favor-printer-updater
+
+--- quit ---
+2026-11-28T05:49:04.587Z TAP_ON main_pid=80435 app_version=0.3.3-test.1
+2026-11-28T05:51:58.668Z APP_before-quit
+2026-11-28T05:51:58.778Z APP_will-quit
+2026-11-28T05:51:58.778Z MAIN_EXIT code=0
+2026-11-28T05:51:58.778Z APP_quit
+  "CFBundleShortVersionString" => "0.3.3-test.1"
+2026-11-28T05:46:39.556Z error [updater] update failed: Error
+2026-11-28T05:47:16.156Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:47:16.219Z error [updater] Unknown error
+2026-11-28T05:47:16.219Z error [updater] update failed: Error
+2026-11-28T05:49:05.255Z info [main] Favor Printer 0.3.3-test.1 started
+

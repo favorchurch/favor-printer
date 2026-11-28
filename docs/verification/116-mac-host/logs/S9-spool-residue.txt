@@ -1,0 +1,48 @@
+spool BEFORE first launch (name hash, size, content hash):
+  571d3af6 19B 21a6bff6d9a0
+  f54c4467 23B 9610e10f6603
+  a476bb6a 18B 21b86a530fbb
+  96ca6c2d 38B 2bb79d4617ab
+  3859a96d 11B 13f9af115f85
+round 1: relay up
+round 1: UPDATE_READY
+round 1: reconciliation values seen in 12s:    7 reconciliation=pending 
+round 1: spool AFTER (name hash, size, content hash):
+  617669e1 220B 5c9541e3fc03  ext=lock
+  8d25bdf3 19B 21a6bff6d9a0  ext=corrupt
+  f54c4467 23B 9610e10f6603  ext=send
+  96ca6c2d 38B 2bb79d4617ab  ext=tmp
+  3859a96d 11B 13f9af115f85  ext=dat
+round 1: bundle before quit: 0.3.3-test.11
+{"type":"string","value":"quit-invoked"}
+round 1: app gone after ~2 s
+round 1: bundle after quit: 0.3.3-test.11
+06:16:36.803 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:16:36.804 APP_before-quit
+06:16:36.906 RELAY_EXIT code=0
+06:16:36.931 APP_will-quit
+06:16:36.931 MAIN_EXIT code=0
+06:16:36.931 APP_quit
+round 2: relay up
+round 2: UPDATE_READY
+round 2: reconciliation values seen in 12s:    7 reconciliation=pending 
+round 2: spool AFTER (name hash, size, content hash):
+  617669e1 220B fb2c2204efe3  ext=lock
+  8d25bdf3 19B 21a6bff6d9a0  ext=corrupt
+  f54c4467 23B 9610e10f6603  ext=send
+  96ca6c2d 38B 2bb79d4617ab  ext=tmp
+  3859a96d 11B 13f9af115f85  ext=dat
+round 2: bundle before quit: 0.3.3-test.11
+{"type":"string","value":"quit-invoked"}
+round 2: app gone after ~2 s
+round 2: bundle after quit: 0.3.3-test.11
+06:17:34.402 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:17:34.402 APP_before-quit
+06:17:34.505 RELAY_EXIT code=0
+06:17:34.528 APP_will-quit
+06:17:34.529 MAIN_EXIT code=0
+06:17:34.529 APP_quit
+2026-11-28T06:14:40.405Z info [relay] claimed job
+2026-11-28T06:16:05.813Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:17:04.390Z info [main] Favor Printer 0.3.3-test.11 started
+

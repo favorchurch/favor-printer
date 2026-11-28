@@ -1,0 +1,77 @@
+2026-11-28T05:32:16.777Z info [main] Favor Printer 0.3.3-test.1 started
+2026-11-28T05:32:16.828Z error [updater] Unknown error
+2026-11-28T05:32:16.828Z error [updater] update failed: Error
+2026-11-28T05:32:34.733Z info [main] Favor Printer 0.3.3-test.1 started
+2026-11-28T05:32:34.792Z error [updater] Unknown error
+2026-11-28T05:32:34.792Z error [updater] update failed: Error
+2026-11-28T05:40:45.031Z info [main] Favor Printer 0.3.3-test.1 started
+2026-11-28T05:40:45.089Z error [updater] Unknown error
+2026-11-28T05:40:45.089Z error [updater] update failed: Error
+2026-11-28T05:46:39.475Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:46:39.555Z error [updater] Unknown error
+2026-11-28T05:46:39.556Z error [updater] update failed: Error
+2026-11-28T05:47:16.156Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:47:16.219Z error [updater] Unknown error
+2026-11-28T05:47:16.219Z error [updater] update failed: Error
+2026-11-28T05:49:05.255Z info [main] Favor Printer 0.3.3-test.1 started
+2026-11-28T05:52:42.533Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:54:00.971Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T05:55:48.299Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:56:21.355Z info [main] quit without installing: the relay did not stop cleanly
+2026-11-28T05:56:44.277Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T05:57:30.049Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T06:00:22.783Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:00:39.006Z info [relay] claimed job
+2026-11-28T06:01:37.676Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:01:53.979Z info [relay] claimed job
+2026-11-28T06:03:49.147Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:04:07.405Z info [relay] claimed job
+2026-11-28T06:05:41.105Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:05:59.487Z info [relay] claimed job
+2026-11-28T06:06:05.500Z info [relay] job sent
+2026-11-28T06:06:30.055Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T06:07:11.159Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:07:29.299Z info [relay] claimed job
+2026-11-28T06:07:50.078Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:07:50.114Z warn [relay] job ambiguous
+2026-11-28T06:08:44.595Z warn [relay] relay exited (code 9); restarting in 1000 ms
+2026-11-28T06:09:22.753Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:10:24.835Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T06:11:36.524Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:12:24.925Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:13:08.498Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:13:26.815Z info [relay] claimed job
+2026-11-28T06:13:36.997Z warn [relay] job ambiguous
+2026-11-28T06:13:54.327Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T06:14:22.112Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:14:40.405Z info [relay] claimed job
+2026-11-28T06:16:05.813Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:17:04.390Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:18:32.925Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:19:02.897Z info [main] quit without installing: the relay did not stop cleanly
+2026-11-28T06:19:51.571Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:20:46.426Z info [main] Favor Printer 0.3.3-test.12 started
+2026-11-28T06:21:16.422Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:21:34.739Z warn [relay] unexpected failure
+2026-11-28T06:21:34.740Z warn [relay] unexpected failure
+2026-11-28T06:21:34.740Z warn [relay] unexpected failure
+2026-11-28T06:21:34.740Z warn [relay] cycle failed
+2026-11-28T06:21:36.742Z warn [relay] unexpected failure
+2026-11-28T06:21:36.743Z warn [relay] unexpected failure
+2026-11-28T06:21:36.743Z warn [relay] unexpected failure
+2026-11-28T06:21:36.743Z warn [relay] cycle failed
+2026-11-28T06:21:38.746Z warn [relay] unexpected failure
+2026-11-28T06:21:38.746Z warn [relay] unexpected failure
+2026-11-28T06:21:38.747Z warn [relay] unexpected failure
+2026-11-28T06:21:38.747Z warn [relay] cycle failed
+2026-11-28T06:21:40.750Z warn [relay] unexpected failure
+2026-11-28T06:21:40.751Z warn [relay] unexpected failure
+2026-11-28T06:21:40.753Z warn [relay] unexpected failure
+2026-11-28T06:21:40.754Z warn [relay] cycle failed
+2026-11-28T06:21:42.756Z warn [relay] unexpected failure
+2026-11-28T06:21:42.756Z warn [relay] unexpected failure
+2026-11-28T06:21:42.757Z warn [relay] unexpected failure
+2026-11-28T06:21:42.757Z warn [relay] cycle failed
+2026-11-28T06:22:30.343Z info [main] Favor Printer 0.3.3-test.11 started
+2026-11-28T06:23:36.696Z info [main] Favor Printer 0.3.3-test.11 started
+
