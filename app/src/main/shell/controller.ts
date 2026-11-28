@@ -423,6 +423,8 @@ export function createAppController(deps: ControllerDeps): AppController {
     // The token is dead: do not keep it, and stop the relay asking with it.
     await secrets.clear().catch(() => undefined);
     await supervisor.stop();
+    // A relay stopped by revocation may not have reconciled its spool, so an earlier "complete" must not clear the install gate.
+    lastReconciliation = "pending";
     reenrolling = false;
     if (setupStep !== null) setupStep = "code";
     revoking = false;

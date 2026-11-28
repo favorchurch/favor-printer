@@ -9,6 +9,7 @@ import { propertyParams } from "../../shared/testing/property";
 import { createFakeTimers } from "../services/testing/fakes";
 import { createUpdateController, type UpdaterAdapter, type UpdaterEvent } from "../services/updates";
 import { createControllerHarness, CREDENTIALS, foundPrinter, type HarnessOptions } from "./testing/controllerHarness";
+import { relayStatus } from "./testing/fakeChild";
 
 /** Entries a relay can leave in its spool, and one the app does not know. */
 const RESIDUE = [
@@ -148,6 +149,23 @@ describe("noRelayEmptySpool on a real support folder", () => {
     await started(root, "never", { updates });
     expect(updates.beforeQuit(false, 0, "pending")).toBe("install");
     expect(installs()).toBe(1);
+  });
+
+  it("a revoked Mac that reported reconciliation complete before the revocation defers while the spool holds an entry", async () => {
+    const { updates, installs } = policy();
+    const h = await started(root, "enrolled", { scan: foundPrinter(), updates });
+    const child = h.forks.last();
+    child.emitMessage({ type: "event", event: relayStatus() });
+    child.emitMessage({ type: "event", event: relayStatus({ cloud: "revoked" }) });
+    await vi.waitFor(() => expect(child.types()).toContain("stop"));
+    child.emitMessage({ type: "stopped" });
+    child.emitExit(0);
+    await vi.waitFor(() => expect(h.controller.reconciliationState()).toBe("pending"));
+
+    mkdirSync(spool);
+    writeFileSync(path.join(spool, "job-1.json"), "{}");
+    expect(updates.beforeQuit(false, 0, h.controller.reconciliationState())).toBe("defer");
+    expect(installs()).toBe(0);
   });
 
   it("holds a downloaded update while the spool has a job record, and installs at the next settle once it is empty", async () => {
