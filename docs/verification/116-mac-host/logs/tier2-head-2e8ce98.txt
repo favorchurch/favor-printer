@@ -1,0 +1,38 @@
+### pnpm verify:vendor
+
+> favor-printer@0.3.3-beta.2 verify:vendor $T1
+> node scripts/verify-vendor.mjs
+
+vendor/relay matches MANIFEST.json
+### exit=0
+### pnpm lint
+
+> favor-printer@0.3.3-beta.2 lint $T1
+> eslint .
+
+### exit=0
+### pnpm typecheck
+
+> favor-printer@0.3.3-beta.2 typecheck $T1
+> tsc --noEmit
+
+### exit=0
+### pnpm test
+
+> favor-printer@0.3.3-beta.2 test $T1
+> VITE_CONFIG_NATIVE_IGNORE_WARNING=true vitest run --maxWorkers=2
+
+
+ RUN  v5.0.3 $T1
+
+
+ Test Files  57 passed (57)
+      Tests  1577 passed | 1 skipped (1578)
+   Start at  13:12:14
+   Duration  11.71s (tests 64%, import 24%, transform 10%, worker 2%)
+
+    Isolate  57 workers spawned · ~167ms startup each (spawn + environment, per file)
+             at least ~4.60s faster with isolate: false — reuses workers across files instead of one per file
+
+### exit=0
+ALLDONE

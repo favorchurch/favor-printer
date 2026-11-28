@@ -1,0 +1,88 @@
+ATTEMPT 1 (hold /sending, quit mid-wait): relay aborted the unsent job; reconciliation pending; no install
+relay up
+UPDATE_READY
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":0}}
+sink conns before: 1; CUPS completed jobs listed: 1
+relay inFlight=true observed: 2026-11-28T06:04:07.408Z RELAY_MSG type=event state=running 
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:04:07
+{"type":"string","value":"quit-invoked"}
+3s after quit: app alive=1 bundle=0.3.3-test.11
+RELEASE_SENDING 06:04:10
+bundle after: 0.3.3-test.11
+sink:
+2026-11-28T05:45:18.406Z SINK_LISTENING 19100
+2026-11-28T05:45:27.093Z CONN 1 bytes=33 sha256=6f7a12a2351ead2a
+CUPS completed list tail:
+FP_T1_Test_Queue-24     <user>              1024   Sat 28 Nov 13:45:27 2026
+CUPS pending: 4
+stub reports: []
+06:04:05.361 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null  (x2)
+06:04:05.396 RELAY_MSG type=event state=running reconciliation=complete inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:04:07.399 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:04:07.405 RELAY_MSG type=event state=running reconciliation=pending inFlight=false cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:04:07.408 RELAY_MSG type=event state=running reconciliation=pending inFlight=true cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:04:07.674 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=true cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:04:10.741 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:04:10.742 RELAY_MSG type=event state=stopped reconciliation=pending inFlight=false cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:04:10.742 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:04:10.743 APP_before-quit
+06:04:10.846 RELAY_EXIT code=0
+06:04:10.857 APP_will-quit
+06:04:10.857 MAIN_EXIT code=0
+06:04:10.857 APP_quit
+total 8
+drwx------   3 <user>  staff   96 28 Nov 14:04 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 14:04 ..
+-rw-------   1 <user>  staff  321 28 Nov 14:04 t1-job-s3-a.json
+  name_sha=d057ce5a ext=json size=321 stage=claimed hasZpl=true
+stub requests(last400): {"/config":9,"/heartbeat":7,"/claim":18,"/jobs/<id>/sending":4} reports: []
+2026-11-28T05:45:18.406Z SINK_LISTENING 19100
+2026-11-28T05:45:27.093Z CONN 1 bytes=33 sha256=6f7a12a2351ead2a
+
+ATTEMPT 2 (lp child stalled during write phase; this is the scenario-3 result)
++ cancel -a FP_T1_Test_Queue   (clears test-queue leftovers from aborted lp runs)
+relay up
+UPDATE_READY
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":0}}
+sink conns before: 1
+relay's lp child pid=90446
++ kill -STOP 90446   (CUPS hand-off stalls while bytes are being written)
+relay state: :05:59.490Z RELAY_MSG type=event state=running reconciliation=pending inFlight=true cloud=ok coun
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 06:06:01
+{"type":"string","value":"quit-invoked"}
+4s after quit: app alive=1 bundle=0.3.3-test.11 relay: :06:01.345Z RELAY_MSG type=event state=stopping reconciliation=pending inFlight=true cloud=ok cou
+sink conns while stalled: 1
+RESUME_LP 06:06:05
+bundle became test.12 after ~19 s
+bundle after: 0.3.3-test.12
+sink:
+2026-11-28T05:45:27.093Z CONN 1 bytes=33 sha256=6f7a12a2351ead2a
+2026-11-28T06:06:05.512Z CONN 2 bytes=32 sha256=047c2fc406c8a987
+CUPS pending: 0
+FP_T1_Test_Queue-28     <user>                 0   Sat 28 Nov 14:05:36 2026
+FP_T1_Test_Queue-24     <user>              1024   Sat 28 Nov 13:45:27 2026
+stub reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"}]
+06:06:01.345 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=true cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:06:05.458 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":1,"sent":0,"failed":0,"ambiguous":0} err=null
+06:06:05.494 RELAY_MSG type=event state=stopping reconciliation=pending inFlight=false cloud=ok counts={"claimed":1,"sent":1,"failed":0,"ambiguous":0} err=null
+06:06:05.528 RELAY_MSG type=event state=stopping reconciliation=complete inFlight=false cloud=ok counts={"claimed":1,"sent":1,"failed":0,"ambiguous":0} err=null
+06:06:05.529 RELAY_MSG type=event state=stopped reconciliation=complete inFlight=false cloud=ok counts={"claimed":1,"sent":1,"failed":0,"ambiguous":0} err=null
+06:06:05.529 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:06:05.531 NATIVE_UPDATER checking-for-update
+06:06:05.556 NATIVE_UPDATER update-available
+06:06:05.630 RELAY_EXIT code=0
+06:06:08.319 NATIVE_UPDATER update-downloaded
+06:06:08.421 APP_before-quit
+06:06:08.422 APP_will-quit
+06:06:08.422 MAIN_EXIT code=0
+06:06:08.422 APP_quit
+relaunched app pid 95069 stopped (HOME was )
+total 0
+drwx------   2 <user>  staff   64 28 Nov 14:06 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 14:06 ..
+stub requests(last400): {"/config":12,"/heartbeat":10,"/claim":27,"/jobs/<id>/sending":5,"/jobs/<id>/report":1} reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"}]
+2026-11-28T05:45:27.093Z CONN 1 bytes=33 sha256=6f7a12a2351ead2a
+2026-11-28T06:06:05.512Z CONN 2 bytes=32 sha256=047c2fc406c8a987
+

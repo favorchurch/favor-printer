@@ -1,0 +1,32 @@
+bundle: 0.3.3-test.11
+persisted spool from the earlier (quit-aborted) process:
+total 8
+drwx------   3 <user>  staff   96 28 Nov 14:04 .
+drwxr-xr-x  26 <user>  staff  832 28 Nov 14:04 ..
+-rw-------   1 <user>  staff  321 28 Nov 14:04 t1-job-s3-a.json
+  name_sha=d057ce5a ext=json size=321 stage=claimed hasZpl=true
+stub requests(last400): {"/config":55,"/heartbeat":60,"/claim":257,"/jobs/<id>/sending":8,"/jobs/<id>/report":3} reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"},{"jobId":"t1-job-s1-a","outcome":"ambiguous"},{"jobId":"t1-job-s11b-a","outcome":"ambiguous"}]
+relay up (new process, no job claimed by this run yet)
+UPDATE_READY
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":0}}
+relay status samples:    7 reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0}|   4 reconciliation=pending inFlight=false cloud=unreachable counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0}|   2 reconciliation=pending inFlight=true cloud=unreachable counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0}|   2 reconciliation=pending inFlight=true cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0}|
+bundle before quit: 0.3.3-test.11
+QUIT_REQUEST 06:24:00
+{"type":"string","value":"quit-invoked"}
+app gone after ~2 s
+bundle after quit: 0.3.3-test.11
+06:24:00.633 RELAY_MSG type=event state=stopped reconciliation=pending inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+06:24:00.633 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+06:24:00.633 APP_before-quit
+06:24:00.749 APP_will-quit
+06:24:00.749 MAIN_EXIT code=0
+06:24:00.749 APP_quit
+06:24:00.765 RELAY_EXIT code=0
+spool after:
+total 8
+drwx------   3 <user>  staff   96 28 Nov 14:24 .
+drwxr-xr-x  27 <user>  staff  864 28 Nov 14:24 ..
+-rw-------   1 <user>  staff  321 28 Nov 14:23 t1-job-s3-a.json
+  name_sha=d057ce5a ext=json size=321 stage=claimed hasZpl=true
+stub requests(last400): {"/config":60,"/heartbeat":63,"/claim":259,"/jobs/<id>/sending":10,"/jobs/<id>/report":3} reports: [{"jobId":"t1-job-s3c-a","outcome":"sent"},{"jobId":"t1-job-s1-a","outcome":"ambiguous"},{"jobId":"t1-job-s11b-a","outcome":"ambiguous"}]
+
