@@ -5,6 +5,7 @@
  */
 
 export type RelayState = "starting" | "running" | "paused" | "stopping" | "stopped";
+export type ReconciliationState = "pending" | "complete";
 
 /** `unreachable` until the cloud has answered once. */
 export type CloudState = "ok" | "unreachable" | "revoked";
@@ -37,6 +38,8 @@ export type RelayStatus = {
   /** Printers an admin moved to another host since the last config refresh. Not claimed any more. */
   handedOverPrinterIds: string[];
   inFlight: boolean;
+  /** Complete only after a successful, empty durable-spool read in this start cycle. */
+  reconciliation: ReconciliationState;
   /** Since this relay started. */
   counts: RelayCounts;
   lastJobAt: string | null;
@@ -64,6 +67,7 @@ export function createStatusTracker(
     printerIds: [],
     handedOverPrinterIds: [],
     inFlight: false,
+    reconciliation: "pending",
     counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
     lastJobAt: null,
     lastHeartbeatAt: null,
@@ -98,6 +102,7 @@ export function createStatusTracker(
         s.lastHeartbeatAt = null;
         s.lastError = null;
         s.inFlight = false;
+        s.reconciliation = "pending";
       });
     },
     state(state: RelayState) {
@@ -129,6 +134,9 @@ export function createStatusTracker(
       update((s) => {
         s.inFlight = value;
       });
+    },
+    reconciliation(value: ReconciliationState) {
+      update((s) => { s.reconciliation = value; });
     },
     claimed() {
       update((s) => {

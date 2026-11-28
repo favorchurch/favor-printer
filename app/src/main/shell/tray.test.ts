@@ -226,6 +226,7 @@ describe("menu for each status", () => {
     printerIds: ["printer-1"],
     handedOverPrinterIds: [],
     inFlight: false,
+  reconciliation: "complete",
     counts: { claimed: 0, sent: 0, failed: 0, ambiguous: 0 },
     lastJobAt: null,
     lastHeartbeatAt: null,

@@ -159,6 +159,7 @@ export function sanitizeRelayStatus(raw: unknown): RelayStatus | null {
       ? raw.handedOverPrinterIds.filter((id): id is string => typeof id === "string" && PRINTER_ID.test(id))
       : [],
     inFlight: raw.inFlight === true,
+    reconciliation: raw.reconciliation === "complete" ? "complete" : "pending",
     counts: { claimed: count(counts.claimed), sent: count(counts.sent), failed: count(counts.failed), ambiguous: count(counts.ambiguous) },
     lastJobAt: isoOrNull(raw.lastJobAt),
     lastHeartbeatAt: isoOrNull(raw.lastHeartbeatAt),

@@ -54,7 +54,7 @@ describe("install policy: never while a job is in flight, reconciling or has no 
         let quitting = false;
         /** The caller's side of the contract: tell the policy when the last thing in the way clears. */
         const cleared = () => {
-          if (!busy()) updates.jobsSettled();
+          if (!busy()) updates.jobsSettled(jobs > 0, pending, reconciling ? "pending" : "complete");
         };
 
         for (const op of ops) {
@@ -86,7 +86,7 @@ describe("install policy: never while a job is in flight, reconciling or has no 
               break;
             case "quit":
               quitting = true;
-              updates.beforeQuit(jobs > 0 || reconciling, pending);
+              updates.beforeQuit(jobs > 0, pending, reconciling ? "pending" : "complete");
               break;
           }
         }
@@ -97,8 +97,8 @@ describe("install policy: never while a job is in flight, reconciling or has no 
         jobs = 0;
         reconciling = false;
         pending = 0;
-        updates.jobsSettled();
-        updates.jobsSettled();
+        updates.jobsSettled(false, 0, "complete");
+        updates.jobsSettled(false, 0, "complete");
         expect(unsafe).toEqual([]);
         expect(installs()).toBeLessThanOrEqual(1);
         if (!quitting || !ready) expect(installs()).toBe(0);
@@ -111,10 +111,10 @@ describe("install policy: never while a job is in flight, reconciling or has no 
     const { adapter, emit, installs } = fakeAdapter();
     const updates = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
     emit({ kind: "downloaded", version: VERSION });
-    expect(updates.beforeQuit(false, 2)).toBe("defer");
+    expect(updates.beforeQuit(false, 2, "complete")).toBe("defer");
     expect(installs()).toBe(0);
-    updates.jobsSettled();
-    updates.jobsSettled();
+    updates.jobsSettled(false, 0, "complete");
+    updates.jobsSettled(false, 0, "complete");
     expect(installs()).toBe(1);
   });
 
@@ -122,10 +122,10 @@ describe("install policy: never while a job is in flight, reconciling or has no 
     const { adapter, emit, installs } = fakeAdapter();
     const updates = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
     emit({ kind: "downloaded", version: VERSION });
-    expect(updates.beforeQuit(true, 0)).toBe("defer");
+    expect(updates.beforeQuit(true, 0, "complete")).toBe("defer");
     expect(installs()).toBe(0);
-    updates.jobsSettled();
-    updates.jobsSettled();
+    updates.jobsSettled(false, 0, "complete");
+    updates.jobsSettled(false, 0, "complete");
     expect(installs()).toBe(1);
   });
 });
@@ -138,12 +138,12 @@ async function session(onInstall: () => void = () => undefined) {
   child.emitMessage({ type: "event", event: relayStatus() });
   const { adapter, emit, installs } = fakeAdapter(onInstall);
   const real = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
-  const decided: { ready: boolean; inFlight: boolean; pending: number }[] = [];
+  const decided: { ready: boolean; inFlight: boolean; pending: number; reconciliation: "pending" | "complete" }[] = [];
   const updates = {
     stop: () => real.stop(),
-    beforeQuit: (inFlight: boolean, pending: number) => {
-      decided.push({ ready: real.state().kind === "ready", inFlight, pending });
-      return real.beforeQuit(inFlight, pending);
+    beforeQuit: (inFlight: boolean, pending: number, reconciliation: "pending" | "complete") => {
+      decided.push({ ready: real.state().kind === "ready", inFlight, pending, reconciliation });
+      return real.beforeQuit(inFlight, pending, reconciliation);
     },
   };
   const appQuit = vi.fn();
@@ -151,6 +151,7 @@ async function session(onInstall: () => void = () => undefined) {
     shutdown: () => h.controller.shutdown(),
     settled: () => h.controller.settled(),
     pendingEntries: () => h.controller.pendingEntries(),
+    reconciliationState: () => h.controller.reconciliationState(),
     updates,
     quit: appQuit,
   });
@@ -215,6 +216,7 @@ describe("install policy through the real supervisor and quit coordinator", () =
             event: relayStatus({
               state: stopSent() ? "stopping" : "running",
               inFlight: jobInFlight,
+              reconciliation: reconciling ? "pending" : "complete",
               counts: { claimed, sent: recorded, failed: 0, ambiguous: 0 },
             }),
           });
@@ -251,10 +253,10 @@ describe("install policy through the real supervisor and quit coordinator", () =
               }
               break;
             case "reconcileStart":
-              reconciling = true;
+              if (alive) { reconciling = true; report(); }
               break;
             case "reconcileEnd":
-              reconciling = false;
+              if (alive) { reconciling = false; report(); }
               break;
             case "updateReady":
               ready = true;
@@ -302,7 +304,7 @@ describe("install policy through the real supervisor and quit coordinator", () =
           // The install decision saw the pending count the relay last reported.
           for (const decision of s.decided) expect(decision.pending).toBe(claimed - recorded);
           const last = s.decided.at(-1);
-          expect(installs).toBe(last && last.ready && !last.inFlight && last.pending === 0 ? 1 : 0);
+          expect(installs).toBe(last && last.ready && !last.inFlight && last.pending === 0 && last.reconciliation === "complete" ? 1 : 0);
           // A stop wait that ended the relay quits without installing; the update is kept for the next clean quit.
           if (child.kills > 0) expect(installs).toBe(0);
           // That next clean quit, in a later launch where the cached update is found again, installs once.
@@ -347,7 +349,7 @@ describe("install policy through the real supervisor and quit coordinator", () =
     await request;
 
     expect(s.child.kills).toBe(0);
-    expect(s.decided).toEqual([{ ready: true, inFlight: false, pending: 2 }]);
+    expect(s.decided).toEqual([{ ready: true, inFlight: false, pending: 2, reconciliation: "complete" }]);
     expect(s.installs()).toBe(0);
     expect(s.appQuit).toHaveBeenCalledTimes(1);
     expect(s.real.state()).toEqual({ kind: "ready", version: VERSION });
@@ -362,4 +364,29 @@ describe("install policy through the real supervisor and quit coordinator", () =
     s.child.emitMessage({ type: "event", event: relayStatus({ counts: { claimed: 5, sent: 3, failed: 1, ambiguous: 1 } }) });
     expect(s.h.controller.pendingEntries()).toBe(0);
   });
+});
+
+
+it.each(["pending", undefined, "unknown"])("a clean stop with unresolved reconciliation %s never installs", async (reconciliation) => {
+  const s = await session();
+  s.emit({ kind: "downloaded", version: VERSION });
+  s.child.emitMessage({ type: "event", event: { ...relayStatus(), reconciliation } });
+  const request = s.coordinator.request();
+  await s.flush();
+  s.child.emitMessage({ type: "stopped" });
+  s.child.emitExit(0);
+  await request;
+  expect(s.installs()).toBe(0);
+  expect(s.appQuit).toHaveBeenCalledTimes(1);
+});
+
+it("a jobs-settled callback cannot bypass a still-pending reconciliation signal", () => {
+  const { adapter, emit, installs } = fakeAdapter();
+  const updates = createUpdateController({ adapter, channel: "stable", timers: createFakeTimers().timers });
+  emit({ kind: "downloaded", version: VERSION });
+  expect(updates.beforeQuit(false, 0, "pending")).toBe("defer");
+  updates.jobsSettled(false, 0, "pending");
+  expect(installs()).toBe(0);
+  updates.jobsSettled(false, 0, "complete");
+  expect(installs()).toBe(1);
 });

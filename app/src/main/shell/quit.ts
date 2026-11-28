@@ -8,6 +8,7 @@
  * the update waits for the next clean quit.
  */
 
+import type { ReconciliationState } from "../../../../vendor/relay/status";
 import type { StopOutcome } from "./supervisor";
 
 export type QuitDeps = {
@@ -18,10 +19,12 @@ export type QuitDeps = {
   updates: {
     stop(): void;
     /** Installs now (and quits) when an update is ready and no job is in flight. */
-    beforeQuit(jobInFlight: boolean, pendingEntries: number): "install" | "defer" | "none";
+    beforeQuit(jobInFlight: boolean, pendingEntries: number, reconciliation: ReconciliationState): "install" | "defer" | "none";
   };
   /** Claimed jobs the relay's last status shows without a recorded outcome. Read after the relay has stopped. */
   pendingEntries(): number;
+  /** Last validated signal from this relay process; unknown stays pending. */
+  reconciliationState(): ReconciliationState;
   /** Quits the Electron app. */
   quit(): void;
   log?: (message: string) => void;
@@ -64,7 +67,7 @@ export function createQuitCoordinator(deps: QuitDeps): QuitCoordinator {
           return;
         }
         // Queued entries the app can see fail closed too: the policy holds the install, the app quits as is.
-        if (deps.updates.beforeQuit(jobInFlight, deps.pendingEntries()) !== "install") deps.quit();
+        if (deps.updates.beforeQuit(jobInFlight, deps.pendingEntries(), deps.reconciliationState()) !== "install") deps.quit();
       } catch (error) {
         // A failed shutdown must not leave the app unable to quit later.
         allowed = false;

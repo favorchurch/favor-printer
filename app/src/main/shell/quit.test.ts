@@ -19,6 +19,7 @@ function setup(patch: Partial<QuitDeps> & { decision?: "install" | "defer" | "no
     shutdown: vi.fn(async () => ({ outcome: "stopped" as const, jobInFlight: false })),
     settled: vi.fn(async () => undefined),
     pendingEntries: vi.fn(() => patch.pending ?? 0),
+    reconciliationState: vi.fn(() => "complete" as const),
     updates: {
       stop: vi.fn(() => void order.push("updates.stop")),
       beforeQuit: vi.fn((jobInFlight: boolean, _pendingEntries: number) => {
@@ -128,7 +129,7 @@ describe("quit coordinator", () => {
       shutdown: vi.fn(async () => ({ outcome: "stopped" as const, jobInFlight: false })),
     });
     await coordinator.request();
-    expect(deps.updates.beforeQuit).toHaveBeenCalledWith(false, 0);
+    expect(deps.updates.beforeQuit).toHaveBeenCalledWith(false, 0, "complete");
     expect(deps.quit).not.toHaveBeenCalled();
   });
 
@@ -141,7 +142,7 @@ describe("quit coordinator", () => {
     });
     deps.pendingEntries = vi.fn(() => pending);
     await coordinator.request();
-    expect(deps.updates.beforeQuit).toHaveBeenCalledWith(false, 2);
+    expect(deps.updates.beforeQuit).toHaveBeenCalledWith(false, 2, "complete");
     // A held install quits the app as it is.
     expect(deps.quit).toHaveBeenCalledTimes(1);
   });
@@ -198,6 +199,7 @@ describe("quit with the real controller, supervisor and update policy", () => {
       shutdown: () => h.controller.shutdown(),
       settled: () => h.controller.settled(),
       pendingEntries: () => h.controller.pendingEntries(),
+      reconciliationState: () => h.controller.reconciliationState(),
       updates,
       quit: appQuit,
     });

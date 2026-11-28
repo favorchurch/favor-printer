@@ -272,6 +272,7 @@ async function runApp(): Promise<void> {
     shutdown: () => controller.shutdown(),
     settled: () => controller.settled(),
     pendingEntries: () => controller.pendingEntries(),
+    reconciliationState: () => controller.reconciliationState(),
     updates,
     quit: () => app.quit(),
     log: (message) => log("info", "main", message),

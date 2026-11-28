@@ -51,7 +51,8 @@ export type RelaySignal =
   | { kind: "handedOver"; printerIds: string[] }
   /** An outcome was recorded for a job (before it reaches the cloud). */
   | { kind: "outcome"; outcome: ReportOutcome }
-  | { kind: "inFlight"; value: boolean };
+  | { kind: "inFlight"; value: boolean }
+  | { kind: "reconciliation"; value: "pending" | "complete" };
 
 /** Why a test label was not attempted. */
 export type TestSendRefusal = "paused" | "busy" | "printer_unavailable";
@@ -168,6 +169,7 @@ export class Relay {
   }
 
   private async begin() {
+    this.options.signal?.({ kind: "reconciliation", value: "pending" });
     await this.options.spool.acquireLock();
     this.holdsLock = true;
     // stop() arrived while the lock was being taken: do not start a loop.
@@ -239,6 +241,7 @@ export class Relay {
   }
 
   private async halt() {
+    this.options.signal?.({ kind: "reconciliation", value: "pending" });
     this.halted = true;
     this.stopped = true;
     this.wake?.();
@@ -249,6 +252,9 @@ export class Relay {
     // every real send, and a test label (written outside the loop and chain).
     while (this.activeSends.size > 0) await Promise.allSettled([...this.activeSends]);
     await this.testSend;
+    // Current-run counters do not include recovered spool entries. Read the
+    // durable spool while the lock is still held; any residue blocks an update.
+    const spoolEmpty = (await this.options.spool.list()).length === 0;
     this.forgetPrinters();
     this.loop = null;
     this.startup = null;
@@ -256,6 +262,7 @@ export class Relay {
       this.holdsLock = false;
       await this.options.spool.releaseLock();
     }
+    this.options.signal?.({ kind: "reconciliation", value: spoolEmpty ? "complete" : "pending" });
   }
 
   /** Drop everything learned from heartbeat answers, so the next cycle asks again before any send. */
@@ -392,22 +399,31 @@ export class Relay {
   }
 
   private async runTick() {
-    this.authBlocked = false;
-    this.repollNow = false;
-    // Once the cloud rejects the credentials, every further call this cycle
-    // would be rejected too. Stop here and let the backoff run.
-    // Learn which printers are enabled before the first send of this process.
-    if (!this.heartbeatAnswered && !this.halted) {
-      await this.guarded("heartbeat", () => this.heartbeatIfDue());
+    this.options.signal?.({ kind: "reconciliation", value: "pending" });
+    try {
+      this.authBlocked = false;
+      this.repollNow = false;
+      // Once the cloud rejects the credentials, every further call this cycle
+      // would be rejected too. Stop here and let the backoff run.
+      // Learn which printers are enabled before the first send of this process.
+      if (!this.heartbeatAnswered && !this.halted) {
+        await this.guarded("heartbeat", () => this.heartbeatIfDue());
+        if (this.authBlocked) return;
+      }
+      await this.guarded("drain", () => this.drain());
       if (this.authBlocked) return;
+      if (this.accepting) await this.guarded("claim", () => this.claimNew());
+      if (this.authBlocked) return;
+      await this.guarded("drain", () => this.drain());
+      if (this.authBlocked) return;
+      if (!this.halted) await this.guarded("heartbeat", () => this.heartbeatIfDue());
+    } finally {
+      // A failed read leaves pending in place. No payload or job identifier is
+      // exposed, and persisted entries from an earlier process cannot be lost
+      // behind this process's zeroed counters.
+      const empty = (await this.options.spool.list()).length === 0;
+      this.options.signal?.({ kind: "reconciliation", value: empty ? "complete" : "pending" });
     }
-    await this.guarded("drain", () => this.drain());
-    if (this.authBlocked) return;
-    if (this.accepting) await this.guarded("claim", () => this.claimNew());
-    if (this.authBlocked) return;
-    await this.guarded("drain", () => this.drain());
-    if (this.authBlocked) return;
-    if (!this.halted) await this.guarded("heartbeat", () => this.heartbeatIfDue());
   }
 
   /** One failing stage (cloud down, bad credentials) must not skip the others. */
