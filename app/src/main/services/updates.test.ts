@@ -12,7 +12,13 @@ import {
 } from "./updates";
 
 function setup(
-  options: { channel?: UpdateChannel; check?: () => Promise<void>; now?: () => Date; onChecked?: (checkedAt: string) => void } = {},
+  options: {
+    channel?: UpdateChannel;
+    check?: () => Promise<void>;
+    now?: () => Date;
+    onChecked?: (checkedAt: string) => void;
+    noRelayEmptySpool?: () => boolean;
+  } = {},
 ) {
   let listener: (event: UpdaterEvent) => void = () => undefined;
   const adapter: UpdaterAdapter = {
@@ -33,6 +39,7 @@ function setup(
     now: options.now,
     onChecked: options.onChecked,
   });
+  if (options.noRelayEmptySpool) controller.setNoRelayEmptySpool(options.noRelayEmptySpool);
   return { adapter, controller, fake, states, emit: (event: UpdaterEvent) => listener(event) };
 }
 
@@ -56,7 +63,21 @@ describe("installDecision", () => {
     [{ updateReady: true, jobInFlight: false, pendingEntries: 1, reconciliation: "complete" }, "defer"],
     [{ updateReady: true, jobInFlight: true, pendingEntries: 2, reconciliation: "complete" }, "defer"],
   ] as const)("%j -> %s", (input, decision) => {
-    expect(installDecision(input)).toBe(decision);
+    expect(installDecision({ noRelayEmptySpool: false, ...input })).toBe(decision);
+  });
+
+  it.each([
+    [{ updateReady: true, jobInFlight: false, pendingEntries: 0, reconciliation: "pending" }, "install"],
+    [{ updateReady: true, jobInFlight: true, pendingEntries: 0, reconciliation: "pending" }, "defer"],
+    [{ updateReady: true, jobInFlight: false, pendingEntries: 1, reconciliation: "pending" }, "defer"],
+    [{ updateReady: true, jobInFlight: false, pendingEntries: 0, reconciliation: "complete" }, "install"],
+    [{ updateReady: false, jobInFlight: false, pendingEntries: 0, reconciliation: "pending" }, "none"],
+  ] as const)("with no relay and an empty spool, %j -> %s", (input, decision) => {
+    expect(installDecision({ noRelayEmptySpool: true, ...input })).toBe(decision);
+  });
+
+  it("keeps the reconciliation rule when the check is false: pending defers even with nothing else in the way", () => {
+    expect(installDecision({ updateReady: true, jobInFlight: false, pendingEntries: 0, reconciliation: "pending", noRelayEmptySpool: false })).toBe("defer");
   });
 });
 
@@ -217,6 +238,65 @@ describe("update state", () => {
     emit({ kind: "downloaded", version: "0.2.0" });
     emit({ kind: "downloaded", version: "0.3.0" });
     expect(controller.state()).toEqual({ kind: "ready", version: "0.3.0" });
+  });
+});
+
+describe("install with no relay and an empty spool", () => {
+  it("installs a ready update at quit when reconciliation is pending, because no relay reports it", () => {
+    const { adapter, controller, emit } = setup({ noRelayEmptySpool: () => true });
+    emit({ kind: "downloaded", version: "0.2.0" });
+    expect(controller.beforeQuit(false, 0, "pending")).toBe("install");
+    expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it("defers while a job is in flight, then installs once it has settled", () => {
+    const { adapter, controller, emit } = setup({ noRelayEmptySpool: () => true });
+    emit({ kind: "downloaded", version: "0.2.0" });
+    expect(controller.beforeQuit(true, 0, "pending")).toBe("defer");
+    expect(adapter.quitAndInstall).not.toHaveBeenCalled();
+    controller.jobsSettled(false, 0, "pending");
+    controller.jobsSettled(false, 0, "pending");
+    expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it("defers while an entry is pending, then installs once it is recorded", () => {
+    const { adapter, controller, emit } = setup({ noRelayEmptySpool: () => true });
+    emit({ kind: "downloaded", version: "0.2.0" });
+    expect(controller.beforeQuit(false, 1, "pending")).toBe("defer");
+    expect(adapter.quitAndInstall).not.toHaveBeenCalled();
+    controller.jobsSettled(false, 0, "pending");
+    expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it("without the check, a pending reconciliation keeps the update deferred", () => {
+    const { adapter, controller, emit } = setup();
+    emit({ kind: "downloaded", version: "0.2.0" });
+    expect(controller.beforeQuit(false, 0, "pending")).toBe("defer");
+    controller.jobsSettled(false, 0, "pending");
+    expect(adapter.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("does not read the check when no update is waiting", () => {
+    const check = vi.fn(() => true);
+    const { controller } = setup({ noRelayEmptySpool: check });
+    controller.beforeQuit(false, 0, "pending");
+    controller.jobsSettled(false, 0, "pending");
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it("reads the check fresh at each decision, so a spool that fills after one answer defers the next", () => {
+    let idle = true;
+    const check = vi.fn(() => idle);
+    const { adapter, controller, emit } = setup({ noRelayEmptySpool: check });
+    emit({ kind: "downloaded", version: "0.2.0" });
+
+    idle = false;
+    expect(controller.beforeQuit(false, 0, "pending")).toBe("defer");
+    idle = true;
+    controller.jobsSettled(false, 0, "pending");
+
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(adapter.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 });
 

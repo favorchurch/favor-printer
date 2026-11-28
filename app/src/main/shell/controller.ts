@@ -48,7 +48,7 @@ import {
   type StoredCredentials,
   type Timers,
 } from "../services";
-import { systemTimers } from "../services";
+import { relaySpoolDir, spoolAbsentOrEmpty, systemTimers } from "../services";
 import type { Logger } from "./log";
 import type { PrefsStore } from "./prefs";
 import { advanceStep, initialStep, printerReady } from "./setupFlow";
@@ -82,7 +82,11 @@ export type ControllerDeps = {
   readCloudNames?(deps: RenameCloudDeps): Promise<CloudNamesOutcome>;
   createSupervisor: SupervisorFactory;
   power: Pick<PowerController, "update" | "dispose">;
-  updates: { setChannel(channel: UpdateChannel): Promise<void>; checkNow(): Promise<void> };
+  updates: {
+    setChannel(channel: UpdateChannel): Promise<void>;
+    checkNow(): Promise<void>;
+    setNoRelayEmptySpool(check: () => boolean): void;
+  };
   ui: {
     /** Brings the setup window to the front. */
     showSetupWindow(): void;
@@ -148,6 +152,8 @@ export type AppController = {
   reconciliationState(): RelayStatus["reconciliation"];
   /** Resolves when the relay has stopped or exited. */
   settled(): Promise<void>;
+  /** Install-on-quit gate: not enrolled or revoked, no relay running, and the spool absent or empty. Read fresh on each call. */
+  noRelayEmptySpool(): boolean;
 };
 
 /** Shown under the status while the old relay could not be turned off. Printing stays off. */
@@ -163,6 +169,8 @@ export function createAppController(deps: ControllerDeps): AppController {
   const isWindows = deps.platform === "win32";
 
   let enrolled = false;
+  /** Set once initialize has read the pairing. Until then the signal stays false. */
+  let pairingKnown = false;
   let legacyLoaded = false;
   let scan: PrinterScan = { kind: "none" };
   let printerPresence = INITIAL_PRINTER_PRESENCE;
@@ -579,6 +587,7 @@ export function createAppController(deps: ControllerDeps): AppController {
         deps.applyOpenAtLogin(loaded.openAtLogin, { keepApproval: true });
       }
       enrolled = (await secrets.load()) !== null && !prefs.get().revoked;
+      pairingKnown = true;
       await refreshLegacy();
       setupStep = initialStep({ enrolled, revoked: prefs.get().revoked, setupComplete: prefs.get().setupComplete });
       await scanOnce();
@@ -921,6 +930,13 @@ export function createAppController(deps: ControllerDeps): AppController {
     reconciliationState: () => lastReconciliation,
 
     settled: () => supervisor.settled(),
+
+    noRelayEmptySpool() {
+      const unpaired = !enrolled || prefs.get().revoked;
+      return pairingKnown && unpaired && enrolling === null && !supervisor.running() && spoolAbsentOrEmpty(relaySpoolDir(deps.appSupportDir));
+    },
   };
+  // The update policy reads this gate fresh at each quit decision.
+  deps.updates.setNoRelayEmptySpool(() => controller.noRelayEmptySpool());
   return controller;
 }

@@ -36,10 +36,21 @@ export type InstallDecision = "install" | "defer" | "none";
 /**
  * A job in flight or a claimed job with no recorded outcome blocks the install. `pendingEntries` is what the
  * relay's last status shows: claimed jobs that are not yet sent, failed or ambiguous.
+ *
+ * `noRelayEmptySpool` is the app's check that no relay runs, the Mac is not enrolled or was revoked, and the spool is
+ * absent or empty. No relay means no reconciliation signal, so with the check true reconciliation does not defer.
+ * Otherwise reconciliation must be `complete`.
  */
-export function installDecision(input: { updateReady: boolean; jobInFlight: boolean; pendingEntries: number; reconciliation: ReconciliationState }): InstallDecision {
+export function installDecision(input: {
+  updateReady: boolean;
+  jobInFlight: boolean;
+  pendingEntries: number;
+  reconciliation: ReconciliationState;
+  noRelayEmptySpool: boolean;
+}): InstallDecision {
   if (!input.updateReady) return "none";
-  return input.jobInFlight || input.pendingEntries > 0 || input.reconciliation !== "complete" ? "defer" : "install";
+  if (input.jobInFlight || input.pendingEntries > 0) return "defer";
+  return input.noRelayEmptySpool || input.reconciliation === "complete" ? "install" : "defer";
 }
 
 export type UpdateController = {
@@ -54,6 +65,8 @@ export type UpdateController = {
   beforeQuit(jobInFlight: boolean, pendingEntries: number, reconciliation: ReconciliationState): InstallDecision;
   /** Call when the in-flight job has finished. Installs an update deferred by `beforeQuit`. */
   jobsSettled(jobInFlight: boolean, pendingEntries: number, reconciliation: ReconciliationState): void;
+  /** Registers the install-on-quit check. It is read fresh at each decision. Until set, it is false and the reconciliation rule applies. */
+  setNoRelayEmptySpool(check: () => boolean): void;
 };
 
 export function createUpdateController(deps: {
@@ -73,6 +86,7 @@ export function createUpdateController(deps: {
   let installPending = false;
   let installed = false;
   let checkedAt: string | null = null;
+  let noRelayCheck: () => boolean = () => false;
 
   const set = (next: UpdateState) => {
     if (JSON.stringify(next) === JSON.stringify(state)) return;
@@ -126,6 +140,18 @@ export function createUpdateController(deps: {
   adapter.configure(channelSettings(deps.channel));
   adapter.subscribe(handle);
 
+  /** The spool is read only while an update waits, so an ordinary quit does no extra I/O. */
+  const decide = (jobInFlight: boolean, pendingEntries: number, reconciliation: ReconciliationState) => {
+    const updateReady = state.kind === "ready";
+    return installDecision({
+      updateReady,
+      jobInFlight,
+      pendingEntries,
+      reconciliation,
+      noRelayEmptySpool: updateReady && noRelayCheck(),
+    });
+  };
+
   return {
     start() {
       void checkNow();
@@ -142,14 +168,17 @@ export function createUpdateController(deps: {
     checkNow,
     state: () => state,
     lastCheckedAt: () => checkedAt,
+    setNoRelayEmptySpool(check) {
+      noRelayCheck = check;
+    },
     beforeQuit(jobInFlight, pendingEntries, reconciliation) {
-      const decision = installDecision({ updateReady: state.kind === "ready", jobInFlight, pendingEntries, reconciliation });
+      const decision = decide(jobInFlight, pendingEntries, reconciliation);
       if (decision === "install") install();
       if (decision === "defer") installPending = true;
       return decision;
     },
     jobsSettled(jobInFlight, pendingEntries, reconciliation) {
-      if (!installPending || installDecision({ updateReady: state.kind === "ready", jobInFlight, pendingEntries, reconciliation }) !== "install") return;
+      if (!installPending || decide(jobInFlight, pendingEntries, reconciliation) !== "install") return;
       installPending = false;
       install();
     },

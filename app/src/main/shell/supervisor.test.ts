@@ -302,6 +302,44 @@ describe("crash and restart", () => {
   });
 });
 
+describe("running", () => {
+  it("is false before any child, true while the child runs, and false after a clean stop", async () => {
+    const { supervisor, children, last } = setup();
+    expect(supervisor.running()).toBe(false);
+    await supervisor.start();
+    expect(children).toHaveLength(1);
+    expect(supervisor.running()).toBe(true);
+    const stopping = supervisor.stop();
+    last().emitMessage({ type: "stopped" });
+    await stopping;
+    last().emitExit(0);
+    expect(supervisor.running()).toBe(false);
+  });
+
+  it("is true while a launch is still pending, before any child exists", async () => {
+    let release!: (outcome: StartResolution) => void;
+    const pending = new Promise<StartResolution>((resolve) => (release = resolve));
+    const { supervisor, children } = setup({ resolve: () => pending });
+    const starting = supervisor.start();
+    expect(children).toHaveLength(0);
+    expect(supervisor.running()).toBe(true);
+    release({ ok: true, options: { ...OPTIONS } } as StartResolution);
+    await starting;
+    expect(children).toHaveLength(1);
+    expect(supervisor.running()).toBe(true);
+  });
+
+  it("stays true across an unexpected exit while the restart is scheduled, and false once stopped", async () => {
+    const { supervisor, children, timers } = setup();
+    await supervisor.start();
+    children[0].emitExit(1);
+    expect(pendingDelays(timers)).toHaveLength(1);
+    expect(supervisor.running()).toBe(true);
+    await supervisor.stop();
+    expect(supervisor.running()).toBe(false);
+  });
+});
+
 describe("stop", () => {
   it("returns not_running when there is nothing to stop", async () => {
     const { supervisor } = setup();

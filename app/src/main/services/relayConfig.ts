@@ -33,6 +33,11 @@ export function windowsStateDir(homeDir: string, localAppData?: string): string 
   return path.win32.join(localAppData || path.win32.join(homeDir, "AppData", "Local"), PRODUCT_NAME);
 }
 
+/** The relay's durable spool, under the app support folder. The relay start options and the install-on-quit check both use it. */
+export function relaySpoolDir(appSupportDir: string): string {
+  return path.join(appSupportDir, "spool");
+}
+
 export type RelayConfigInput = {
   apiUrl?: string;
   credentials: StoredCredentials;
@@ -52,7 +57,7 @@ export function buildRelayStartOptions(input: RelayConfigInput): EmbeddedStartOp
     apiUrl: secureApiUrl(input.apiUrl ?? DEFAULT_API_URL),
     relayId: input.credentials.relayId,
     token: input.credentials.token,
-    spoolDir: path.join(input.appSupportDir, "spool"),
+    spoolDir: relaySpoolDir(input.appSupportDir),
     transport: input.platform === "win32"
       ? { kind: "windows", queue: validateWindowsQueueName(input.queue), scriptPath: validateLocalWindowsScriptPath(input.windowsScriptPath ?? "") }
       : { kind: "cups", queue: assertQueueName(input.queue) },
