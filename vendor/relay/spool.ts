@@ -568,6 +568,22 @@ export class FileSpool {
   }
 
   /**
+   * Update safety needs the durable inventory, not list(): list() deliberately
+   * quarantines unreadable entries and omits their .corrupt files. Any residue
+   * (entry, quarantine, orphan send marker/temp file, or unknown file/directory)
+   * keeps reconciliation pending. Only this instance's live lock is harmless.
+   * This read never deletes or rewrites evidence. I/O failures propagate.
+   */
+  async isReconciled(): Promise<boolean> {
+    await this.init();
+    const names = await readdir(this.dir);
+    if (names.some((name) => name !== ".relay.lock")) return false;
+    const lock = await this.readHolderRaw(this.lockFile());
+    if (lock === null) return true;
+    return this.lockId !== undefined && parseHolder(lock.raw)?.id === this.lockId;
+  }
+
+  /**
    * All entries, oldest claim first. Unreadable files are set aside, not deleted.
    * Entries from an older relay that still carry a payload past `claimed` are
    * rewritten without it. A failed rewrite throws, so `list()` fails closed

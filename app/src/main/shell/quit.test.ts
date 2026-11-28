@@ -212,8 +212,9 @@ describe("quit with the real controller, supervisor and update policy", () => {
     await Promise.resolve();
   }
 
-  /** What a real relay does: posts stopped, then exits. */
+  /** A successful real stop reports the final reconciled status, posts stopped, then exits. */
   const finishRelay = (h: Awaited<ReturnType<typeof running>>["h"]) => {
+    h.forks.last().emitMessage({ type: "event", event: relayStatus({ state: "stopped", reconciliation: "complete" }) });
     h.forks.last().emitMessage({ type: "stopped" });
     h.forks.last().emitExit(0);
   };

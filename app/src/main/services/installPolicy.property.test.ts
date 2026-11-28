@@ -167,6 +167,7 @@ async function laterCleanQuitInstalls(): Promise<number> {
   s.emit({ kind: "downloaded", version: VERSION });
   const request = s.coordinator.request();
   await s.flush();
+  s.child.emitMessage({ type: "event", event: relayStatus({ state: "stopped", reconciliation: "complete" }) });
   s.child.emitMessage({ type: "stopped" });
   s.child.emitExit(0);
   await request;
@@ -224,7 +225,14 @@ describe("install policy through the real supervisor and quit coordinator", () =
         /** The relay child's own rule: it reports stopped only after it was told to stop, with no send open and nothing left to reconcile. */
         const relayStops = () => {
           if (!alive || !stopSent() || jobInFlight || reconciling) return;
-          report();
+          child.emitMessage({
+            type: "event",
+            event: relayStatus({
+              state: "stopped",
+              reconciliation: "complete",
+              counts: { claimed, sent: recorded, failed: 0, ambiguous: 0 },
+            }),
+          });
           alive = false;
           child.emitMessage({ type: "stopped" });
           child.emitExit(0);
@@ -344,6 +352,7 @@ describe("install policy through the real supervisor and quit coordinator", () =
     const request = s.coordinator.request();
     await s.flush();
     // The relay stops cleanly: nothing in flight, it says stopped itself, no kill.
+    s.child.emitMessage({ type: "event", event: relayStatus({ state: "stopped", counts: { claimed: 2, sent: 0, failed: 0, ambiguous: 0 } }) });
     s.child.emitMessage({ type: "stopped" });
     s.child.emitExit(0);
     await request;
@@ -373,9 +382,50 @@ it.each(["pending", undefined, "unknown"])("a clean stop with unresolved reconci
   s.child.emitMessage({ type: "event", event: { ...relayStatus(), reconciliation } });
   const request = s.coordinator.request();
   await s.flush();
+  s.child.emitMessage({ type: "event", event: { ...relayStatus({ state: "stopped" }), reconciliation } });
   s.child.emitMessage({ type: "stopped" });
   s.child.emitExit(0);
   await request;
+  expect(s.installs()).toBe(0);
+  expect(s.appQuit).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])("an unacknowledged exit cannot reuse running completion after an abandoned stop: %s", async (abandon) => {
+  const s = await session();
+  s.emit({ kind: "downloaded", version: VERSION });
+  s.child.emitMessage({ type: "event", event: relayStatus({ inFlight: abandon, reconciliation: "complete" }) });
+  expect(s.h.controller.reconciliationState()).toBe("complete");
+
+  const request = s.coordinator.request();
+  await s.flush();
+  expect(s.h.controller.reconciliationState()).toBe("pending");
+  if (abandon) {
+    for (let i = 0; i < 3; i += 1) s.h.timers.fire("timeout");
+    await s.flush();
+    expect(s.appQuit).not.toHaveBeenCalled();
+    expect(s.installs()).toBe(0);
+  }
+  s.child.emitExit(42);
+  await request;
+
+  expect(s.child.kills).toBe(0);
+  expect(s.h.controller.reconciliationState()).toBe("pending");
+  expect(s.installs()).toBe(0);
+  expect(s.appQuit).toHaveBeenCalledTimes(1);
+});
+
+it.each(["running", "paused", "stopping"] as const)("a late %s completion cannot authorize an install during shutdown", async (state) => {
+  const s = await session();
+  s.emit({ kind: "downloaded", version: VERSION });
+  const request = s.coordinator.request();
+  await s.flush();
+
+  s.child.emitMessage({ type: "event", event: relayStatus({ state, reconciliation: "complete" }) });
+  // Even a bare acknowledgement can follow a failed relay stop; only its full stopped status proves completion.
+  s.child.emitMessage({ type: "stopped" });
+  s.child.emitExit(0);
+  await request;
+  expect(s.h.controller.reconciliationState()).toBe("pending");
   expect(s.installs()).toBe(0);
   expect(s.appQuit).toHaveBeenCalledTimes(1);
 });

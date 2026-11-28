@@ -292,7 +292,9 @@ export function createAppController(deps: ControllerDeps): AppController {
       if (status.cloud === "ok" && lastRelayCloud !== "ok") void syncCloudNames();
       lastRelayCloud = status.cloud;
       lastRelayCounts = status.counts;
-      lastReconciliation = status.reconciliation;
+      // A running-cycle result cannot authorize installation after stop was requested.
+      // The relay reports stopped only after its final inventory and lock release succeed.
+      lastReconciliation = shuttingDown && status.state !== "stopped" ? "pending" : status.reconciliation;
       // A running relay that reached the cloud still holds its binding, so a conflict left by a
       // re-enroll attempt is over and must not keep the status on "In use elsewhere".
       if (inUseElsewhere && status.state === "running" && status.cloud === "ok") {
@@ -899,6 +901,8 @@ export function createAppController(deps: ControllerDeps): AppController {
 
     async shutdown() {
       shuttingDown = true;
+      // An exit or a bare stopped acknowledgement must not reuse pre-shutdown completion.
+      lastReconciliation = "pending";
       if (scanTimer !== null) timers.clearInterval(scanTimer);
       scanTimer = null;
       deps.power.dispose();

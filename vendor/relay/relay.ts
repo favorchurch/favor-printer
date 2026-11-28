@@ -254,13 +254,13 @@ export class Relay {
     await this.testSend;
     // Current-run counters do not include recovered spool entries. Read the
     // durable spool while the lock is still held; any residue blocks an update.
-    const spoolEmpty = (await this.options.spool.list()).length === 0;
+    const spoolEmpty = await this.options.spool.isReconciled();
     this.forgetPrinters();
     this.loop = null;
     this.startup = null;
     if (this.holdsLock) {
-      this.holdsLock = false;
       await this.options.spool.releaseLock();
+      this.holdsLock = false;
     }
     this.options.signal?.({ kind: "reconciliation", value: spoolEmpty ? "complete" : "pending" });
   }
@@ -421,8 +421,11 @@ export class Relay {
       // A failed read leaves pending in place. No payload or job identifier is
       // exposed, and persisted entries from an earlier process cannot be lost
       // behind this process's zeroed counters.
-      const empty = (await this.options.spool.list()).length === 0;
-      this.options.signal?.({ kind: "reconciliation", value: empty ? "complete" : "pending" });
+      const empty = await this.options.spool.isReconciled();
+      // Once stop begins, only halt() may confirm completion, after the lock
+      // was released. An overlapping tick must not leave a stale complete
+      // signal behind if shutdown later fails.
+      this.options.signal?.({ kind: "reconciliation", value: empty && !this.halted ? "complete" : "pending" });
     }
   }
 
