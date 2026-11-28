@@ -1,0 +1,23 @@
+relay up; relay IS posting reconciliation=complete (raw), the app sees it stripped (older-relay emulation)
+UPDATE_READY
+{"version":"0.3.3-test.11","update":{"kind":"ready","version":"0.3.3-test.12"},"status":"Printer unplugged","enrolled":true,"recentJobs":{"sent":0,"failed":0,"ambiguous":0}}
+raw values the relay posted in 6s:   24 OLDRELAY_STRIP raw_reconciliation=complete|  36 OLDRELAY_STRIP raw_reconciliation=pending|
+what the app received:   30 reconciliation=undefined|  (undefined = field absent)
+bundle before: 0.3.3-test.11
+QUIT_REQUEST 07:18:32
+{"type":"string","value":"quit-invoked"}
+app gone after ~2 s
+bundle after: 0.3.3-test.11
+07:18:32.415 RELAY_MSG type=event state=stopping reconciliation=undefined inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+07:18:32.417 RELAY_MSG type=event state=stopping reconciliation=undefined inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+07:18:32.417 RELAY_MSG type=event state=stopped reconciliation=undefined inFlight=false cloud=ok counts={"claimed":0,"sent":0,"failed":0,"ambiguous":0} err=null
+07:18:32.417 RELAY_MSG type=stopped state=undefined reconciliation=undefined inFlight=undefined cloud=undefined counts=undefined err=undefined
+07:18:32.417 APP_before-quit
+07:18:32.519 RELAY_EXIT code=0
+07:18:32.527 APP_will-quit
+07:18:32.527 MAIN_EXIT code=0
+07:18:32.527 APP_quit
+native updater events: 0
+2026-11-13T03:08:18.633Z warn [enroll] enrollment not sent: printer_not_found, printer serial missing
+2026-11-28T07:18:08.430Z info [main] Favor Printer 0.3.3-test.11 started
+
